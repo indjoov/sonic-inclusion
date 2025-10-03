@@ -1,2 +1,91 @@
-# sonic-inclusion
-Open toolkit for accessible sound design using AI. Developed as part of the Prototype Fund.
+# Sonic Inclusion – Open Toolkit for Accessible Sound Design using AI
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT">
+  <img src="https://img.shields.io/badge/status-Prototype-blue.svg" alt="Status: Prototype">
+  <img src="https://img.shields.io/badge/AI-Powered-orange.svg" alt="AI Powered">
+  <img src="https://img.shields.io/badge/Accessibility-Inclusive-brightgreen.svg" alt="Inclusive Design">
+  <img src="https://img.shields.io/badge/Open%20Source-Yes-success.svg" alt="Open Source">
+</p>
+
+**Vision:**  
+_Making sound visible, touchable, and inclusive for everyone._ 🌍🎶✨
+
+
+
+## About the Project
+
+**Sonic Inclusion** is an open-source toolkit that empowers musicians, artists, and developers to create **barrier-free sound experiences**.  
+The project explores how **AI-driven tools** can support people with hearing impairments and diverse sensory needs by:
+
+- 🎵 **Translating audio into adaptive visual & haptic feedback**
+- 🧩 **Providing modular tools** for inclusive music software and installations
+- 🤝 **Enabling collaboration** between sound artists, developers, and accessibility communities
+
+This repository is developed as part of the **Prototype Fund (Germany)** and will grow into a publicly available resource for inclusive audio-visual design.
+
+
+## Goals
+
+- Build an **AI-powered accessibility toolkit** for sound and music
+- Support **artists, educators, and communities** with practical tools
+- Release everything as **open-source** (MIT License) to ensure free use and collaboration
+
+
+
+## Roadmap
+
+**Phase 1 – Prototyping (Months 1–3):**
+
+- Develop first AI models for sound-to-visual mapping
+- Build simple demo apps (desktop & web)
+
+**Phase 2 – Testing (Months 4–5):**
+
+- User testing with artists, educators & accessibility communities
+- Improve accessibility features (screen readers, alternative input methods)
+
+**Phase 3 – Release (Month 6):**
+
+- Publish toolkit with documentation
+- Share with open-source and cultural communities
+
+**(Optional) Second Stage (Months 7–10):**
+
+- Expand toolkit with plugins for DAWs and live performance setups
+- Build community network around inclusive music-making
+
+
+## Demo
+
+This repository includes a tiny browser demo:
+
+- Open `index.html` locally in your browser.
+- Click **“Use Microphone”** or **“Load Audio File”** to see the visualisation.
+- Adjust **Sensitivity** and **Color Mode** for different accessibility needs.
+
+> Note: Runs locally without dependencies. Uses the Web Audio API.
+
+
+
+## Contributing
+Contributions, feedback, and collaborations are welcome!  
+Please open an issue or submit a pull request.  
+
+
+## License
+
+This project is licensed under the **MIT License** – free to use, adapt, and share.
+
+
+
+## Contact
+
+👤 **Nicola Indjov**  
+🎸 Musician | Developer | Founder of Indjoov Arts  
+📧 [niki.indjov@gmail.com](mailto:niki.indjov@gmail.com)  
+🌐 [indjoov.com](https://indjoov.com)
+
+
+
+✨ _With Sonic Inclusion, we aim to turn sound into a shared, inclusive experience for all._
