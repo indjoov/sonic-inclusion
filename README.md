@@ -1,5 +1,12 @@
 # Sonic Inclusion – Open Toolkit for Accessible Sound Design using AI
 
+## 🔗 Live Demo
+
+👉 [Sonic Inclusion – Try it here](https://indjoov.github.io/sonic-inclusion/)
+
+This is a working prototype running in the browser.  
+Use microphone input or upload an audio file to see real-time color & shape visualizations.
+
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT">
   <img src="https://img.shields.io/badge/status-Prototype-blue.svg" alt="Status: Prototype">
@@ -10,8 +17,6 @@
 
 **Vision:**  
 _Making sound visible, touchable, and inclusive for everyone._ 🌍🎶✨
-
-
 
 ## About the Project
 
@@ -24,14 +29,11 @@ The project explores how **AI-driven tools** can support people with hearing imp
 
 This repository is developed as part of the **Prototype Fund (Germany)** and will grow into a publicly available resource for inclusive audio-visual design.
 
-
 ## Goals
 
 - Build an **AI-powered accessibility toolkit** for sound and music
 - Support **artists, educators, and communities** with practical tools
 - Release everything as **open-source** (MIT License) to ensure free use and collaboration
-
-
 
 ## Roadmap
 
@@ -55,7 +57,6 @@ This repository is developed as part of the **Prototype Fund (Germany)** and wil
 - Expand toolkit with plugins for DAWs and live performance setups
 - Build community network around inclusive music-making
 
-
 ## Demo
 
 This repository includes a tiny browser demo:
@@ -66,18 +67,14 @@ This repository includes a tiny browser demo:
 
 > Note: Runs locally without dependencies. Uses the Web Audio API.
 
-
-
 ## Contributing
-Contributions, feedback, and collaborations are welcome!  
-Please open an issue or submit a pull request.  
 
+Contributions, feedback, and collaborations are welcome!  
+Please open an issue or submit a pull request.
 
 ## License
 
 This project is licensed under the **MIT License** – free to use, adapt, and share.
-
-
 
 ## Contact
 
@@ -85,7 +82,5 @@ This project is licensed under the **MIT License** – free to use, adapt, and s
 🎸 Musician | Developer | Founder of Indjoov Arts  
 📧 [niki.indjov@gmail.com](mailto:niki.indjov@gmail.com)  
 🌐 [indjoov.com](https://indjoov.com)
-
-
 
 ✨ _With Sonic Inclusion, we aim to turn sound into a shared, inclusive experience for all._
