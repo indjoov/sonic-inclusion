@@ -1,5 +1,5 @@
 # 🧭 Sonic Inclusion – Development Roadmap Overview  
-*AI × Sound × Accessibility | Prototype Fund 2025*
+*AI × Sound × Accessibility | Prototype Fund*
 
 ---
 
