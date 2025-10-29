@@ -29,6 +29,14 @@ The project explores how **AI-driven tools** can support people with hearing imp
 
 This repository is developed as part of the **Prototype Fund (Germany)** and will grow into a publicly available resource for inclusive audio-visual design.
 
+---
+### 🧭 Development Roadmap
+📄 [View Full Roadmap Overview →](./docs/ROADMAP_OVERVIEW.md)
+
+The roadmap outlines all six project phases — from research to release — including milestones, technical tasks, and collaboration goals.  
+Each task in the roadmap is synchronized with the GitHub Project **“Development Roadmap – Sonic Inclusion.”**
+---
+
 ## Goals
 
 - Build an **AI-powered accessibility toolkit** for sound and music
