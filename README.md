@@ -27,8 +27,8 @@ The project explores how **AI-driven tools** can support people with hearing imp
 - 🧩 **Providing modular tools** for inclusive music software and installations
 - 🤝 **Enabling collaboration** between sound artists, developers, and accessibility communities
 
+Public available resource for inclusive audio-visual design. 
 Prototype Fund Germany application submitted. 
-Public available resource for inclusive audio-visual design.
 
 [![Project Status: Active – Phase 1 Research & Planning](https://img.shields.io/badge/Status-Active%20%E2%80%93%20Phase%201%20Research%20%26%20Planning-brightgreen?style=for-the-badge)](./docs/ROADMAP_OVERVIEW.md)
 
