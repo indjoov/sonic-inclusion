@@ -14,7 +14,9 @@ Use microphone input or upload an audio file to see real-time color & shape visu
   <img src="https://img.shields.io/badge/Accessibility-Inclusive-brightgreen.svg" alt="Inclusive Design">
   <img src="https://img.shields.io/badge/Open%20Source-Yes-success.svg" alt="Open Source">
 </p>
+## Documentation
 
+- [Architecture](./ARCHITECTURE.md) — system overview and accessibility-by-design principles.
 **Vision:**  
 _Making sound visible, touchable, and inclusive for everyone._ 🌍🎶✨
 
