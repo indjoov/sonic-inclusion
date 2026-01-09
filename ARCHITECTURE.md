@@ -82,6 +82,7 @@ To maintain a stable frame rate (target: **60 FPS**) even under continuous audio
 
 The AI components described below represent the **planned research and prototyping direction** of Sonic Inclusion within the funding period.  
 Early versions may be rule-based or heuristic, with gradual integration of lightweight machine learning models.
+The models are designed to be privacy-preserving by running entirely on the user's device (Edge AI), ensuring no audio data is ever sent to a server.
 
 ### 5.1 Neural Audio Feature Mapping
 - Exploration of browser-based ML models (e.g. via **TensorFlow.js**) for sound classification
