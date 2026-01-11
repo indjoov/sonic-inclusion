@@ -112,7 +112,22 @@ All ML processing is designed to remain **on-device**, ensuring privacy, transpa
 
 ---
 
-## 6. Accessibility-by-Design Principles
+## 6. ♿ Accessibility & Inclusion Standards 
+
+To ensure the project meets the needs of its target audience and aligns with public interest tech goals, the architecture follows these core principles:
+
+### 1. WCAG 2.1 Compliance
+The frontend (React) is designed to meet Web Content Accessibility Guidelines (WCAG) 2.1 level AA, ensuring that controls are keyboard-navigable and screen-reader friendly.
+
+### 2. Multi-Modal Feedback Loop
+The system is built to provide redundant sensory information:
+* **Visual:** Audio data is translated into high-contrast, low-latency visual patterns.
+* **Haptic (Future Scope):** The modular backend is prepared to send signal data to haptic devices (vibration motors/wearables) via standard protocols.
+* **Cognitive:** Simplified UI modes to reduce cognitive load while interacting with complex audio landscapes.
+
+### 3. Privacy by Design & Sovereignty
+* **Local Processing:** By prioritizing client-side audio analysis (Web Audio API), we ensure that sensitive user audio data never leaves the device.
+* **Open Protocol:** The internal API for audio-to-visual mapping will be documented as an open standard, allowing other inclusive tech projects to build upon our findings.
 
 Accessibility is treated as a **core architectural constraint**, not a post-processing feature.
 
