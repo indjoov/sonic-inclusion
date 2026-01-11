@@ -28,7 +28,15 @@ The project explores how **AI-driven tools** can support people with hearing imp
 - 🎵 **Translating audio into adaptive visual & haptic feedback**
 - 🧩 **Providing modular tools** for inclusive music software and installations
 - 🤝 **Enabling collaboration** between sound artists, developers, and accessibility communities
+ ---
 
+## 🚀 Technical Core: AI Audio Analysis
+The toolkit now includes a Python-powered backend for deep audio analysis:
+- **Haptic Feedback:** Extracting bass frequencies (0-150Hz) for vibration patterns.
+- **Visual Triggers:** Onset detection for real-time visual accessibility.
+- **Powered by:** Librosa, FastAPI, and NumPy.
+
+*You can find the logic in the `/backend` directory.*
 Public available resource for inclusive audio-visual design. 
 Prototype Fund Germany application submitted. 
 
