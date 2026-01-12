@@ -19,7 +19,17 @@ Use microphone input or upload an audio file to see real-time color & shape visu
 - [Architecture](./ARCHITECTURE.md) — system overview and accessibility-by-design principles.
 **Vision:**  
 _Making sound visible, touchable, and inclusive for everyone._ 🌍🎶✨
+---
 
+## 🛠 Technical Architecture & Implementation
+
+Sonic Inclusion is built as a modular framework designed for high-performance audio processing:
+
+* **Audio Pipeline:** Uses the **Web Audio API** for real-time signal acquisition and **Fast Fourier Transform (FFT)** to extract frequency data without blocking the main thread.
+* **AI Backend:** A Python-powered core utilizing **Librosa** and **NumPy** for deep spectral analysis, including onset detection and bass frequency extraction (0-150Hz) for haptic patterns.
+* **Synchronization:** Leverages `requestAnimationFrame` to ensure sub-15ms latency between audio triggers and visual rendering, providing a seamless experience for sensory needs.
+
+---
 ## About the Project
 
 **Sonic Inclusion** is an open-source toolkit that empowers musicians, artists, and developers to create **barrier-free sound experiences**.  
