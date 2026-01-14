@@ -24,6 +24,7 @@ _Making sound visible, touchable, and inclusive for everyone._ 🌍🎶✨
 **Accessible Music Perception for Deaf and Hard-of-Hearing Musicians**
 
 Many deaf and hard-of-hearing musicians experience music primarily through vibration, visual cues, and spatial perception rather than traditional audio monitoring. Existing music software and live performance tools are largely designed around hearing-centric workflows and often fail to provide meaningful real-time feedback for these users.
+Initial testing and feedback will focus on independent musicians, rehearsal contexts, and small ensemble situations before expanding to educational and installation-based use cases.
 
 **Sonic Inclusion addresses this gap** by translating sound into real-time visual and haptic feedback, enabling deaf and hard-of-hearing musicians to perceive rhythm, dynamics, and low-frequency structure (bass) while composing, rehearsing, or performing music.
 
