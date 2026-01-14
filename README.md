@@ -15,6 +15,10 @@ Use microphone input or upload an audio file to see real-time color & shape visu
   <img src="https://img.shields.io/badge/Open%20Source-Yes-success.svg" alt="Open Source">
 </p>
 
+- [Architecture](./ARCHITECTURE.md) — system overview and accessibility-by-design principles.
+**Vision:**  
+_Making sound visible, touchable, and inclusive for everyone._ 🌍🎶✨
+---
  ## 🎯 Lead Use Case
 
 **Accessible Music Perception for Deaf and Hard-of-Hearing Musicians**
@@ -43,13 +47,6 @@ This allows the musician to **feel and see musical structure**, stay in time wit
 - Shifts accessibility from a compensatory add-on to a **design-by-default principle**
 
 Sonic Inclusion is developed as an **open-source framework** to encourage collaboration between musicians, developers, educators, and accessibility communities, and to ensure long-term public value beyond a single prototype.
-
-
-- [Architecture](./ARCHITECTURE.md) — system overview and accessibility-by-design principles.
-**Vision:**  
-_Making sound visible, touchable, and inclusive for everyone._ 🌍🎶✨
----
-
 ## 🛠 Technical Architecture & Implementation
 
 Sonic Inclusion is built as a modular framework designed for high-performance audio processing:
