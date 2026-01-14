@@ -14,7 +14,36 @@ Use microphone input or upload an audio file to see real-time color & shape visu
   <img src="https://img.shields.io/badge/Accessibility-Inclusive-brightgreen.svg" alt="Inclusive Design">
   <img src="https://img.shields.io/badge/Open%20Source-Yes-success.svg" alt="Open Source">
 </p>
- 
+
+ ## 🎯 Lead Use Case
+
+**Accessible Music Perception for Deaf and Hard-of-Hearing Musicians**
+
+Many deaf and hard-of-hearing musicians experience music primarily through vibration, visual cues, and spatial perception rather than traditional audio monitoring. Existing music software and live performance tools are largely designed around hearing-centric workflows and often fail to provide meaningful real-time feedback for these users.
+
+**Sonic Inclusion addresses this gap** by translating sound into real-time visual and haptic feedback, enabling deaf and hard-of-hearing musicians to perceive rhythm, dynamics, and low-frequency structure (bass) while composing, rehearsing, or performing music.
+
+### Practical Scenario
+
+A deaf or hard-of-hearing musician uses Sonic Inclusion during a rehearsal or live performance:
+
+- Audio input (microphone, line-in, or audio file) is analyzed in real time.
+- Rhythmic onsets and low-frequency energy are extracted using AI-assisted audio analysis.
+- The system outputs:
+  - **Visual feedback** (color, shape, motion) synchronized to rhythm and intensity  
+  - **Optional haptic feedback** (e.g. vibration patterns) representing bass and pulse
+
+This allows the musician to **feel and see musical structure**, stay in time with other performers, and actively participate in ensemble situations.
+
+### Why This Matters
+
+- Enables **inclusive access** to music creation and performance
+- Supports **independent artistic practice** for deaf and hard-of-hearing musicians
+- Provides an **open, adaptable toolkit** that can be integrated into custom setups, installations, or educational contexts
+- Shifts accessibility from a compensatory add-on to a **design-by-default principle**
+
+Sonic Inclusion is developed as an **open-source framework** to encourage collaboration between musicians, developers, educators, and accessibility communities, and to ensure long-term public value beyond a single prototype.
+
 
 - [Architecture](./ARCHITECTURE.md) — system overview and accessibility-by-design principles.
 **Vision:**  
