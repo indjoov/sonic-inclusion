@@ -19,18 +19,18 @@
       <input id="fileInput" type="file" accept="audio/*" hidden aria-label="Choose audio file" />
 
       <div class="sliders">
-        <label>
-          Sensitivity
-          <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1" />
-        </label>
-        <label>
-          Color Mode
-          <select id="palette">
-            <option value="hue">Hue by pitch (default)</option>
-            <option value="energy">Hue by energy</option>
-            <option value="grayscale">High-contrast grayscale</option>
-          </select>
-        </label>
+       <label>
+    Sensitivity
+    <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1" aria-label="Adjust sound sensitivity" />
+</label>
+<label>
+    Color Mode
+    <select id="palette" aria-label="Select visualization color mode">
+        <option value="hue">Hue by pitch (default)</option>
+        <option value="energy">Hue by energy</option>
+        <option value="grayscale">High-contrast grayscale</option>
+    </select>
+</label>
       </div>
 
       <div class="kbd-hint" role="note">
