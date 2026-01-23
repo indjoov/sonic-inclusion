@@ -5,7 +5,7 @@
 
 ### 🔍 Project Summary  
 **Sonic Inclusion** is an open-source toolkit exploring **AI-assisted sound design**, **accessibility**, and **multi-sensory interaction** (Audio ↔ Visual ↔ Gesture).  
-Developed under **Prototype Fund Germany**, led by **Nicola Indjov / Indjoov Arts**.  
+Led by **Nicola Indjov / Indjoov Arts**.  
 The roadmap below outlines all milestones, tasks, and estimated hours across six phases.
 
 ---
@@ -109,8 +109,8 @@ ROADMAP_V2.md → future vision
 | 2 | Setup & Architecture | ✅ Complete |
 | 3 | Implementation & Testing | 🟡 In Progress |
 | 4 | Collaboration & Evaluation | 🟡 Active |
-| 5 | Documentation & Release | 🟢 Finalizing |
-| 6 | Outreach & Future Planning | 🟣 Upcoming |
+| 5 | Documentation & Release | 🟣 Planned |
+| 6 | Outreach & Future Planning | 🟣 Planned |
 
 ---
 
