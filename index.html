@@ -1,60 +1,62 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sonic Inclusion – Audio → Color & Shape</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sonic Inclusion - Audio → Color & Shape</title>
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <h1>Sonic Inclusion – Audio → Color & Shape</h1>
-    <p class="tagline">A tiny demo that turns sound into visual shapes and colors (prototype).</p>
-  </header>
+    <header>
+        <h1>Sonic Inclusion - Audio → Color & Shape</h1>
+        <p class="tagline">A tiny demo that turns sound into visual shapes and colors</p>
+    </header>
 
-  <main>
-    <section class="controls" aria-label="Audio input controls">
-      <button id="micBtn" class="primary">🎙️ Use Microphone</button>
-      <button id="fileBtn">📂 Load Audio File</button>
-      <input id="fileInput" type="file" accept="audio/*" hidden aria-label="Choose audio file" />
+    <main>
+        <section class="controls" aria-label="Audio input controls">
+            <button id="micBtn" class="primary">🎙️ Use Microphone</button>
+            <button id="fileBtn">📁 Load Audio File</button>
+            <button id="demoBtn">✨ Play Demo Song</button>
+            
+            <input id="fileInput" type="file" accept="audio/*" hidden aria-label="Choose audio file">
 
-      <div class="sliders">
-       <label>
-    Sensitivity
-    <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1" aria-label="Adjust sound sensitivity" />
-</label>
-<label>
-    Color Mode
-    <select id="palette" aria-label="Select visualization color mode">
-        <option value="hue">Hue by pitch (default)</option>
-        <option value="energy">Hue by energy</option>
-        <option value="grayscale">High-contrast grayscale</option>
-    </select>
-</label>
-      </div>
+            <div class="sliders">
+                <label>
+                    Sensitivity
+                    <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1" aria-label="Adjust visualization sensitivity">
+                </label>
+                <label>
+                    Color Mode
+                    <select id="palette" aria-label="Select visualization color mode">
+                        <option value="hue">Hue by pitch (default)</option>
+                        <option value="energy">Hue by energy</option>
+                        <option value="grayscale">High-contrast grayscale</option>
+                    </select>
+                </label>
+            </div>
 
-      <div class="kbd-hint" role="note">
-        ⌨️ Keyboard: <kbd>Space</kbd> = Start/Stop · <kbd>M</kbd> = Mic · <kbd>F</kbd> = File
-      </div>
-    </section>
+            <div class="kbd-hint" role="note">
+                ⌨️ Keyboard: <kbd>Space</kbd> = Start/Stop · <kbd>M</kbd> = Mic · <kbd>F</kbd> = File · <kbd>D</kbd> = Demo
+            </div>
+        </section>
 
-    <section class="stage" aria-label="Visualization">
-      <canvas id="viz" width="960" height="540" aria-hidden="true"></canvas>
-    </section>
+        <section class="stage" aria-label="Visualization">
+            <canvas id="viz" width="960" height="540" aria-hidden="true"></canvas>
+        </section>
 
-    <section class="a11y" aria-label="Live description for screen readers">
-      <p id="srText" aria-live="polite">
-        Visualization idle. Load a file or enable microphone to begin.
-      </p>
-    </section>
-  </main>
+        <section class="a11y" aria-label="Live description for screen readers">
+            <p id="srText" aria-live="polite">
+                Visualization idle. Click anywhere to initialize, then load a file or enable microphone.
+            </p>
+        </section>
+    </main>
 
-  <footer>
-    <small>
-      © 2025 Indjoov Arts · MIT License · This is an early prototype for the “Sonic Inclusion” toolkit.
-    </small>
-  </footer>
+    <footer>
+        <small>
+            © 2025 Indjoov Arts · MIT License · This is an early prototype for "Sonic Inclusion".
+        </small>
+    </footer>
 
-  <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>
