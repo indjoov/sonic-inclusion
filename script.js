@@ -1,6 +1,5 @@
 /**
- * Sonic Inclusion - Main Controller
- * Uses the professional AudioEngine module
+ * Sonic Inclusion - Main Controller (Module Version)
  */
 import { AudioEngine } from './audio/AudioEngine.js';
 
@@ -10,39 +9,93 @@ const srText = document.getElementById('srText');
 const palette = document.getElementById('palette');
 const sens = document.getElementById('sens');
 
+// Select the buttons and inputs
+const micBtn = document.getElementById('micBtn');
+const fileBtn = document.getElementById('fileBtn');
+const demoBtn = document.getElementById('demoBtn');
+const fileInput = document.getElementById('fileInput');
+
 const engine = new AudioEngine();
 let visualizer = null;
 let raf;
 
-// 1. Initialization on user gesture
+// Initialize Engine on first click
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init({ debug: true });
-        // Link visualization to engine
         visualizer = engine.getVisualizerData();
-        srText.textContent = "Audio Engine ready. Press 'D' for Demo or load a file.";
+        srText.textContent = "Engine ready. Choose an input below.";
         loop();
     }
 }, { once: true });
 
-// 2. Helper Functions for Visualization
+// --- BUTTON WIRING (This replaces the old HTML onclicks) ---
+
+// 1. Microphone
+micBtn.addEventListener('click', async () => {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const micSource = engine.ctx.createMediaStreamSource(stream);
+        // In the new engine, we connect to a bus (e.g., music)
+        const micGain = engine.createSource("music");
+        micSource.connect(micGain);
+        engine.resume();
+        srText.textContent = "Microphone visualization running.";
+    } catch (err) {
+        alert("Microphone error: " + err.message);
+    }
+});
+
+// 2. File Upload
+fileBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        const arrayBuf = await file.arrayBuffer();
+        const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
+        playBuffer(audioBuf, file.name);
+    }
+});
+
+// 3. Demo Song (Folder Audio)
+demoBtn.addEventListener('click', () => {
+    // REPLACE 'your-song.mp3' with your actual filename from the /audio folder
+    playDemoFile('your-song.mp3'); 
+});
+
+async function playBuffer(buffer, name) {
+    engine.stop(); // Stop previous audio
+    const source = engine.createSource("music");
+    source.buffer = buffer;
+    source.loop = true;
+    source.start(0);
+    engine.resume();
+    srText.textContent = `Playing file: ${name}`;
+}
+
+async function playDemoFile(filename) {
+    try {
+        const response = await fetch(`audio/${filename}`);
+        const arrayBuf = await response.arrayBuffer();
+        const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
+        playBuffer(audioBuf, filename);
+    } catch (err) {
+        console.error("Demo failed:", err);
+        srText.textContent = "Error loading demo file.";
+    }
+}
+
+// --- VISUALIZATION LOGIC ---
+
 function energy(bins, start, end) {
     let sum = 0;
     for (let i = start; i < end; i++) sum += bins[i];
     return sum / (end - start + 1 || 1);
 }
 
-function hueFor(pitchIndex, mode) {
-    if (mode === 'energy') return (pitchIndex * 1.3) % 360;
-    if (mode === 'grayscale') return 0;
-    return (pitchIndex * 2.1) % 360;
-}
-
-// 3. The Main Drawing Loop
 function loop() {
     if (!visualizer) return;
-
-    // Get fresh data
     visualizer.analyser.getByteFrequencyData(visualizer.dataFreq);
     visualizer.analyser.getByteTimeDomainData(visualizer.dataTime);
 
@@ -50,74 +103,28 @@ function loop() {
     const h = canvas.height;
     const s = parseFloat(sens.value);
 
-    // Analyze bands
+    c.clearRect(0, 0, w, h);
+
     const low = energy(visualizer.dataFreq, 2, 32);
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
-    const glow = Math.min(0.8, ((low + mid + high) / 765) * 0.9 * s);
 
-    // Clear and draw background
-    c.clearRect(0, 0, w, h);
-    c.fillStyle = `rgba(124, 77, 255, ${glow})`;
-    c.fillRect(0, 0, w, h);
-
-    // Draw central circles
+    // Drawing the circles
     const bands = [
-        { e: low, r: 70, ix: 24 },
-        { e: mid, r: 120, ix: 96 },
-        { e: high, r: 170, ix: 180 }
+        { e: low, r: 70, color: 'hue' },
+        { e: mid, r: 120, color: 'energy' },
+        { e: high, r: 170, color: 'hue' }
     ];
 
-    bands.forEach(b => {
-        const hue = palette.value === 'grayscale' ? 0 : hueFor(b.ix, palette.value);
-        const alpha = Math.min(0.95, 0.15 + (b.e / 255) * 0.85 * s);
+    bands.forEach((b, i) => {
+        const hue = (b.e * 1.5 + i * 50) % 360;
         c.beginPath();
-        c.arc(w / 2, h / 2, b.r + (b.e / 8) * s, 0, Math.PI * 2);
-        c.fillStyle = `hsla(${hue}, 80%, 55%, ${alpha})`;
+        c.arc(w / 2, h / 2, b.r + (b.e / 5) * s, 0, Math.PI * 2);
+        c.fillStyle = `hsla(${hue}, 80%, 60%, 0.6)`;
         c.fill();
     });
 
-    // Waveform ribbon
-    c.beginPath();
-    const step = Math.floor(visualizer.dataTime.length / w);
-    for (let x = 0; x < w; x++) {
-        const v = visualizer.dataTime[x * step] / 255;
-        const y = h * (0.5 + (v - 0.5) * 0.8 * s);
-        if (x === 0) c.moveTo(x, y);
-        else c.lineTo(x, y);
-    }
-    c.strokeStyle = 'rgba(255,255,255,0.25)';
-    c.lineWidth = 2;
-    c.stroke();
-
     raf = requestAnimationFrame(loop);
-}
-
-// 4. Input Handling
-window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') {
-        engine.state === 'running' ? engine.ctx.suspend() : engine.resume();
-    }
-    if (e.key.toLowerCase() === 'd') {
-        // Automatically plays a file from your /audio folder
-        playDemo('your-file.mp3'); 
-    }
-});
-
-async function playDemo(file) {
-    if (engine.state === 'idle') return;
-    try {
-        const response = await fetch(`audio/${file}`);
-        const arrayBuf = await response.arrayBuffer();
-        const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
-        const source = engine.createSource("music");
-        source.buffer = audioBuf;
-        source.loop = true;
-        source.start(0);
-        srText.textContent = `Playing demo: ${file}`;
-    } catch (err) {
-        console.error("Demo error:", err);
-    }
 }
 
 // Handle resizing
