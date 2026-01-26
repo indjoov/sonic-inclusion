@@ -3,12 +3,60 @@ import { createGain, setGainSmooth } from "./nodes.js";
 
 export class AudioEngine {
   constructor() {
+    // Core state
     this.ctx = null;
     this.master = null;
     this.buses = {};
     this.transport = new Transport();
     this.state = "idle";
+
+    // --- 3.2 minimal: tiny event system + state helper ---
+    this.listeners = {
+      statechange: new Set(),
+      error: new Set(),
+    };
   }
+
+  // --- 3.2 minimal: tiny event system + state helper ---
+
+  _emit(type, payload) {
+    const set = this.listeners?.[type];
+    if (!set) return;
+
+    for (const fn of set) {
+      try {
+        fn(payload);
+      } catch (e) {
+        // avoid infinite loops if an error handler throws
+        if (type !== "error") {
+          this._emit("error", { error: e, source: "listener", type });
+        }
+      }
+    }
+  }
+
+  on(type, fn) {
+    const set = this.listeners?.[type];
+    if (!set || typeof fn !== "function") return () => {};
+    set.add(fn);
+    // unsubscribe function
+    return () => this.off(type, fn);
+  }
+
+  off(type, fn) {
+    const set = this.listeners?.[type];
+    if (!set) return;
+    set.delete(fn);
+  }
+
+  _setState(next) {
+    if (this.state === next) return;
+    const prev = this.state;
+    this.state = next;
+    this._emit("statechange", { prev, next });
+  }
+
+  // --- Engine lifecycle ---
 
   async init({ startSuspended = true } = {}) {
     if (this.ctx) return;
@@ -29,11 +77,11 @@ export class AudioEngine {
 
     this.master.connect(this.ctx.destination);
 
-    this.state = "ready";
+    this._setState("ready");
 
     if (startSuspended) {
       await this.ctx.suspend();
-      this.state = "suspended";
+      this._setState("suspended");
     }
   }
 
@@ -42,7 +90,7 @@ export class AudioEngine {
     if (this.ctx.state !== "running") {
       await this.ctx.resume();
     }
-    this.state = "running";
+    this._setState("running");
   }
 
   play() {
@@ -66,26 +114,44 @@ export class AudioEngine {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
 
-    if (values.master !== undefined) {
+    if (values.master !== undefined && this.master?.gain) {
       setGainSmooth(this.master.gain, values.master, now);
     }
-    if (values.music !== undefined) {
+    if (values.music !== undefined && this.buses?.music?.gain) {
       setGainSmooth(this.buses.music.gain, values.music, now);
     }
-    if (values.fx !== undefined) {
+    if (values.fx !== undefined && this.buses?.fx?.gain) {
       setGainSmooth(this.buses.fx.gain, values.fx, now);
     }
-    if (values.ui !== undefined) {
+    if (values.ui !== undefined && this.buses?.ui?.gain) {
       setGainSmooth(this.buses.ui.gain, values.ui, now);
     }
   }
 
   async dispose() {
     if (!this.ctx) return;
-    this.transport.reset();
-    this.master.disconnect();
-    await this.ctx.close();
+
+    try {
+      this.transport.reset();
+    } catch (e) {
+      this._emit("error", { error: e, source: "transport.reset" });
+    }
+
+    try {
+      this.master?.disconnect();
+    } catch (e) {
+      this._emit("error", { error: e, source: "master.disconnect" });
+    }
+
+    try {
+      await this.ctx.close();
+    } catch (e) {
+      this._emit("error", { error: e, source: "ctx.close" });
+    }
+
     this.ctx = null;
-    this.state = "disposed";
+    this.master = null;
+    this.buses = {};
+    this._setState("disposed");
   }
 }
