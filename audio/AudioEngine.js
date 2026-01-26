@@ -51,8 +51,6 @@ export class AudioEngine {
     const set = this.listeners?.[type];
     if (!set || typeof fn !== "function") return () => {};
     set.add(fn);
-
-    // unsubscribe function
     return () => this.off(type, fn);
   }
 
@@ -73,23 +71,56 @@ export class AudioEngine {
     this._emit("statechange", { prev, next });
   }
 
+  // --- 3.4: debug can be enabled/disabled at runtime (no duplicates) ---
+  _attachDebugListeners() {
+    if (this._debugUnsubs.length > 0) return; // already attached
+
+    const unsubState = this.on("statechange", ({ prev, next }) =>
+      console.log("[AudioEngine:state]", prev, "→", next)
+    );
+
+    const unsubErr = this.on("error", (payload) =>
+      console.warn("[AudioEngine:error]", payload)
+    );
+
+    this._debugUnsubs.push(unsubState, unsubErr);
+  }
+
+  _detachDebugListeners() {
+    for (const unsub of this._debugUnsubs) {
+      try {
+        unsub();
+      } catch {}
+    }
+    this._debugUnsubs = [];
+  }
+
+  setDebug(enabled = true) {
+    const next = !!enabled;
+    if (this.debug === next) return;
+
+    this.debug = next;
+
+    if (this.debug) {
+      this._attachDebugListeners();
+      this._log("debug enabled");
+    } else {
+      this._log("debug disabled");
+      this._detachDebugListeners();
+    }
+  }
+
+  toggleDebug() {
+    this.setDebug(!this.debug);
+    return this.debug;
+  }
+
   // --- Engine lifecycle ---
   async init({ startSuspended = true, debug = false } = {}) {
     if (this.ctx) return;
 
-    // 3.3: set debug mode
-    this.debug = !!debug;
-
-    // 3.3: attach default debug listeners (safe, no duplicates)
-    if (this.debug && this._debugUnsubs.length === 0) {
-      const unsubState = this.on("statechange", ({ prev, next }) =>
-        this._log("state:", prev, "→", next)
-      );
-      const unsubErr = this.on("error", (payload) =>
-        this._log("error:", payload)
-      );
-      this._debugUnsubs.push(unsubState, unsubErr);
-    }
+    // set debug now (and attach listeners if needed)
+    this.setDebug(!!debug);
 
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -144,7 +175,6 @@ export class AudioEngine {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
 
-    // guard against missing nodes (safe during lifecycle)
     if (values.master !== undefined && this.master?.gain) {
       setGainSmooth(this.master.gain, values.master, now);
     }
@@ -161,10 +191,6 @@ export class AudioEngine {
 
   async dispose() {
     if (!this.ctx) return;
-
-    // remove debug listeners
-    for (const unsub of this._debugUnsubs) unsub();
-    this._debugUnsubs = [];
 
     try {
       this.transport.reset();
@@ -187,6 +213,9 @@ export class AudioEngine {
     this.ctx = null;
     this.master = null;
     this.buses = {};
+
+    // always detach debug listeners on dispose
+    this._detachDebugListeners();
 
     this._setState("disposed");
   }
