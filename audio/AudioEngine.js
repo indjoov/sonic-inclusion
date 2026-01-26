@@ -3,21 +3,22 @@ import { createGain, setGainSmooth } from "./nodes.js";
 
 export class AudioEngine {
   constructor() {
-    // Core state
+    // --- Core state ---
     this.ctx = null;
     this.master = null;
     this.buses = {};
     this.transport = new Transport();
     this.state = "idle";
 
-    // 3.2 minimal: tiny event system + state helper
+    // --- 3.2 minimal: tiny event system ---
     this.listeners = {
       statechange: new Set(),
       error: new Set(),
     };
 
-    // 3.3 minimal: debug flag
+    // --- 3.3 minimal: debug flag + bookkeeping ---
     this.debug = false;
+    this._debugUnsubs = [];
   }
 
   // --- 3.3 minimal: debug logger ---
@@ -36,7 +37,11 @@ export class AudioEngine {
       } catch (e) {
         // avoid infinite loops if an error handler throws
         if (type !== "error") {
-          this._emit("error", { error: e, source: "listener", type });
+          this._emit("error", {
+            error: e,
+            source: "listener",
+            type,
+          });
         }
       }
     }
@@ -46,6 +51,7 @@ export class AudioEngine {
     const set = this.listeners?.[type];
     if (!set || typeof fn !== "function") return () => {};
     set.add(fn);
+
     // unsubscribe function
     return () => this.off(type, fn);
   }
@@ -62,7 +68,7 @@ export class AudioEngine {
     this.state = next;
 
     // 3.3: log state changes
-    this._log("state", prev, "→", next);
+    this._log("state:", prev, "→", next);
 
     this._emit("statechange", { prev, next });
   }
@@ -74,22 +80,23 @@ export class AudioEngine {
     // 3.3: set debug mode
     this.debug = !!debug;
 
-    // 3.3: attach default debug listeners (only when debug=true)
-    if (this.debug) {
-      this.on("statechange", ({ prev, next }) =>
-        console.log("[AudioEngine:state]", prev, "→", next)
+    // 3.3: attach default debug listeners (safe, no duplicates)
+    if (this.debug && this._debugUnsubs.length === 0) {
+      const unsubState = this.on("statechange", ({ prev, next }) =>
+        this._log("state:", prev, "→", next)
       );
-      this.on("error", (payload) =>
-        console.warn("[AudioEngine:error]", payload)
+      const unsubErr = this.on("error", (payload) =>
+        this._log("error:", payload)
       );
+      this._debugUnsubs.push(unsubState, unsubErr);
     }
 
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Master output
+    // --- Master output ---
     this.master = createGain(this.ctx, 0.9);
 
-    // Logical buses
+    // --- Logical buses ---
     this.buses.music = createGain(this.ctx, 0.8);
     this.buses.fx = createGain(this.ctx, 0.8);
     this.buses.ui = createGain(this.ctx, 0.8);
@@ -137,19 +144,16 @@ export class AudioEngine {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
 
-    // guard against missing nodes (safer during lifecycle)
+    // guard against missing nodes (safe during lifecycle)
     if (values.master !== undefined && this.master?.gain) {
       setGainSmooth(this.master.gain, values.master, now);
     }
-
     if (values.music !== undefined && this.buses?.music?.gain) {
       setGainSmooth(this.buses.music.gain, values.music, now);
     }
-
     if (values.fx !== undefined && this.buses?.fx?.gain) {
       setGainSmooth(this.buses.fx.gain, values.fx, now);
     }
-
     if (values.ui !== undefined && this.buses?.ui?.gain) {
       setGainSmooth(this.buses.ui.gain, values.ui, now);
     }
@@ -157,6 +161,10 @@ export class AudioEngine {
 
   async dispose() {
     if (!this.ctx) return;
+
+    // remove debug listeners
+    for (const unsub of this._debugUnsubs) unsub();
+    this._debugUnsubs = [];
 
     try {
       this.transport.reset();
