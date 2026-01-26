@@ -10,15 +10,22 @@ export class AudioEngine {
     this.transport = new Transport();
     this.state = "idle";
 
-    // --- 3.2 minimal: tiny event system + state helper ---
+    // 3.2 minimal: tiny event system + state helper
     this.listeners = {
       statechange: new Set(),
       error: new Set(),
     };
+
+    // 3.3 minimal: debug flag
+    this.debug = false;
   }
 
-  // --- 3.2 minimal: tiny event system + state helper ---
+  // --- 3.3 minimal: debug logger ---
+  _log(...args) {
+    if (this.debug) console.log("[AudioEngine]", ...args);
+  }
 
+  // --- 3.2 minimal: tiny event system ---
   _emit(type, payload) {
     const set = this.listeners?.[type];
     if (!set) return;
@@ -53,13 +60,29 @@ export class AudioEngine {
     if (this.state === next) return;
     const prev = this.state;
     this.state = next;
+
+    // 3.3: log state changes
+    this._log("state", prev, "→", next);
+
     this._emit("statechange", { prev, next });
   }
 
   // --- Engine lifecycle ---
-
-  async init({ startSuspended = true } = {}) {
+  async init({ startSuspended = true, debug = false } = {}) {
     if (this.ctx) return;
+
+    // 3.3: set debug mode
+    this.debug = !!debug;
+
+    // 3.3: attach default debug listeners (only when debug=true)
+    if (this.debug) {
+      this.on("statechange", ({ prev, next }) =>
+        console.log("[AudioEngine:state]", prev, "→", next)
+      );
+      this.on("error", (payload) =>
+        console.warn("[AudioEngine:error]", payload)
+      );
+    }
 
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -114,15 +137,19 @@ export class AudioEngine {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
 
+    // guard against missing nodes (safer during lifecycle)
     if (values.master !== undefined && this.master?.gain) {
       setGainSmooth(this.master.gain, values.master, now);
     }
+
     if (values.music !== undefined && this.buses?.music?.gain) {
       setGainSmooth(this.buses.music.gain, values.music, now);
     }
+
     if (values.fx !== undefined && this.buses?.fx?.gain) {
       setGainSmooth(this.buses.fx.gain, values.fx, now);
     }
+
     if (values.ui !== undefined && this.buses?.ui?.gain) {
       setGainSmooth(this.buses.ui.gain, values.ui, now);
     }
@@ -152,6 +179,7 @@ export class AudioEngine {
     this.ctx = null;
     this.master = null;
     this.buses = {};
+
     this._setState("disposed");
   }
 }
