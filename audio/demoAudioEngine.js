@@ -1,18 +1,18 @@
 import { AudioEngine } from "./AudioEngine.js";
 
-const engine = new AudioEngine();
-
-// log state changes + errors
-engine.on("statechange", ({ prev, next }) =>
-  console.log("[AudioEngine] state:", prev, "→", next)
-);
-engine.on("error", (payload) =>
-  console.error("[AudioEngine] error:", payload)
-);
-
-window.engine = engine; // for manual testing in devtools
-
 (async () => {
-  await engine.init({ startSuspended: true });
-  await engine.resume(); // optional but nice for immediate feedback
+  const engine = new AudioEngine();
+
+  // Debug beim Start an + start suspended (gut für Browser-Autoplay-Regeln)
+  await engine.init({ startSuspended: true, debug: true });
+
+  // Optional: im DevTools schnell testen
+  window.engine = engine;
+
+  // kleine Hinweis-Logs
+  console.log("[demo] engine ready, current state:", engine.state);
+  console.log("[demo] Try in console: await engine.resume(); engine.play(); engine.stop(); engine.setDebug(false);");
+
+  // Optional: sofort resume für schnellen Test:
+  // await engine.resume();
 })();
