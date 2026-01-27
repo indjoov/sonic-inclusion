@@ -48,9 +48,9 @@ fileInput.addEventListener('change', async (e) => {
     }
 });
 
-// Demo-Button mit präzisem Pfad
+// Demo-Button
 demoBtn.addEventListener('click', () => {
-    // Dieser Pfad muss exakt zu deinem GitHub-Ordner passen
+    // Probiere den Pfad exakt so aus, wie er in GitHub steht
     playDemoFile('./media/kasubo hoerprobe.mp3'); 
 });
 
@@ -74,8 +74,8 @@ async function playDemoFile(filepath) {
         const response = await fetch(filepath);
         
         if (!response.ok) {
-            // Wenn die Datei nicht gefunden wird, siehst du das jetzt sofort auf dem Screen!
-            throw new Error(`Datei nicht gefunden (Status: ${response.status}). Prüfe den Ordner 'media' und den Dateinamen!`);
+            // Zeigt dir den exakten Pfad an, der nicht funktioniert
+            throw new Error(`Datei nicht gefunden unter: ${filepath}`);
         }
         
         const arrayBuf = await response.arrayBuffer();
@@ -83,8 +83,8 @@ async function playDemoFile(filepath) {
         playBuffer(audioBuf, "Kasubo Demo");
     } catch (err) {
         console.error("Demo-Fehler:", err);
-        // Die Fehlermeldung erscheint direkt unter den Buttons
-        srText.textContent = err.message;
+        // Die Fehlermeldung erscheint direkt im Text unter den Buttons
+        srText.textContent = err.message + " - Prüfe den Dateinamen in GitHub!";
     }
 }
 
