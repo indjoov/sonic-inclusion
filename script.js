@@ -3,7 +3,6 @@ import { AudioEngine } from './audio/AudioEngine.js';
 const canvas = document.getElementById('viz');
 const c = canvas.getContext('2d');
 const srText = document.getElementById('srText');
-const palette = document.getElementById('palette');
 const sens = document.getElementById('sens');
 const micBtn = document.getElementById('micBtn');
 const fileBtn = document.getElementById('fileBtn');
@@ -14,34 +13,34 @@ const engine = new AudioEngine();
 let visualizer = null;
 let raf;
 
-// 1. Initialisierung beim ersten Klick
+// 1. Initialisierung beim allerersten Klick auf die Seite
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
-        await engine.init({ debug: true });
+        await engine.init();
         visualizer = engine.getVisualizerData();
-        srText.textContent = "Engine ready. Click a button to start.";
+        srText.textContent = "Engine bereit. Wähle eine Quelle.";
         loop();
     }
 }, { once: true });
 
-// --- Controls ---
+// --- Steuerung ---
 
+// Mikrofon
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Korrekte Methode: createMediaStreamSource
         const micSource = engine.ctx.createMediaStreamSource(stream);
         const micGain = engine.createSource("music");
         micSource.connect(micGain);
         await engine.resume();
-        srText.textContent = "Microphone active.";
+        srText.textContent = "Mikrofon aktiv.";
     } catch (err) { 
-        alert("Mic error: " + err.message); 
+        alert("Mikrofon-Fehler: " + err.message); 
     }
 });
 
+// Eigene Datei laden
 fileBtn.addEventListener('click', () => fileInput.click());
-
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -51,37 +50,33 @@ fileInput.addEventListener('change', async (e) => {
     }
 });
 
+// Die Kasubo-Demo im media-Ordner
 demoBtn.addEventListener('click', () => {
-    // Greift auf deine MP3 im media-Ordner zu
     playDemoFile('kasubo hoerprobe.mp3'); 
 });
 
-// --- Audio Logic ---
+// --- Audio Funktionen ---
 
 async function playBuffer(buffer, name) {
     engine.stop();
     const source = engine.createSource("music");
     source.buffer = buffer;
     source.loop = true;
-    
-    // Startet die Wiedergabe
-    source.start(0); 
-    
+    source.start(0); // WICHTIG: Startet den Ton!
     await engine.resume();
-    srText.textContent = `Playing: ${name}`;
+    srText.textContent = `Spiele: ${name}`;
 }
 
 async function playDemoFile(filename) {
     try {
-        // Pfad zu deinem media-Ordner
         const response = await fetch(`media/${filename}`);
-        if (!response.ok) throw new Error('File not found');
+        if (!response.ok) throw new Error('Datei im media-Ordner nicht gefunden');
         const arrayBuf = await response.arrayBuffer();
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
         playBuffer(audioBuf, filename);
     } catch (err) {
-        console.error("Demo error:", err);
-        srText.textContent = "Error loading demo from /media folder.";
+        console.error("Demo-Fehler:", err);
+        srText.textContent = "Fehler beim Laden der Demo.";
     }
 }
 
@@ -100,8 +95,6 @@ function loop() {
     }
     
     visualizer.analyser.getByteFrequencyData(visualizer.dataFreq);
-    visualizer.analyser.getByteTimeDomainData(visualizer.dataTime);
-
     const w = canvas.width;
     const h = canvas.height;
     const s = parseFloat(sens.value);
@@ -128,10 +121,11 @@ function loop() {
     raf = requestAnimationFrame(loop);
 }
 
+// Canvas-Größe anpassen
 function fitCanvas() {
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * (window.devicePixelRatio || 1);
-    canvas.height = rect.height * (window.devicePixelRatio || 1);
+    canvas.width = rect.width;
+    canvas.height = rect.height;
 }
 window.addEventListener('resize', fitCanvas);
 fitCanvas();
