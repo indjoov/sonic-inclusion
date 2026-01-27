@@ -42,16 +42,16 @@ fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (file) {
+        srText.textContent = `Lade lokale Datei: ${file.name}...`;
         const arrayBuf = await file.arrayBuffer();
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
         playBuffer(audioBuf, file.name);
     }
 });
 
-// Demo-Button
 demoBtn.addEventListener('click', () => {
-    // Probiere den Pfad exakt so aus, wie er in GitHub steht
-    playDemoFile('./media/kasubo hoerprobe.mp3'); 
+    // Falls die Datei sehr groß ist, dauert das Laden bei GitHub
+    playDemoFile('media/kasubo hoerprobe.mp3'); 
 });
 
 // --- Audio Funktionen ---
@@ -70,21 +70,23 @@ async function playBuffer(buffer, name) {
 
 async function playDemoFile(filepath) {
     try {
-        srText.textContent = "Lade Demo...";
-        const response = await fetch(filepath);
+        srText.textContent = "Lade Demo vom Server (bitte warten)...";
         
+        const response = await fetch(filepath);
         if (!response.ok) {
-            // Zeigt dir den exakten Pfad an, der nicht funktioniert
-            throw new Error(`Datei nicht gefunden unter: ${filepath}`);
+            throw new Error(`Datei nicht gefunden (Status: ${response.status})`);
         }
         
+        // Liest die Daten als ArrayBuffer
         const arrayBuf = await response.arrayBuffer();
+        
+        srText.textContent = "Dekodiere Audiodaten...";
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
+        
         playBuffer(audioBuf, "Kasubo Demo");
     } catch (err) {
         console.error("Demo-Fehler:", err);
-        // Die Fehlermeldung erscheint direkt im Text unter den Buttons
-        srText.textContent = err.message + " - Prüfe den Dateinamen in GitHub!";
+        srText.textContent = "Fehler: " + err.message;
     }
 }
 
