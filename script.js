@@ -9,11 +9,19 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
+// Neuer Button für die Aufnahme (Stelle sicher, dass dieser in deiner HTML existiert oder nutze diesen Code)
+const recBtn = document.createElement('button');
+recBtn.textContent = "⏺ Record Video";
+recBtn.style.marginLeft = "10px";
+demoBtn.parentNode.insertBefore(recBtn, demoBtn.nextSibling);
+
 const engine = new AudioEngine();
 let visualizer = null;
 let raf;
+let mediaRecorder;
+let recordedChunks = [];
 
-// 1. Initialisierung beim ersten Klick auf die Seite
+// 1. Initialisierung beim ersten Klick
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
@@ -23,7 +31,60 @@ window.addEventListener('click', async () => {
     }
 }, { once: true });
 
-// --- Steuerung ---
+// --- Aufnahme Logik ---
+
+recBtn.addEventListener('click', () => {
+    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+        startRecording();
+    } else {
+        stopRecording();
+    }
+});
+
+function startRecording() {
+    recordedChunks = [];
+    // Stream vom Canvas erfassen (30 Bilder pro Sekunde)
+    const stream = canvas.captureStream(30);
+    
+    // Optional: Audio zum Video-Stream hinzufügen
+    if (engine.ctx.destination) {
+        const audioDest = engine.ctx.createMediaStreamDestination();
+        engine.master.connect(audioDest);
+        stream.addTrack(audioDest.stream.getAudioTracks()[0]);
+    }
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+    
+    mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = saveRecording;
+    
+    mediaRecorder.start();
+    recBtn.textContent = "⏹ Stop Recording";
+    recBtn.style.backgroundColor = "#ff4444";
+    srText.textContent = "Aufnahme läuft...";
+}
+
+function stopRecording() {
+    mediaRecorder.stop();
+    recBtn.textContent = "⏺ Record Video";
+    recBtn.style.backgroundColor = "";
+}
+
+function saveRecording() {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sonic-visualizer-${Date.now()}.webm`;
+    a.click();
+    URL.revokeObjectURL(url);
+    srText.textContent = "Video gespeichert!";
+}
+
+// --- Steuerung (bestehend) ---
 
 micBtn.addEventListener('click', async () => {
     try {
@@ -42,7 +103,7 @@ fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (file) {
-        srText.textContent = `Lade lokale Datei: ${file.name}...`;
+        srText.textContent = `Lade Datei: ${file.name}...`;
         const arrayBuf = await file.arrayBuffer();
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
         playBuffer(audioBuf, file.name);
@@ -50,11 +111,8 @@ fileInput.addEventListener('change', async (e) => {
 });
 
 demoBtn.addEventListener('click', () => {
-    // Falls die Datei sehr groß ist, dauert das Laden bei GitHub
     playDemoFile('media/kasubo hoerprobe.mp3'); 
 });
-
-// --- Audio Funktionen ---
 
 async function playBuffer(buffer, name) {
     engine.stop();
@@ -70,27 +128,19 @@ async function playBuffer(buffer, name) {
 
 async function playDemoFile(filepath) {
     try {
-        srText.textContent = "Lade Demo vom Server (bitte warten)...";
-        
+        srText.textContent = "⏳ LADE DEMO VOM SERVER... BITTE WARTEN...";
         const response = await fetch(filepath);
-        if (!response.ok) {
-            throw new Error(`Datei nicht gefunden (Status: ${response.status})`);
-        }
-        
-        // Liest die Daten als ArrayBuffer
+        if (!response.ok) throw new Error(`Status: ${response.status}`);
         const arrayBuf = await response.arrayBuffer();
-        
-        srText.textContent = "Dekodiere Audiodaten...";
+        srText.textContent = "⚙️ DEKODIERE DATEN...";
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
-        
         playBuffer(audioBuf, "Kasubo Demo");
     } catch (err) {
-        console.error("Demo-Fehler:", err);
-        srText.textContent = "Fehler: " + err.message;
+        srText.textContent = "❌ FEHLER: " + err.message;
     }
 }
 
-// --- Visualisierung ---
+// --- Visualisierung (bestehend) ---
 
 function energy(bins, start, end) {
     let sum = 0;
@@ -103,12 +153,10 @@ function loop() {
         raf = requestAnimationFrame(loop);
         return;
     }
-    
     visualizer.analyser.getByteFrequencyData(visualizer.dataFreq);
     const w = canvas.width;
     const h = canvas.height;
     const s = parseFloat(sens.value);
-
     c.clearRect(0, 0, w, h);
 
     const low = energy(visualizer.dataFreq, 2, 32);
@@ -126,14 +174,12 @@ function loop() {
         c.arc(w / 2, h / 2, b.r + (b.e / 4) * s, 0, Math.PI * 2);
         c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.2 + (b.e / 400)})`;
         c.fill();
-        
         if (b.e > 150) {
             c.strokeStyle = `rgba(255, 255, 255, ${b.e / 255})`;
             c.lineWidth = 2;
             c.stroke();
         }
     });
-
     raf = requestAnimationFrame(loop);
 }
 
