@@ -11,7 +11,7 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
-// A11y status (optional but nice)
+// A11y status (optional but good)
 if (srText) {
   srText.setAttribute('aria-live', 'polite');
   srText.setAttribute('role', 'status');
@@ -45,11 +45,19 @@ gui.innerHTML = `
 `;
 document.body.appendChild(gui);
 
+// Record button
 const recBtn = document.createElement('button');
 recBtn.textContent = '⏺ RECORD CINEMATIC';
 recBtn.style.cssText =
   'margin-left:10px; background:#000; color:#ff0044; border:1px solid #ff0044; padding:10px 20px; cursor:pointer; font-weight:bold; border-radius:5px;';
 demoBtn?.parentNode?.insertBefore(recBtn, demoBtn.nextSibling);
+
+// Stop demo button
+const stopDemoBtn = document.createElement('button');
+stopDemoBtn.textContent = '⏹ STOP DEMO';
+stopDemoBtn.style.cssText =
+  'margin-left:10px; background:#000; color:#00d4ff; border:1px solid #00d4ff; padding:10px 20px; cursor:pointer; font-weight:bold; border-radius:5px;';
+demoBtn?.parentNode?.insertBefore(stopDemoBtn, recBtn.nextSibling);
 
 // --- ENGINE ---
 const engine = new AudioEngine();
@@ -63,7 +71,7 @@ let recordedChunks = [];
 let audioDest = null;
 let addedAudioTrack = null;
 
-// Demo playback (clean lifecycle)
+// Demo playback
 let demoSrc = null;
 
 // Visuals
@@ -102,11 +110,14 @@ function setStatus(msg) {
 
 async function ensureEngineReady() {
   if (engine.state === 'idle') {
-    setStatus('⏳ Initializing engine...');
-    await engine.init(); // keep your engine defaults
-    visualizer = engine.getVisualizerData();
+    setStatus('⏳ Initializing engine…');
+    await engine.init(); // keep engine defaults
+    // NOTE: your AudioEngine must expose this method
+    visualizer = engine.getVisualizerData?.() || null;
+
     overlay.style.opacity = '0';
     setTimeout(() => (overlay.style.display = 'none'), 500);
+
     if (!raf) loop();
     setStatus('✅ Engine ready');
   }
@@ -116,7 +127,7 @@ overlay.addEventListener('click', async () => {
   await ensureEngineReady();
 });
 
-// --- RECORDING (with clean connect/disconnect) ---
+// --- RECORDING (clean connect/disconnect) ---
 function pickBestMime() {
   const candidates = [
     'video/webm; codecs=vp9',
@@ -137,17 +148,15 @@ recBtn.addEventListener('click', async () => {
 
     const stream = canvas.captureStream(60);
 
-    // Create a NEW destination per recording session
+    // Per-session destination to prevent stacking
     audioDest = engine.ctx.createMediaStreamDestination();
 
-    // Connect master -> destination (recording)
+    // Connect master -> destination
     try {
       engine.master.connect(audioDest);
-    } catch (e) {
-      // ignore if already connected (shouldn't happen with per-session dest)
-    }
+    } catch {}
 
-    // Add audio track to canvas stream
+    // Add audio track to stream
     const audioTracks = audioDest.stream.getAudioTracks();
     if (audioTracks && audioTracks[0]) {
       addedAudioTrack = audioTracks[0];
@@ -166,15 +175,15 @@ recBtn.addEventListener('click', async () => {
     };
 
     mediaRecorder.onstop = () => {
-      // Disconnect master from recording destination (prevents stacking)
+      // Disconnect master from destination
       try {
         if (audioDest) engine.master.disconnect(audioDest);
-      } catch (e) {}
+      } catch {}
 
-      // Cleanup track
+      // Cleanup audio track
       try {
         if (addedAudioTrack) addedAudioTrack.stop();
-      } catch (e) {}
+      } catch {}
 
       audioDest = null;
       addedAudioTrack = null;
@@ -182,7 +191,7 @@ recBtn.addEventListener('click', async () => {
       const blob = new Blob(recordedChunks, { type: 'video/webm' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `Sonic_Inclusion_Cinematic.webm`;
+      a.download = 'Sonic_Inclusion_Cinematic.webm';
       a.click();
 
       setStatus('✅ Recording saved');
@@ -202,51 +211,53 @@ recBtn.addEventListener('click', async () => {
   }
 });
 
-// --- DEMO: play ONCE (no loop) + clean source lifecycle ---
-function stopDemoSource() {
-  if (!demoSrc) return;
-  try { demoSrc.onended = null; } catch (e) {}
-  try { demoSrc.stop(0); } catch (e) {}
-  try { demoSrc.disconnect(); } catch (e) {}
+// --- DEMO: play ONCE + clean lifecycle + suspend after stop/end ---
+async function stopDemoSource() {
+  if (!demoSrc) {
+    // still suspend if you want a clean state
+    try { await engine.ctx.suspend(); } catch {}
+    return;
+  }
+
+  try { demoSrc.onended = null; } catch {}
+  try { demoSrc.stop(0); } catch {}
+  try { demoSrc.disconnect(); } catch {}
   demoSrc = null;
+
+  try { await engine.ctx.suspend(); } catch {}
+  setStatus('⏹ Demo stopped');
 }
 
 async function playDemoFile(filepath) {
   try {
     await ensureEngineReady();
-
     setStatus('⏳ Buffering demo…');
 
     const response = await fetch(filepath);
     const arrayBuf = await response.arrayBuffer();
-
-    // Decode (needs AudioContext)
     const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
 
-    // Stop any previous demo source
-    stopDemoSource();
+    // Stop any previous demo
+    await stopDemoSource();
 
-    // If your engine has transport stuff, keep it stopped for demo playback
-    try { engine.stop(); } catch (e) {}
-
-    // IMPORTANT: Resume BEFORE starting source
+    // Resume BEFORE start
     await engine.resume();
 
     demoSrc = engine.ctx.createBufferSource();
     demoSrc.buffer = audioBuf;
-    demoSrc.loop = false; // ✅ ONCE
+    demoSrc.loop = false; // ✅ play once
 
-    // Route into music bus (fallback master)
+    // Route into music bus
     const target = engine.buses?.music || engine.master;
     demoSrc.connect(target);
 
-    demoSrc.onended = () => {
-      stopDemoSource();
+    demoSrc.onended = async () => {
+      // cleanup + suspend
+      await stopDemoSource();
       setStatus('✅ Demo finished (played once)');
     };
 
     demoSrc.start(0);
-
     setStatus('🎧 Demo playing (once)');
   } catch (err) {
     console.error(err);
@@ -255,6 +266,7 @@ async function playDemoFile(filepath) {
 }
 
 demoBtn?.addEventListener('click', () => playDemoFile('media/kasubo hoerprobe.mp3'));
+stopDemoBtn.addEventListener('click', () => stopDemoSource());
 
 // --- RENDER FUNCTIONS ---
 function drawGrid(w, h, low, hue) {
@@ -264,6 +276,7 @@ function drawGrid(w, h, low, hue) {
   c.strokeStyle = `hsla(${hue}, 100%, 50%, ${0.03 + low / 1500})`;
   const step = 80;
   gridOffset = (gridOffset + 0.2 + low / 60) % step;
+
   for (let x = -w; x < w; x += step) {
     c.beginPath();
     c.moveTo(x + gridOffset, -h);
@@ -291,7 +304,7 @@ function drawSideSpectrogram(w, h, data, hue) {
 }
 
 function loop() {
-  if (!visualizer) {
+  if (!visualizer || !visualizer.analyser) {
     raf = requestAnimationFrame(loop);
     return;
   }
@@ -325,12 +338,13 @@ function loop() {
   drawGrid(w, h, low, currentHue);
   drawSideSpectrogram(w, h, visualizer.dataFreq, currentHue);
 
-  // hookup waveform
+  // Waveform
   c.lineWidth = 2;
   c.strokeStyle = `hsla(${currentHue}, 100%, 70%, 0.4)`;
   c.beginPath();
   let x = 0;
   const sw = w / visualizer.dataTime.length;
+
   for (let i = 0; i < visualizer.dataTime.length; i++) {
     const y = (visualizer.dataTime[i] / 128.0 * h) / 2;
     if (i === 0) c.moveTo(x, y);
@@ -341,7 +355,9 @@ function loop() {
 
   // Bass impact
   if (low > 200) {
-    for (let i = 0; i < pAmount; i++) particles.push(new Particle(w / 2, h / 2, currentHue));
+    for (let i = 0; i < pAmount; i++) {
+      particles.push(new Particle(w / 2, h / 2, currentHue));
+    }
     if (srText) {
       srText.style.transform = `scale(${1 + low / 500}) rotate(${(Math.random() - 0.5) * 5}deg)`;
     }
@@ -370,7 +386,7 @@ function loop() {
     c.restore();
   });
 
-  // Logo "S"
+  // Logo
   c.font = `900 ${70 + low / 5}px sans-serif`;
   c.fillStyle = 'white';
   c.textAlign = 'center';
@@ -380,8 +396,7 @@ function loop() {
   c.fillText('S', w / 2, h / 2);
   c.shadowBlur = 0;
 
-  c.restore(); // end zoom
-
+  c.restore();
   raf = requestAnimationFrame(loop);
 }
 
