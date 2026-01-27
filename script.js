@@ -9,6 +9,7 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
+// Aufnahme-Button
 const recBtn = document.createElement('button');
 recBtn.textContent = "⏺ Video aufnehmen";
 recBtn.style.marginLeft = "10px";
@@ -24,24 +25,23 @@ let visualizer = null;
 let raf;
 let mediaRecorder;
 let recordedChunks = [];
-
-// Partikel-System Variablen
 let particles = [];
 
+// Partikel-Klasse für Funken
 class Particle {
     constructor(x, y, hue) {
         this.x = x;
         this.y = y;
         this.size = Math.random() * 4 + 1;
-        this.speedX = (Math.random() - 0.5) * 10;
-        this.speedY = (Math.random() - 0.5) * 10;
+        this.speedX = (Math.random() - 0.5) * 12;
+        this.speedY = (Math.random() - 0.5) * 12;
         this.color = `hsla(${hue}, 80%, 60%, 0.8)`;
-        this.life = 1.0; // Lebensdauer von 1 bis 0
+        this.life = 1.0;
     }
     update() {
         this.x += this.speedX;
         this.y += this.speedY;
-        this.life -= 0.02;
+        this.life -= 0.025;
     }
     draw() {
         c.fillStyle = this.color;
@@ -53,6 +53,7 @@ class Particle {
     }
 }
 
+// Initialisierung
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
@@ -62,7 +63,7 @@ window.addEventListener('click', async () => {
     }
 }, { once: true });
 
-// --- Aufnahme-Logik ---
+// --- Video Aufnahme ---
 recBtn.addEventListener('click', () => {
     if (!mediaRecorder || mediaRecorder.state === "inactive") startRecording();
     else stopRecording();
@@ -74,13 +75,12 @@ function startRecording() {
     const audioDest = engine.ctx.createMediaStreamDestination();
     engine.master.connect(audioDest);
     stream.addTrack(audioDest.stream.getAudioTracks()[0]);
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 5000000 });
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 6000000 });
     mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = saveRecording;
     mediaRecorder.start();
     recBtn.textContent = "⏹ Aufnahme stoppen";
     recBtn.style.background = "#e74c3c";
-    srText.textContent = "Aufnahme läuft...";
 }
 
 function stopRecording() {
@@ -94,13 +94,13 @@ function saveRecording() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Sonic-Visual-${Date.now()}.webm`;
+    a.download = `Sonic-Vibes-${Date.now()}.webm`;
     a.click();
     URL.revokeObjectURL(url);
     srText.textContent = "Video gespeichert!";
 }
 
-// --- Audio-Funktionen ---
+// --- Audio Funktionen ---
 async function playBuffer(buffer, name) {
     engine.stop();
     const source = engine.ctx.createBufferSource();
@@ -126,7 +126,7 @@ async function playDemoFile(filepath) {
 
 demoBtn.addEventListener('click', () => playDemoFile('media/kasubo hoerprobe.mp3'));
 
-// --- Haupt-Loop mit Partikeln ---
+// --- Animation Loop ---
 function energy(bins, start, end) {
     let sum = 0;
     for (let i = start; i < end; i++) sum += bins[i];
@@ -147,24 +147,30 @@ function loop() {
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
 
-    // Hintergrund-Flash
-    if (low > 200) c.fillStyle = `rgba(255, 255, 255, ${low / 800})`;
-    else c.fillStyle = "black";
+    // TEXT VIBRATION & SHAKE
+    if (low > 180) {
+        const shakeX = (Math.random() - 0.5) * (low / 15);
+        const shakeY = (Math.random() - 0.5) * (low / 15);
+        srText.style.transform = `translate(${shakeX}px, ${shakeY}px) scale(${1 + low / 500})`;
+        srText.style.color = `hsla(${(280 + low * 0.5) % 360}, 100%, 70%, 1)`;
+        // Hintergrund Blitz
+        c.fillStyle = `rgba(255, 255, 255, ${low / 700})`;
+    } else {
+        srText.style.transform = "translate(0,0) scale(1)";
+        srText.style.color = "white";
+        c.fillStyle = "black";
+    }
     c.fillRect(0, 0, w, h);
 
-    // Partikel bei Bass erzeugen
-    if (low > 170) {
-        for(let i = 0; i < 5; i++) {
+    // Partikel bei Bass
+    if (low > 190) {
+        for(let i = 0; i < 6; i++) {
             particles.push(new Particle(w/2, h/2, (280 + low * 0.5) % 360));
         }
     }
 
-    // Partikel updaten und zeichnen
     particles = particles.filter(p => p.life > 0);
-    particles.forEach(p => {
-        p.update();
-        p.draw();
-    });
+    particles.forEach(p => { p.update(); p.draw(); });
 
     const bands = [
         { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },
@@ -179,7 +185,7 @@ function loop() {
         c.fill();
         if (b.e > 150) {
             c.strokeStyle = "white";
-            c.lineWidth = 1;
+            c.lineWidth = 1.5;
             c.stroke();
         }
     });
