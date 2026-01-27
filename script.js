@@ -9,7 +9,7 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
-// Aufnahme-Button
+// Aufnahme-Button Setup
 const recBtn = document.createElement('button');
 recBtn.textContent = "⏺ Video aufnehmen";
 recBtn.style.marginLeft = "10px";
@@ -18,6 +18,7 @@ recBtn.style.color = "white";
 recBtn.style.border = "none";
 recBtn.style.padding = "10px";
 recBtn.style.cursor = "pointer";
+recBtn.style.borderRadius = "5px";
 demoBtn.parentNode.insertBefore(recBtn, demoBtn.nextSibling);
 
 const engine = new AudioEngine();
@@ -27,7 +28,7 @@ let mediaRecorder;
 let recordedChunks = [];
 let particles = [];
 
-// Partikel-Klasse für Funken
+// Partikel für die "Funken"
 class Particle {
     constructor(x, y, hue) {
         this.x = x;
@@ -53,7 +54,7 @@ class Particle {
     }
 }
 
-// Initialisierung bei Klick
+// Start der Engine bei erstem Klick
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
@@ -63,7 +64,7 @@ window.addEventListener('click', async () => {
     }
 }, { once: true });
 
-// --- Video Aufnahme ---
+// --- Video Aufnahme Logik ---
 recBtn.addEventListener('click', () => {
     if (!mediaRecorder || mediaRecorder.state === "inactive") startRecording();
     else stopRecording();
@@ -79,7 +80,7 @@ function startRecording() {
     mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = saveRecording;
     mediaRecorder.start();
-    recBtn.textContent = "⏹ Aufnahme stoppen";
+    recBtn.textContent = "⏹ Stoppen";
     recBtn.style.background = "#e74c3c";
 }
 
@@ -94,13 +95,13 @@ function saveRecording() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Sonic-Vibes-${Date.now()}.webm`;
+    a.download = `Sonic-Vibes-Recording.webm`;
     a.click();
     URL.revokeObjectURL(url);
-    srText.textContent = "Video gespeichert!";
+    srText.textContent = "Video heruntergeladen!";
 }
 
-// --- Audio Funktionen ---
+// --- Audio Steuerung ---
 async function playBuffer(buffer, name) {
     engine.stop();
     const source = engine.ctx.createBufferSource();
@@ -147,35 +148,27 @@ function loop() {
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
 
-    // ECHO-EFFEKT (Trail): Statt clearRect nutzen wir ein transparentes Rechteck
-    c.fillStyle = "rgba(0, 0, 0, 0.15)";
+    // Echo-Effekt (Spur hinterlassen)
+    c.fillStyle = "rgba(0, 0, 0, 0.2)";
     c.fillRect(0, 0, w, h);
 
-    // UI-VIBRATION
-    if (low > 180) {
-        const shake = (Math.random() - 0.5) * (low / 12);
-        srText.style.transform = `translate(${shake}px, ${shake}px) scale(${1 + low / 600})`;
-        srText.style.color = `hsla(${(280 + low * 0.5) % 360}, 100%, 70%, 1)`;
-        // Hintergrund Blitz bei extremem Bass
-        if (low > 220) {
-            c.fillStyle = `rgba(255, 255, 255, 0.05)`;
-            c.fillRect(0, 0, w, h);
-        }
-    } else {
-        srText.style.transform = "translate(0,0) scale(1)";
-        srText.style.color = "white";
-    }
-
-    // Partikel erzeugen
+    // Text Vibration
     if (low > 185) {
+        const shake = (Math.random() - 0.5) * 10;
+        srText.style.transform = `translate(${shake}px, ${shake}px) scale(${1 + low / 600})`;
+        // Funken erzeugen
         for(let i = 0; i < 4; i++) {
             particles.push(new Particle(w/2, h/2, (280 + low * 0.5) % 360));
         }
+    } else {
+        srText.style.transform = "scale(1)";
     }
+
+    // Partikel verarbeiten
     particles = particles.filter(p => p.life > 0);
     particles.forEach(p => { p.update(); p.draw(); });
 
-    // KONZENTRISCHE KREISE
+    // Die Kreise zeichnen
     const bands = [
         { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },
         { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },
@@ -185,7 +178,7 @@ function loop() {
     bands.forEach(b => {
         c.beginPath();
         c.arc(w / 2, h / 2, b.r + (b.e / 4) * s, 0, Math.PI * 2);
-        c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.25 + (b.e / 450)})`;
+        c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.3 + (b.e / 400)})`;
         c.fill();
         if (b.e > 160) {
             c.strokeStyle = "white";
@@ -194,16 +187,15 @@ function loop() {
         }
     });
 
-    // PULSIERENDER NAME / LOGO IN DER MITTE
-    c.font = `bold ${40 + low/10}px Arial`;
+    // Pulsierendes Logo "S"
+    c.font = `bold ${45 + low/8}px Arial`;
     c.fillStyle = "white";
     c.textAlign = "center";
     c.textBaseline = "middle";
-    // Schatten-Glühen basierend auf Bass
-    c.shadowBlur = low / 5;
+    c.shadowBlur = low / 4;
     c.shadowColor = `hsla(${(280 + low * 0.5) % 360}, 100%, 50%, 0.8)`;
     c.fillText("S", w / 2, h / 2);
-    c.shadowBlur = 0; // Schatten für andere Elemente wieder ausschalten
+    c.shadowBlur = 0;
 
     raf = requestAnimationFrame(loop);
 }
