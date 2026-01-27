@@ -32,16 +32,16 @@ class Particle {
     constructor(x, y, hue) {
         this.x = x;
         this.y = y;
-        this.size = Math.random() * 4 + 1;
-        this.speedX = (Math.random() - 0.5) * 12;
-        this.speedY = (Math.random() - 0.5) * 12;
+        this.size = Math.random() * 3 + 1;
+        this.speedX = (Math.random() - 0.5) * 10;
+        this.speedY = (Math.random() - 0.5) * 10;
         this.color = `hsla(${hue}, 80%, 60%, 0.8)`;
         this.life = 1.0;
     }
     update() {
         this.x += this.speedX;
         this.y += this.speedY;
-        this.life -= 0.025;
+        this.life -= 0.02;
     }
     draw() {
         c.fillStyle = this.color;
@@ -53,7 +53,7 @@ class Particle {
     }
 }
 
-// Initialisierung
+// Initialisierung bei Klick
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
@@ -147,31 +147,35 @@ function loop() {
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
 
-    // TEXT VIBRATION & SHAKE
+    // ECHO-EFFEKT (Trail): Statt clearRect nutzen wir ein transparentes Rechteck
+    c.fillStyle = "rgba(0, 0, 0, 0.15)";
+    c.fillRect(0, 0, w, h);
+
+    // UI-VIBRATION
     if (low > 180) {
-        const shakeX = (Math.random() - 0.5) * (low / 15);
-        const shakeY = (Math.random() - 0.5) * (low / 15);
-        srText.style.transform = `translate(${shakeX}px, ${shakeY}px) scale(${1 + low / 500})`;
+        const shake = (Math.random() - 0.5) * (low / 12);
+        srText.style.transform = `translate(${shake}px, ${shake}px) scale(${1 + low / 600})`;
         srText.style.color = `hsla(${(280 + low * 0.5) % 360}, 100%, 70%, 1)`;
-        // Hintergrund Blitz
-        c.fillStyle = `rgba(255, 255, 255, ${low / 700})`;
+        // Hintergrund Blitz bei extremem Bass
+        if (low > 220) {
+            c.fillStyle = `rgba(255, 255, 255, 0.05)`;
+            c.fillRect(0, 0, w, h);
+        }
     } else {
         srText.style.transform = "translate(0,0) scale(1)";
         srText.style.color = "white";
-        c.fillStyle = "black";
     }
-    c.fillRect(0, 0, w, h);
 
-    // Partikel bei Bass
-    if (low > 190) {
-        for(let i = 0; i < 6; i++) {
+    // Partikel erzeugen
+    if (low > 185) {
+        for(let i = 0; i < 4; i++) {
             particles.push(new Particle(w/2, h/2, (280 + low * 0.5) % 360));
         }
     }
-
     particles = particles.filter(p => p.life > 0);
     particles.forEach(p => { p.update(); p.draw(); });
 
+    // KONZENTRISCHE KREISE
     const bands = [
         { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },
         { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },
@@ -181,14 +185,26 @@ function loop() {
     bands.forEach(b => {
         c.beginPath();
         c.arc(w / 2, h / 2, b.r + (b.e / 4) * s, 0, Math.PI * 2);
-        c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.3 + (b.e / 400)})`;
+        c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.25 + (b.e / 450)})`;
         c.fill();
-        if (b.e > 150) {
+        if (b.e > 160) {
             c.strokeStyle = "white";
-            c.lineWidth = 1.5;
+            c.lineWidth = 1;
             c.stroke();
         }
     });
+
+    // PULSIERENDER NAME / LOGO IN DER MITTE
+    c.font = `bold ${40 + low/10}px Arial`;
+    c.fillStyle = "white";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    // Schatten-Glühen basierend auf Bass
+    c.shadowBlur = low / 5;
+    c.shadowColor = `hsla(${(280 + low * 0.5) % 360}, 100%, 50%, 0.8)`;
+    c.fillText("S", w / 2, h / 2);
+    c.shadowBlur = 0; // Schatten für andere Elemente wieder ausschalten
+
     raf = requestAnimationFrame(loop);
 }
 
