@@ -9,10 +9,12 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
-// Neuer Button für die Aufnahme (Stelle sicher, dass dieser in deiner HTML existiert oder nutze diesen Code)
+// Aufnahme-Button erstellen
 const recBtn = document.createElement('button');
-recBtn.textContent = "⏺ Record Video";
+recBtn.textContent = "⏺ Video aufnehmen";
+recBtn.className = "control-btn"; // Nutzt dein CSS
 recBtn.style.marginLeft = "10px";
+recBtn.style.background = "#2c3e50";
 demoBtn.parentNode.insertBefore(recBtn, demoBtn.nextSibling);
 
 const engine = new AudioEngine();
@@ -21,17 +23,17 @@ let raf;
 let mediaRecorder;
 let recordedChunks = [];
 
-// 1. Initialisierung beim ersten Klick
+// 1. Initialisierung
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
         visualizer = engine.getVisualizerData();
-        srText.textContent = "Engine bereit. Wähle eine Quelle.";
+        srText.textContent = "Engine bereit.";
         loop();
     }
 }, { once: true });
 
-// --- Aufnahme Logik ---
+// --- Aufnahme-Logik ---
 
 recBtn.addEventListener('click', () => {
     if (!mediaRecorder || mediaRecorder.state === "inactive") {
@@ -43,34 +45,36 @@ recBtn.addEventListener('click', () => {
 
 function startRecording() {
     recordedChunks = [];
-    // Stream vom Canvas erfassen (30 Bilder pro Sekunde)
-    const stream = canvas.captureStream(30);
+    // Stream vom Canvas mit hoher Bitrate
+    const stream = canvas.captureStream(60); 
     
-    // Optional: Audio zum Video-Stream hinzufügen
-    if (engine.ctx.destination) {
-        const audioDest = engine.ctx.createMediaStreamDestination();
-        engine.master.connect(audioDest);
-        stream.addTrack(audioDest.stream.getAudioTracks()[0]);
-    }
+    // Audio-Spur hinzufügen
+    const audioDest = engine.ctx.createMediaStreamDestination();
+    engine.master.connect(audioDest);
+    stream.addTrack(audioDest.stream.getAudioTracks()[0]);
 
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+    // Format wählen (WebM VP9 ist sehr kompatibel)
+    mediaRecorder = new MediaRecorder(stream, { 
+        mimeType: 'video/webm; codecs=vp9',
+        videoBitsPerSecond: 5000000 // 5 Mbps für scharfe Kreise
+    });
     
     mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) recordedChunks.push(e.data);
     };
 
     mediaRecorder.onstop = saveRecording;
-    
     mediaRecorder.start();
-    recBtn.textContent = "⏹ Stop Recording";
-    recBtn.style.backgroundColor = "#ff4444";
-    srText.textContent = "Aufnahme läuft...";
+    
+    recBtn.textContent = "⏹ Aufnahme stoppen";
+    recBtn.style.background = "#e74c3c";
+    srText.textContent = "Aufnahme läuft... (Ton wird mitgespeichert)";
 }
 
 function stopRecording() {
     mediaRecorder.stop();
-    recBtn.textContent = "⏺ Record Video";
-    recBtn.style.backgroundColor = "";
+    recBtn.textContent = "⏺ Video aufnehmen";
+    recBtn.style.background = "#2c3e50";
 }
 
 function saveRecording() {
@@ -78,41 +82,13 @@ function saveRecording() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sonic-visualizer-${Date.now()}.webm`;
+    a.download = `Sonic-Visual-Recording-${new Date().getTime()}.webm`;
     a.click();
     URL.revokeObjectURL(url);
-    srText.textContent = "Video gespeichert!";
+    srText.textContent = "Video wurde heruntergeladen!";
 }
 
-// --- Steuerung (bestehend) ---
-
-micBtn.addEventListener('click', async () => {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const micSource = engine.ctx.createMediaStreamSource(stream);
-        const micGain = engine.createSource("music");
-        micSource.connect(micGain);
-        await engine.resume();
-        srText.textContent = "Mikrofon aktiv.";
-    } catch (err) { 
-        alert("Mikrofon-Fehler: " + err.message); 
-    }
-});
-
-fileBtn.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-        srText.textContent = `Lade Datei: ${file.name}...`;
-        const arrayBuf = await file.arrayBuffer();
-        const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
-        playBuffer(audioBuf, file.name);
-    }
-});
-
-demoBtn.addEventListener('click', () => {
-    playDemoFile('media/kasubo hoerprobe.mp3'); 
-});
+// --- Audio-Funktionen (wie bisher) ---
 
 async function playBuffer(buffer, name) {
     engine.stop();
@@ -128,19 +104,20 @@ async function playBuffer(buffer, name) {
 
 async function playDemoFile(filepath) {
     try {
-        srText.textContent = "⏳ LADE DEMO VOM SERVER... BITTE WARTEN...";
+        srText.textContent = "⏳ Lade Demo...";
         const response = await fetch(filepath);
-        if (!response.ok) throw new Error(`Status: ${response.status}`);
         const arrayBuf = await response.arrayBuffer();
-        srText.textContent = "⚙️ DEKODIERE DATEN...";
+        srText.textContent = "⚙️ Dekodiere...";
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
         playBuffer(audioBuf, "Kasubo Demo");
     } catch (err) {
-        srText.textContent = "❌ FEHLER: " + err.message;
+        srText.textContent = "❌ Fehler: " + err.message;
     }
 }
 
-// --- Visualisierung (bestehend) ---
+demoBtn.addEventListener('click', () => playDemoFile('media/kasubo hoerprobe.mp3'));
+
+// --- Visualisierung (wie bisher) ---
 
 function energy(bins, start, end) {
     let sum = 0;
