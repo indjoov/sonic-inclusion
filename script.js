@@ -52,21 +52,44 @@ document.body.appendChild(overlay);
 const engine = new AudioEngine();
 let raf = null;
 
-// We create our own analyser for stable routing (mic/file/demo all go through it)
+// stable analyser routing (mic/file/demo all feed this)
 let analyser = null;
 let dataFreq = null;
 let dataTime = null;
+
+// routing nodes
+let inputGain = null;     // all sources -> inputGain
+let monitorGain = null;   // what you actually hear -> master
 
 // input nodes
 let currentMode = 'idle'; // 'idle' | 'demo' | 'file' | 'mic'
 let bufferSrc = null;
 let micStream = null;
 let micSourceNode = null;
-let inputGain = null; // optional control point
 
-/* ================= ENGINE GUI (collapsible + presets + reduced motion) ================= */
+/* ================= VISUAL STATE ================= */
+
+let particles = [];
+let rotation = 0;
+
+/* ================= A11Y / REDUCED MOTION ================= */
 
 let reducedMotion = false;
+
+/* ================= MIC MONITOR + FEEDBACK GUARD ================= */
+
+let micMonitor = false;        // checkbox
+let micMonitorVol = 0.35;      // 0..1
+let feedbackMuted = false;     // safety latch
+let feedbackHoldUntil = 0;     // timestamp ms
+
+function applyMicMonitorGain() {
+  if (!monitorGain) return;
+  const want = (currentMode === 'mic' && micMonitor && !feedbackMuted) ? micMonitorVol : 0;
+  monitorGain.gain.value = want;
+}
+
+/* ================= ENGINE GUI ================= */
 
 const gui = document.createElement('div');
 gui.style.cssText = `
@@ -111,6 +134,22 @@ gui.innerHTML = `
       <input id="reducedMotion" type="checkbox">
       Reduced Motion
     </label>
+
+    <div style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.12);">
+      <label style="font-size:11px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <span>Mic Monitor</span>
+        <input id="micMonitor" type="checkbox">
+      </label>
+
+      <label style="font-size:10px; opacity:0.85; display:block; margin-top:8px;">
+        Monitor Volume
+        <input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; margin-top:6px;">
+      </label>
+
+      <div id="feedbackWarn" style="display:none; margin-top:8px; font-size:11px; color:#ff0044; font-weight:700;">
+        🔇 Feedback risk detected — mic monitor muted
+      </div>
+    </div>
   </div>
 `;
 document.body.appendChild(gui);
@@ -125,6 +164,7 @@ toggleBtn.onclick = () => {
   toggleBtn.textContent = guiMin ? '+' : '–';
 };
 
+// controls
 const partEl = gui.querySelector('#partAmount');
 const zoomEl = gui.querySelector('#zoomInt');
 const hueEl = gui.querySelector('#hueShift');
@@ -139,10 +179,32 @@ gui.querySelector('#presetCalm').onclick = () => preset(4, 0, 210);
 gui.querySelector('#presetBass').onclick = () => preset(18, 10, 340);
 gui.querySelector('#presetCine').onclick = () => preset(10, 4, 280);
 
+// reduced motion
 gui.querySelector('#reducedMotion').onchange = (e) => {
   reducedMotion = e.target.checked;
   if (reducedMotion) particles = [];
 };
+
+// mic monitor elements
+const micMonitorEl = gui.querySelector('#micMonitor');
+const micMonitorVolEl = gui.querySelector('#micMonitorVol');
+const feedbackWarnEl = gui.querySelector('#feedbackWarn');
+
+micMonitorEl.checked = micMonitor;
+micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
+
+micMonitorEl.addEventListener('change', (e) => {
+  micMonitor = e.target.checked;
+  feedbackMuted = false;
+  if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+  applyMicMonitorGain();
+  setStatus(micMonitor ? '🎙️ Mic monitor ON' : '🎙️ Mic monitor OFF');
+});
+
+micMonitorVolEl.addEventListener('input', (e) => {
+  micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100));
+  applyMicMonitorGain();
+});
 
 /* ================= INIT / ROUTING ================= */
 
@@ -152,7 +214,6 @@ async function initEngine() {
   setStatus('⏳ Initializing engine…');
   await engine.init({ startSuspended: true, debug: false });
 
-  // Create analyser + routing nodes once
   analyser = engine.ctx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.8;
@@ -163,22 +224,25 @@ async function initEngine() {
   inputGain = engine.ctx.createGain();
   inputGain.gain.value = 1;
 
-  // route: inputGain -> analyser -> master
+  monitorGain = engine.ctx.createGain();
+  monitorGain.gain.value = 1; // demo/file default
+
+  // route: all sources -> inputGain -> analyser (visual)
+  //       and sources -> inputGain -> monitorGain -> master (audio)
   inputGain.connect(analyser);
-  analyser.connect(engine.master);
+  inputGain.connect(monitorGain);
+  monitorGain.connect(engine.master);
 
   overlay.style.display = 'none';
-  setStatus('✅ Engine ready (click Demo / File / Mic)');
-
+  setStatus('✅ Engine ready (Demo / File / Mic)');
   if (!raf) loop();
 }
 
 overlay.onclick = initEngine;
 
-/* ================= CLEAN STOP (important) ================= */
+/* ================= CLEAN STOP ================= */
 
 async function stopAll({ suspend = true } = {}) {
-  // stop buffer source
   if (bufferSrc) {
     try { bufferSrc.onended = null; } catch {}
     try { bufferSrc.stop(0); } catch {}
@@ -186,22 +250,26 @@ async function stopAll({ suspend = true } = {}) {
     bufferSrc = null;
   }
 
-  // stop mic
   if (micSourceNode) {
     try { micSourceNode.disconnect(); } catch {}
     micSourceNode = null;
   }
+
   if (micStream) {
-    try {
-      micStream.getTracks().forEach(t => t.stop());
-    } catch {}
+    try { micStream.getTracks().forEach(t => t.stop()); } catch {}
     micStream = null;
   }
 
   currentMode = 'idle';
-
-  // UI
   if (micBtn) micBtn.textContent = '🎙️ Use Microphone';
+
+  // reset feedback warn
+  feedbackMuted = false;
+  feedbackHoldUntil = 0;
+  if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+
+  // mute monitor by default if idle
+  if (monitorGain) monitorGain.gain.value = 0;
 
   if (suspend) {
     try { await engine.ctx.suspend(); } catch {}
@@ -222,9 +290,14 @@ async function playDemo(path) {
   await engine.resume();
   currentMode = 'demo';
 
+  // demo always audible
+  if (monitorGain) monitorGain.gain.value = 1;
+  feedbackMuted = false;
+  if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+
   bufferSrc = engine.ctx.createBufferSource();
   bufferSrc.buffer = audio;
-  bufferSrc.loop = false; // ✅ once
+  bufferSrc.loop = false;
   bufferSrc.connect(inputGain);
 
   bufferSrc.onended = async () => {
@@ -260,9 +333,14 @@ fileInput?.addEventListener('change', async (e) => {
     await engine.resume();
     currentMode = 'file';
 
+    // file always audible
+    if (monitorGain) monitorGain.gain.value = 1;
+    feedbackMuted = false;
+    if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+
     bufferSrc = engine.ctx.createBufferSource();
     bufferSrc.buffer = audio;
-    bufferSrc.loop = false; // ✅ once
+    bufferSrc.loop = false;
     bufferSrc.connect(inputGain);
 
     bufferSrc.onended = async () => {
@@ -276,7 +354,6 @@ fileInput?.addEventListener('change', async (e) => {
     console.error(err);
     setStatus('❌ File playback error');
   } finally {
-    // allow picking same file again
     if (fileInput) fileInput.value = '';
   }
 });
@@ -307,11 +384,14 @@ micBtn?.addEventListener('click', async () => {
     await engine.resume();
     currentMode = 'mic';
 
+    // mic should be muted by default unless monitor enabled
+    applyMicMonitorGain();
+
     micSourceNode = engine.ctx.createMediaStreamSource(micStream);
     micSourceNode.connect(inputGain);
 
     if (micBtn) micBtn.textContent = '⏹ Stop Microphone';
-    setStatus('🎙️ Microphone active');
+    setStatus(micMonitor ? '🎙️ Microphone active (monitor ON)' : '🎙️ Microphone active (monitor OFF)');
   } catch (err) {
     console.error(err);
     await stopAll({ suspend: true });
@@ -330,7 +410,6 @@ window.addEventListener('keydown', async (e) => {
       await stopAll({ suspend: true });
       setStatus('⏹ Stopped');
     } else {
-      // default action: demo
       await playDemo('media/kasubo hoerprobe.mp3');
     }
   }
@@ -340,9 +419,8 @@ window.addEventListener('keydown', async (e) => {
   if (key === 'd') demoBtn?.click();
 });
 
-/* ================= RECORDING (clean) ================= */
+/* ================= RECORDING (canvas + master audio) ================= */
 
-// floating record button (keeps your HTML clean)
 const recBtn = document.createElement('button');
 recBtn.textContent = '⏺ RECORD';
 recBtn.style.cssText = `
@@ -363,12 +441,11 @@ recBtn.addEventListener('click', async () => {
   if (!mediaRecorder || mediaRecorder.state === 'inactive') {
     recordedChunks = [];
 
-    // make sure audio is running (otherwise some browsers capture silence)
+    // ensure audio context running for capture
     await engine.resume();
 
     const stream = canvas.captureStream(60);
 
-    // record audio from master
     const recDest = engine.ctx.createMediaStreamDestination();
     engine.master.connect(recDest);
     const audioTrack = recDest.stream.getAudioTracks()[0];
@@ -390,7 +467,7 @@ recBtn.addEventListener('click', async () => {
       if (e.data && e.data.size > 0) recordedChunks.push(e.data);
     };
 
-    mediaRecorder.onstop = async () => {
+    mediaRecorder.onstop = () => {
       try { engine.master.disconnect(recDest); } catch {}
       try { audioTrack?.stop(); } catch {}
 
@@ -415,8 +492,6 @@ recBtn.addEventListener('click', async () => {
 
 /* ================= VISUALS ================= */
 
-let particles = [];
-
 class Particle {
   constructor(x, y, hue) {
     this.x = x; this.y = y;
@@ -438,6 +513,15 @@ class Particle {
   }
 }
 
+function rmsFromTimeDomain(arr) {
+  let sum = 0;
+  for (let i = 0; i < arr.length; i++) {
+    const v = (arr[i] - 128) / 128;
+    sum += v * v;
+  }
+  return Math.sqrt(sum / arr.length);
+}
+
 /* ================= LOOP ================= */
 
 function loop() {
@@ -449,9 +533,33 @@ function loop() {
   analyser.getByteFrequencyData(dataFreq);
   analyser.getByteTimeDomainData(dataTime);
 
+  // feedback guard (mic mode only)
+  const now = performance.now();
+  const micRms = rmsFromTimeDomain(dataTime);
+
+  const LOUD = 0.22;
+  const QUIET = 0.10;
+  const HOLD_MS = 2500;
+
+  if (currentMode === 'mic' && micMonitor) {
+    if (!feedbackMuted && micRms > LOUD) {
+      feedbackMuted = true;
+      feedbackHoldUntil = now + HOLD_MS;
+      applyMicMonitorGain();
+      if (feedbackWarnEl) feedbackWarnEl.style.display = 'block';
+      setStatus('🔇 Feedback risk — mic monitor muted');
+    }
+
+    if (feedbackMuted && now > feedbackHoldUntil && micRms < QUIET) {
+      feedbackMuted = false;
+      applyMicMonitorGain();
+      if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+      setStatus('✅ Mic monitor safe again');
+    }
+  }
+
   const w = canvas.width;
   const h = canvas.height;
-
   const low = (dataFreq[2] + dataFreq[4]) / 2;
 
   const pAmount = parseInt(partEl.value, 10);
@@ -461,7 +569,6 @@ function loop() {
   const zoom = reducedMotion ? 1 : 1 + (low * zoomSens);
   const hue = (hueShift + low * 0.4) % 360;
 
-  // background
   c.fillStyle = 'rgba(5,5,5,0.30)';
   c.fillRect(0, 0, w, h);
 
@@ -470,7 +577,8 @@ function loop() {
   c.scale(zoom, zoom);
   c.translate(-w / 2, -h / 2);
 
-  // rings
+  if (!reducedMotion) rotation += 0.002;
+
   c.strokeStyle = `hsla(${hue},100%,50%,0.22)`;
   for (let i = 0; i < 60; i++) {
     const v = dataFreq[i];
@@ -479,7 +587,6 @@ function loop() {
     c.stroke();
   }
 
-  // particles (disabled in reduced motion)
   if (!reducedMotion && low > 200) {
     for (let i = 0; i < pAmount; i++) {
       particles.push(new Particle(w / 2, h / 2, hue));
