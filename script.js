@@ -52,8 +52,8 @@ fileInput.addEventListener('change', async (e) => {
 
 // Demo-Song aus dem media-Ordner
 demoBtn.addEventListener('click', () => {
-    // PRÜFE HIER: Heißt die Datei in GitHub exakt so?
-    playDemoFile('kasubo hoerprobe.mp3'); 
+    // Falls der Name in GitHub anders ist, hier anpassen!
+    playDemoFile('./media/kasubo hoerprobe.mp3'); 
 });
 
 // --- Audio Funktionen ---
@@ -70,30 +70,27 @@ async function playBuffer(buffer, name) {
     source.connect(engine.buses.music);
     
     source.start(0); 
-    
     await engine.resume();
-    // Lautstärke sicherstellen
     engine.master.gain.value = 1.0; 
     srText.textContent = `Spiele: ${name}`;
 }
 
-async function playDemoFile(filename) {
+async function playDemoFile(filepath) {
     try {
         srText.textContent = "Lade Demo...";
-        // Sucht im media-Ordner
-        const response = await fetch(`media/${filename}`);
+        const response = await fetch(filepath);
         
         if (!response.ok) {
-            throw new Error(`Datei '${filename}' nicht gefunden (404). Prüfe den media-Ordner!`);
+            // Zeigt Fehler an, wenn die Datei nicht existiert
+            throw new Error(`Datei nicht gefunden (Status: ${response.status}). Prüfe den 'media' Ordner!`);
         }
         
-        const arrayBuf = await response.arrayBuffer();
+        const arrayBuf = await response.buffer ? await response.buffer() : await response.arrayBuffer();
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
-        playBuffer(audioBuf, filename);
+        playBuffer(audioBuf, "Kasubo Demo");
     } catch (err) {
         console.error("Demo-Fehler:", err);
-        // Zeigt den Fehler direkt auf der Webseite an
-        srText.textContent = "Fehler: " + err.message;
+        srText.textContent = err.message;
     }
 }
 
@@ -122,11 +119,10 @@ function loop() {
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
 
-    // Dynamische Farben basierend auf Frequenzen
     const bands = [
-        { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },  // Bass
-        { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },  // Mitten
-        { e: high, r: 200, hue: (340 + high * 1.2) % 360 }  // Höhen
+        { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },
+        { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },
+        { e: high, r: 200, hue: (340 + high * 1.2) % 360 }
     ];
 
     bands.forEach(b => {
