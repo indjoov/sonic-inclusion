@@ -11,11 +11,11 @@ const fileInput = document.getElementById('fileInput');
 
 // --- FUTURISTISCHES UI SETUP ---
 
-// 1. Intro-Overlay
+// 1. Intro-Overlay (Zwingend für Browser-Audio-Start)
 const overlay = document.createElement('div');
 overlay.id = 'intro-overlay';
 overlay.innerHTML = `
-    <div style="text-align:center; color:white; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:rgba(10,10,10,0.95); padding:60px; border-radius:30px; border:1px solid #00d4ff; cursor:pointer; box-shadow: 0 0 60px rgba(0,212,255,0.4); backdrop-filter: blur(10px);">
+    <div style="text-align:center; color:white; font-family:sans-serif; background:rgba(10,10,10,0.95); padding:60px; border-radius:30px; border:1px solid #00d4ff; cursor:pointer; box-shadow: 0 0 60px rgba(0,212,255,0.4); backdrop-filter: blur(10px);">
         <h1 style="margin-bottom:10px; letter-spacing: 12px; font-weight:900; text-shadow: 0 0 15px #00d4ff;">SONIC INCLUSION</h1>
         <p style="opacity:0.6; letter-spacing:3px; font-size: 14px;">SYSTEM INITIALISIEREN</p>
     </div>
@@ -23,7 +23,7 @@ overlay.innerHTML = `
 overlay.setAttribute('style', 'position:fixed; top:0; left:0; width:100%; height:100%; display:flex; justify-content:center; align-items:center; z-index:2000; background:black;');
 document.body.appendChild(overlay);
 
-// 2. Neon-Control Panel
+// 2. Neon-Control Panel (Live-Steuerung)
 const gui = document.createElement('div');
 gui.setAttribute('style', `
     position:fixed; top:20px; right:20px; 
@@ -52,7 +52,7 @@ gui.innerHTML = `
 `;
 document.body.appendChild(gui);
 
-// 3. Record Button Styling
+// 3. Record Button (Video-Aufnahme)
 const recBtn = document.createElement('button');
 recBtn.textContent = "⏺ START RECORDING";
 recBtn.style.cssText = `
@@ -71,7 +71,7 @@ let recordedChunks = [];
 let particles = [];
 let gridOffset = 0;
 
-// --- CORE CLASSES ---
+// --- PARTIKEL SYSTEM ---
 class Particle {
     constructor(x, y, hue) {
         this.x = x;
@@ -97,7 +97,7 @@ class Particle {
     }
 }
 
-// --- ENGINE START ---
+// --- ENGINE INITIALISIERUNG ---
 overlay.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
@@ -138,7 +138,7 @@ recBtn.addEventListener('click', () => {
     }
 });
 
-// --- AUDIO HELPERS ---
+// --- AUDIO LOGIK ---
 async function playDemoFile(filepath) {
     try {
         srText.textContent = "⏳ BUFFERING...";
@@ -174,7 +174,7 @@ function loop() {
     visualizer.analyser.getByteTimeDomainData(visualizer.dataTime);
     const w = canvas.width, h = canvas.height, s = parseFloat(sens.value);
 
-    // Get Panel Values
+    // Get UI Values
     const pAmount = parseInt(document.getElementById('partAmount').value);
     const flashScale = parseInt(document.getElementById('flashInt').value);
     const hShift = parseInt(document.getElementById('hueShift').value);
@@ -182,12 +182,12 @@ function loop() {
     const low = (visualizer.dataFreq[2] + visualizer.dataFreq[4]) / 2;
     const currentHue = (hShift + low * 0.4) % 360;
 
-    // Background Layer
+    // Hintergrund & Grid
     c.fillStyle = "rgba(5, 5, 5, 0.22)";
     c.fillRect(0, 0, w, h);
     drawGrid(w, h, low, currentHue);
 
-    // Waveform Blitz
+    // Wellenform (Waveform)
     c.lineWidth = 1.5;
     c.strokeStyle = `hsla(${currentHue}, 100%, 70%, 0.5)`;
     c.beginPath();
@@ -200,7 +200,7 @@ function loop() {
     }
     c.stroke();
 
-    // Bass Impact
+    // Bass Impact Effekte
     if (low > 195) {
         c.fillStyle = `rgba(255, 255, 255, ${low / flashScale})`;
         c.fillRect(0, 0, w, h);
@@ -213,7 +213,7 @@ function loop() {
     particles = particles.filter(p => p.life > 0);
     particles.forEach(p => { p.update(); p.draw(); });
 
-    // Visual Rings
+    // Frequenz-Ringe
     [90, 160, 230].forEach((r, i) => {
         const e = visualizer.dataFreq[i * 40 + 10];
         c.beginPath();
@@ -223,12 +223,12 @@ function loop() {
         if (e > 180) { c.strokeStyle = "rgba(255,255,255,0.7)"; c.stroke(); }
     });
 
-    // Branding "S"
+    // Zentrales Logo
     c.font = `900 ${65 + low/6}px sans-serif`;
     c.fillStyle = "white";
     c.textAlign = "center"; c.textBaseline = "middle";
     c.shadowBlur = low / 2.5;
-    c.shadowColor = `hsla(${currentHue}, 100%, 50%, 0.8)`;
+    c.shadowColor = `hsla(${currentHue}, 100%, 50%, 0.9)`;
     c.fillText("S", w / 2, h / 2);
     c.shadowBlur = 0;
 
