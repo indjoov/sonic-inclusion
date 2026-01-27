@@ -12,9 +12,12 @@ const fileInput = document.getElementById('fileInput');
 // Aufnahme-Button erstellen
 const recBtn = document.createElement('button');
 recBtn.textContent = "⏺ Video aufnehmen";
-recBtn.className = "control-btn"; // Nutzt dein CSS
 recBtn.style.marginLeft = "10px";
 recBtn.style.background = "#2c3e50";
+recBtn.style.color = "white";
+recBtn.style.border = "none";
+recBtn.style.padding = "10px";
+recBtn.style.cursor = "pointer";
 demoBtn.parentNode.insertBefore(recBtn, demoBtn.nextSibling);
 
 const engine = new AudioEngine();
@@ -45,18 +48,14 @@ recBtn.addEventListener('click', () => {
 
 function startRecording() {
     recordedChunks = [];
-    // Stream vom Canvas mit hoher Bitrate
     const stream = canvas.captureStream(60); 
-    
-    // Audio-Spur hinzufügen
     const audioDest = engine.ctx.createMediaStreamDestination();
     engine.master.connect(audioDest);
     stream.addTrack(audioDest.stream.getAudioTracks()[0]);
 
-    // Format wählen (WebM VP9 ist sehr kompatibel)
     mediaRecorder = new MediaRecorder(stream, { 
         mimeType: 'video/webm; codecs=vp9',
-        videoBitsPerSecond: 5000000 // 5 Mbps für scharfe Kreise
+        videoBitsPerSecond: 5000000 
     });
     
     mediaRecorder.ondataavailable = (e) => {
@@ -68,7 +67,7 @@ function startRecording() {
     
     recBtn.textContent = "⏹ Aufnahme stoppen";
     recBtn.style.background = "#e74c3c";
-    srText.textContent = "Aufnahme läuft... (Ton wird mitgespeichert)";
+    srText.textContent = "Aufnahme läuft...";
 }
 
 function stopRecording() {
@@ -82,13 +81,13 @@ function saveRecording() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Sonic-Visual-Recording-${new Date().getTime()}.webm`;
+    a.download = `Sonic-Recording-${Date.now()}.webm`;
     a.click();
     URL.revokeObjectURL(url);
-    srText.textContent = "Video wurde heruntergeladen!";
+    srText.textContent = "Video heruntergeladen!";
 }
 
-// --- Audio-Funktionen (wie bisher) ---
+// --- Audio-Funktionen ---
 
 async function playBuffer(buffer, name) {
     engine.stop();
@@ -117,7 +116,7 @@ async function playDemoFile(filepath) {
 
 demoBtn.addEventListener('click', () => playDemoFile('media/kasubo hoerprobe.mp3'));
 
-// --- Visualisierung (wie bisher) ---
+// --- Visualisierung mit Bass-Flash ---
 
 function energy(bins, start, end) {
     let sum = 0;
@@ -134,11 +133,19 @@ function loop() {
     const w = canvas.width;
     const h = canvas.height;
     const s = parseFloat(sens.value);
-    c.clearRect(0, 0, w, h);
 
+    // BASS-FLASH EFFEKT:
     const low = energy(visualizer.dataFreq, 2, 32);
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
+
+    // Wenn der Bass stark genug ist, wird der Hintergrund kurz hell
+    if (low > 180) {
+        c.fillStyle = `rgba(255, 255, 255, ${low / 500})`; // Zarter weißer Blitz
+    } else {
+        c.fillStyle = "black"; // Normaler Hintergrund
+    }
+    c.fillRect(0, 0, w, h);
 
     const bands = [
         { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },
@@ -149,7 +156,7 @@ function loop() {
     bands.forEach(b => {
         c.beginPath();
         c.arc(w / 2, h / 2, b.r + (b.e / 4) * s, 0, Math.PI * 2);
-        c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.2 + (b.e / 400)})`;
+        c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.3 + (b.e / 400)})`;
         c.fill();
         if (b.e > 150) {
             c.strokeStyle = `rgba(255, 255, 255, ${b.e / 255})`;
