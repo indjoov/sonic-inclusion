@@ -29,6 +29,7 @@ micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const micSource = engine.ctx.createMediaStreamSource(stream);
+        // Wir erstellen einen Eingangskanal in der Engine
         const micGain = engine.createSource("music");
         micSource.connect(micGain);
         await engine.resume();
@@ -56,17 +57,19 @@ demoBtn.addEventListener('click', () => {
 // --- Audio Funktionen ---
 
 async function playBuffer(buffer, name) {
+    // Stoppt alte Wiedergaben über die Engine-Logik
     engine.stop();
     
-    // FIX für den Konsole-Fehler: Quelle direkt im Context erstellen
+    // LÖSUNG FÜR DEN FEHLER: Quelle direkt über den Web-Audio-Kontext erstellen
     const source = engine.ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
     
-    // Verbindung zum Musik-Kanal der AudioEngine
+    // Verbindet die Quelle mit dem Musik-Bus deiner AudioEngine
+    // Dadurch fließen die Daten durch den Master zum Analyser und Lautsprecher
     source.connect(engine.buses.music);
     
-    // Jetzt ist .start() eine gültige Funktion
+    // Jetzt ist .start() garantiert eine Funktion
     source.start(0); 
     
     await engine.resume();
