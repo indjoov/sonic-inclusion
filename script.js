@@ -25,10 +25,10 @@ window.addEventListener('click', async () => {
 
 // --- Steuerung ---
 
-// Mikrofon-Aktivierung
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Nutzt die korrekte Web-Audio-Methode
         const micSource = engine.ctx.createMediaStreamSource(stream);
         const micGain = engine.createSource("music");
         micSource.connect(micGain);
@@ -39,7 +39,6 @@ micBtn.addEventListener('click', async () => {
     }
 });
 
-// Eigene Datei laden
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -50,23 +49,22 @@ fileInput.addEventListener('change', async (e) => {
     }
 });
 
-// Demo-Song aus dem media-Ordner
 demoBtn.addEventListener('click', () => {
+    // Greift auf deine MP3 im media-Ordner zu
     playDemoFile('kasubo hoerprobe.mp3'); 
 });
 
 // --- Audio Funktionen ---
 
 async function playBuffer(buffer, name) {
-    // Vorherige Wiedergabe stoppen
     engine.stop();
     
-    // FIX für den TypeError: Wir erstellen die Source direkt im Context
+    // FIX für den Konsole-Fehler: Quelle direkt im Context erstellen
     const source = engine.ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
     
-    // Verbindung zum Musik-Bus der AudioEngine herstellen
+    // Verbindung zum Musik-Kanal der AudioEngine
     source.connect(engine.buses.music);
     
     // Jetzt ist .start() eine gültige Funktion
