@@ -25,7 +25,6 @@ window.addEventListener('click', async () => {
 
 // --- Steuerung ---
 
-// Mikrofon-Aktivierung
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -39,7 +38,6 @@ micBtn.addEventListener('click', async () => {
     }
 });
 
-// Eigene Datei laden
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -50,7 +48,6 @@ fileInput.addEventListener('change', async (e) => {
     }
 });
 
-// Demo-Song aus dem media-Ordner
 demoBtn.addEventListener('click', () => {
     playDemoFile('kasubo hoerprobe.mp3'); 
 });
@@ -60,12 +57,12 @@ demoBtn.addEventListener('click', () => {
 async function playBuffer(buffer, name) {
     engine.stop();
     
-    // Quelle direkt im Context erstellen
+    // Wichtig für den Sound: Quelle direkt im Context erstellen
     const source = engine.ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
     
-    // Verbindung zum Musik-Kanal der AudioEngine
+    // Verbindung zum Musik-Kanal deiner AudioEngine
     source.connect(engine.buses.music);
     
     source.start(0); 
@@ -87,7 +84,7 @@ async function playDemoFile(filename) {
     }
 }
 
-// --- Visualisierung ---
+// --- Visualisierung mit DYNAMISCHEN FARBEN ---
 
 function energy(bins, start, end) {
     let sum = 0;
@@ -108,28 +105,24 @@ function loop() {
 
     c.clearRect(0, 0, w, h);
 
-    // Frequenzbereiche berechnen
     const low = energy(visualizer.dataFreq, 2, 32);
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
 
-    // DYNAMISCHE FARBEN & GROESSEN
+    // Hier passiert die Farb-Magie (hue verändert sich mit der Lautstärke)
     const bands = [
-        { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },  // Bass (Lila/Blau)
-        { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },  // Mitten (Türkis/Grün)
-        { e: high, r: 200, hue: (340 + high * 1.2) % 360 }  // Höhen (Pink/Rot)
+        { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },
+        { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },
+        { e: high, r: 200, hue: (340 + high * 1.2) % 360 }
     ];
 
     bands.forEach(b => {
         c.beginPath();
-        // Kreisgröße reagiert auf Lautstärke und Sensitivity-Regler
         c.arc(w / 2, h / 2, b.r + (b.e / 4) * s, 0, Math.PI * 2);
-        
-        // Helligkeit und Transparenz ändern sich mit dem Ton
         c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.2 + (b.e / 400)})`;
         c.fill();
         
-        // Glow-Effekt bei starken Impulsen
+        // Glow-Effekt
         if (b.e > 150) {
             c.strokeStyle = `rgba(255, 255, 255, ${b.e / 255})`;
             c.lineWidth = 2;
