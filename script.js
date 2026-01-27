@@ -25,6 +25,7 @@ window.addEventListener('click', async () => {
 
 // --- Steuerung ---
 
+// Mikrofon-Aktivierung
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -38,6 +39,7 @@ micBtn.addEventListener('click', async () => {
     }
 });
 
+// Eigene Datei laden
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -48,7 +50,9 @@ fileInput.addEventListener('change', async (e) => {
     }
 });
 
+// Demo-Song aus dem media-Ordner
 demoBtn.addEventListener('click', () => {
+    // PRÜFE HIER: Heißt die Datei in GitHub exakt so?
     playDemoFile('kasubo hoerprobe.mp3'); 
 });
 
@@ -57,34 +61,43 @@ demoBtn.addEventListener('click', () => {
 async function playBuffer(buffer, name) {
     engine.stop();
     
-    // Wichtig für den Sound: Quelle direkt im Context erstellen
+    // Quelle direkt im Context erstellen
     const source = engine.ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
     
-    // Verbindung zum Musik-Kanal deiner AudioEngine
+    // Verbindung zum Musik-Kanal der AudioEngine
     source.connect(engine.buses.music);
     
     source.start(0); 
     
     await engine.resume();
+    // Lautstärke sicherstellen
+    engine.master.gain.value = 1.0; 
     srText.textContent = `Spiele: ${name}`;
 }
 
 async function playDemoFile(filename) {
     try {
+        srText.textContent = "Lade Demo...";
+        // Sucht im media-Ordner
         const response = await fetch(`media/${filename}`);
-        if (!response.ok) throw new Error('Datei nicht gefunden');
+        
+        if (!response.ok) {
+            throw new Error(`Datei '${filename}' nicht gefunden (404). Prüfe den media-Ordner!`);
+        }
+        
         const arrayBuf = await response.arrayBuffer();
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
         playBuffer(audioBuf, filename);
     } catch (err) {
         console.error("Demo-Fehler:", err);
-        srText.textContent = "Fehler beim Laden der Demo.";
+        // Zeigt den Fehler direkt auf der Webseite an
+        srText.textContent = "Fehler: " + err.message;
     }
 }
 
-// --- Visualisierung mit DYNAMISCHEN FARBEN ---
+// --- Visualisierung ---
 
 function energy(bins, start, end) {
     let sum = 0;
@@ -109,11 +122,11 @@ function loop() {
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
 
-    // Hier passiert die Farb-Magie (hue verändert sich mit der Lautstärke)
+    // Dynamische Farben basierend auf Frequenzen
     const bands = [
-        { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },
-        { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },
-        { e: high, r: 200, hue: (340 + high * 1.2) % 360 }
+        { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },  // Bass
+        { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },  // Mitten
+        { e: high, r: 200, hue: (340 + high * 1.2) % 360 }  // Höhen
     ];
 
     bands.forEach(b => {
@@ -122,7 +135,6 @@ function loop() {
         c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.2 + (b.e / 400)})`;
         c.fill();
         
-        // Glow-Effekt
         if (b.e > 150) {
             c.strokeStyle = `rgba(255, 255, 255, ${b.e / 255})`;
             c.lineWidth = 2;
