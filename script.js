@@ -13,7 +13,7 @@ const engine = new AudioEngine();
 let visualizer = null;
 let raf;
 
-// 1. Initialisierung beim allerersten Klick auf die Seite
+// 1. Initialisierung beim ersten Klick auf die Seite
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
@@ -58,11 +58,20 @@ demoBtn.addEventListener('click', () => {
 // --- Audio Funktionen ---
 
 async function playBuffer(buffer, name) {
+    // Vorherige Wiedergabe stoppen
     engine.stop();
-    const source = engine.createSource("music");
+    
+    // FIX für den TypeError: Wir erstellen die Source direkt im Context
+    const source = engine.ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
-    source.start(0); // Startet die Wiedergabe
+    
+    // Verbindung zum Musik-Bus der AudioEngine herstellen
+    source.connect(engine.buses.music);
+    
+    // Jetzt ist .start() eine gültige Funktion
+    source.start(0); 
+    
     await engine.resume();
     srText.textContent = `Spiele: ${name}`;
 }
