@@ -14,7 +14,7 @@ const engine = new AudioEngine();
 let visualizer = null;
 let raf;
 
-// 1. Initialisierung beim ersten Klick auf die Seite
+// 1. Initialisierung beim ersten Klick
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init({ debug: true });
@@ -29,7 +29,7 @@ window.addEventListener('click', async () => {
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // KORREKTUR: Die Methode muss 'createMediaStreamSource' heißen
+        // KORREKTUR: Die Methode heißt createMediaStreamSource
         const micSource = engine.ctx.createMediaStreamSource(stream);
         const micGain = engine.createSource("music");
         micSource.connect(micGain);
