@@ -9,7 +9,6 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
-// Aufnahme-Button erstellen
 const recBtn = document.createElement('button');
 recBtn.textContent = "⏺ Video aufnehmen";
 recBtn.style.marginLeft = "10px";
@@ -26,7 +25,34 @@ let raf;
 let mediaRecorder;
 let recordedChunks = [];
 
-// 1. Initialisierung
+// Partikel-System Variablen
+let particles = [];
+
+class Particle {
+    constructor(x, y, hue) {
+        this.x = x;
+        this.y = y;
+        this.size = Math.random() * 4 + 1;
+        this.speedX = (Math.random() - 0.5) * 10;
+        this.speedY = (Math.random() - 0.5) * 10;
+        this.color = `hsla(${hue}, 80%, 60%, 0.8)`;
+        this.life = 1.0; // Lebensdauer von 1 bis 0
+    }
+    update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        this.life -= 0.02;
+    }
+    draw() {
+        c.fillStyle = this.color;
+        c.globalAlpha = this.life;
+        c.beginPath();
+        c.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        c.fill();
+        c.globalAlpha = 1.0;
+    }
+}
+
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
@@ -37,13 +63,9 @@ window.addEventListener('click', async () => {
 }, { once: true });
 
 // --- Aufnahme-Logik ---
-
 recBtn.addEventListener('click', () => {
-    if (!mediaRecorder || mediaRecorder.state === "inactive") {
-        startRecording();
-    } else {
-        stopRecording();
-    }
+    if (!mediaRecorder || mediaRecorder.state === "inactive") startRecording();
+    else stopRecording();
 });
 
 function startRecording() {
@@ -52,19 +74,10 @@ function startRecording() {
     const audioDest = engine.ctx.createMediaStreamDestination();
     engine.master.connect(audioDest);
     stream.addTrack(audioDest.stream.getAudioTracks()[0]);
-
-    mediaRecorder = new MediaRecorder(stream, { 
-        mimeType: 'video/webm; codecs=vp9',
-        videoBitsPerSecond: 5000000 
-    });
-    
-    mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) recordedChunks.push(e.data);
-    };
-
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 5000000 });
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = saveRecording;
     mediaRecorder.start();
-    
     recBtn.textContent = "⏹ Aufnahme stoppen";
     recBtn.style.background = "#e74c3c";
     srText.textContent = "Aufnahme läuft...";
@@ -81,14 +94,13 @@ function saveRecording() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Sonic-Recording-${Date.now()}.webm`;
+    a.download = `Sonic-Visual-${Date.now()}.webm`;
     a.click();
     URL.revokeObjectURL(url);
-    srText.textContent = "Video heruntergeladen!";
+    srText.textContent = "Video gespeichert!";
 }
 
 // --- Audio-Funktionen ---
-
 async function playBuffer(buffer, name) {
     engine.stop();
     const source = engine.ctx.createBufferSource();
@@ -109,15 +121,12 @@ async function playDemoFile(filepath) {
         srText.textContent = "⚙️ Dekodiere...";
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
         playBuffer(audioBuf, "Kasubo Demo");
-    } catch (err) {
-        srText.textContent = "❌ Fehler: " + err.message;
-    }
+    } catch (err) { srText.textContent = "❌ Fehler: " + err.message; }
 }
 
 demoBtn.addEventListener('click', () => playDemoFile('media/kasubo hoerprobe.mp3'));
 
-// --- Visualisierung mit Bass-Flash ---
-
+// --- Haupt-Loop mit Partikeln ---
 function energy(bins, start, end) {
     let sum = 0;
     for (let i = start; i < end; i++) sum += bins[i];
@@ -134,18 +143,28 @@ function loop() {
     const h = canvas.height;
     const s = parseFloat(sens.value);
 
-    // BASS-FLASH EFFEKT:
     const low = energy(visualizer.dataFreq, 2, 32);
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
 
-    // Wenn der Bass stark genug ist, wird der Hintergrund kurz hell
-    if (low > 180) {
-        c.fillStyle = `rgba(255, 255, 255, ${low / 500})`; // Zarter weißer Blitz
-    } else {
-        c.fillStyle = "black"; // Normaler Hintergrund
-    }
+    // Hintergrund-Flash
+    if (low > 200) c.fillStyle = `rgba(255, 255, 255, ${low / 800})`;
+    else c.fillStyle = "black";
     c.fillRect(0, 0, w, h);
+
+    // Partikel bei Bass erzeugen
+    if (low > 170) {
+        for(let i = 0; i < 5; i++) {
+            particles.push(new Particle(w/2, h/2, (280 + low * 0.5) % 360));
+        }
+    }
+
+    // Partikel updaten und zeichnen
+    particles = particles.filter(p => p.life > 0);
+    particles.forEach(p => {
+        p.update();
+        p.draw();
+    });
 
     const bands = [
         { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },
@@ -159,8 +178,8 @@ function loop() {
         c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.3 + (b.e / 400)})`;
         c.fill();
         if (b.e > 150) {
-            c.strokeStyle = `rgba(255, 255, 255, ${b.e / 255})`;
-            c.lineWidth = 2;
+            c.strokeStyle = "white";
+            c.lineWidth = 1;
             c.stroke();
         }
     });
