@@ -17,17 +17,18 @@
             <button id="micBtn" class="primary">🎙️ Use Microphone</button>
             <button id="fileBtn">📁 Load Audio File</button>
             <button id="demoBtn">✨ Play Kasubo Demo</button>
-            
-            <input id="fileInput" type="file" accept="audio/*" hidden aria-label="Choose audio file">
+
+            <input id="fileInput" type="file" accept="audio/*" hidden>
 
             <div class="sliders">
                 <label>
                     Sensitivity
-                    <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1" aria-label="Adjust visualization sensitivity">
+                    <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1">
                 </label>
+
                 <label>
                     Color Mode
-                    <select id="palette" aria-label="Select visualization color mode">
+                    <select id="palette">
                         <option value="hue">Hue by pitch (default)</option>
                         <option value="energy">Hue by energy</option>
                         <option value="grayscale">High-contrast grayscale</option>
@@ -35,13 +36,17 @@
                 </label>
             </div>
 
-            <div class="kbd-hint" role="note">
-                ⌨️ Keyboard: <kbd>Space</kbd> = Start/Stop · <kbd>M</kbd> = Mic · <kbd>F</kbd> = File · <kbd>D</kbd> = Demo
+            <div class="kbd-hint">
+                ⌨️ Keyboard:
+                <kbd>Space</kbd> = Start/Stop ·
+                <kbd>M</kbd> = Mic ·
+                <kbd>F</kbd> = File ·
+                <kbd>D</kbd> = Demo
             </div>
         </section>
 
         <section class="stage" aria-label="Visualization">
-            <canvas id="viz" width="960" height="540" aria-hidden="true"></canvas>
+            <canvas id="viz" width="960" height="540"></canvas>
         </section>
 
         <section class="a11y" aria-label="Live description for screen readers">
