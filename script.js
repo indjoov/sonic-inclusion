@@ -9,42 +9,58 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
-// --- UI SETUP & CONTROL PANEL ---
+// --- FUTURISTISCHES UI SETUP ---
+
+// 1. Intro-Overlay
 const overlay = document.createElement('div');
 overlay.id = 'intro-overlay';
 overlay.innerHTML = `
-    <div style="text-align:center; color:white; font-family:sans-serif; background:rgba(0,0,0,0.95); padding:60px; border-radius:30px; border:2px solid #00d4ff; cursor:pointer; box-shadow: 0 0 50px rgba(0,212,255,0.3);">
-        <h1 style="margin-bottom:10px; letter-spacing: 10px; font-weight:900;">SONIC INCLUSION</h1>
-        <p style="opacity:0.7; letter-spacing:2px;">KLICKEN ZUM INITIALISIEREN</p>
+    <div style="text-align:center; color:white; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:rgba(10,10,10,0.95); padding:60px; border-radius:30px; border:1px solid #00d4ff; cursor:pointer; box-shadow: 0 0 60px rgba(0,212,255,0.4); backdrop-filter: blur(10px);">
+        <h1 style="margin-bottom:10px; letter-spacing: 12px; font-weight:900; text-shadow: 0 0 15px #00d4ff;">SONIC INCLUSION</h1>
+        <p style="opacity:0.6; letter-spacing:3px; font-size: 14px;">SYSTEM INITIALISIEREN</p>
     </div>
 `;
 overlay.setAttribute('style', 'position:fixed; top:0; left:0; width:100%; height:100%; display:flex; justify-content:center; align-items:center; z-index:2000; background:black;');
 document.body.appendChild(overlay);
 
-// Control Panel erstellen
+// 2. Neon-Control Panel
 const gui = document.createElement('div');
-gui.setAttribute('style', 'position:fixed; top:20px; right:20px; background:rgba(0,0,0,0.8); padding:15px; border-radius:10px; color:white; font-family:sans-serif; border:1px solid #333; z-index:100; min-width:200px;');
+gui.setAttribute('style', `
+    position:fixed; top:20px; right:20px; 
+    background:rgba(15, 15, 15, 0.85); 
+    padding:20px; border-radius:15px; 
+    color:#e0e0e0; font-family:sans-serif; 
+    border:1px solid rgba(0, 212, 255, 0.3); 
+    z-index:100; min-width:220px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    backdrop-filter: blur(8px);
+`);
 gui.innerHTML = `
-    <div style="margin-bottom:10px; font-weight:bold; color:#00d4ff; border-bottom:1px solid #333; padding-bottom:5px;">LIVE CONTROLS</div>
-    <label>Partikel Menge</label><br>
-    <input type="range" id="partAmount" min="0" max="20" value="6" style="width:100%; margin-bottom:10px;"><br>
-    <label>Blitz Stärke</label><br>
-    <input type="range" id="flashInt" min="0" max="1000" value="700" style="width:100%; margin-bottom:10px;"><br>
-    <label>Farb-Offset</label><br>
-    <input type="range" id="hueShift" min="0" max="360" value="280" style="width:100%;">
+    <div style="margin-bottom:15px; font-weight:bold; color:#00d4ff; border-bottom:1px solid #333; padding-bottom:8px; letter-spacing:1px; text-transform:uppercase; font-size:12px;">Visual FX Master</div>
+    <div style="margin-bottom:15px;">
+        <label style="font-size:11px; display:block; margin-bottom:5px;">PARTIKEL INTENSITÄT</label>
+        <input type="range" id="partAmount" min="0" max="25" value="8" style="width:100%; accent-color:#00d4ff;">
+    </div>
+    <div style="margin-bottom:15px;">
+        <label style="font-size:11px; display:block; margin-bottom:5px;">BASS-FLASH STÄRKE</label>
+        <input type="range" id="flashInt" min="100" max="1500" value="800" style="width:100%; accent-color:#00d4ff;">
+    </div>
+    <div style="margin-bottom:15px;">
+        <label style="font-size:11px; display:block; margin-bottom:5px;">FARB-ATMOSPHÄRE</label>
+        <input type="range" id="hueShift" min="0" max="360" value="280" style="width:100%; accent-color:#00d4ff;">
+    </div>
 `;
 document.body.appendChild(gui);
 
+// 3. Record Button Styling
 const recBtn = document.createElement('button');
-recBtn.textContent = "⏺ RECORD";
-recBtn.style.marginLeft = "10px";
-recBtn.style.background = "#111";
-recBtn.style.color = "#ff0044";
-recBtn.style.border = "1px solid #ff0044";
-recBtn.style.padding = "10px 15px";
-recBtn.style.cursor = "pointer";
-recBtn.style.borderRadius = "5px";
-recBtn.style.fontWeight = "bold";
+recBtn.textContent = "⏺ START RECORDING";
+recBtn.style.cssText = `
+    margin-left: 10px; background: #000; color: #ff0044; 
+    border: 1px solid #ff0044; padding: 10px 20px; 
+    cursor: pointer; border-radius: 5px; font-weight: bold;
+    transition: all 0.3s ease; letter-spacing: 1px;
+`;
 demoBtn.parentNode.insertBefore(recBtn, demoBtn.nextSibling);
 
 const engine = new AudioEngine();
@@ -55,12 +71,12 @@ let recordedChunks = [];
 let particles = [];
 let gridOffset = 0;
 
-// Partikel Klasse
+// --- CORE CLASSES ---
 class Particle {
     constructor(x, y, hue) {
         this.x = x;
         this.y = y;
-        this.size = Math.random() * 3 + 1;
+        this.size = Math.random() * 2.5 + 1;
         this.speedX = (Math.random() - 0.5) * 18;
         this.speedY = (Math.random() - 0.5) * 18;
         this.color = `hsla(${hue}, 100%, 75%, 0.9)`;
@@ -81,17 +97,19 @@ class Particle {
     }
 }
 
+// --- ENGINE START ---
 overlay.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
         visualizer = engine.getVisualizerData();
-        overlay.style.display = 'none';
-        srText.textContent = "Engine Online.";
+        overlay.style.opacity = '0';
+        setTimeout(() => overlay.style.display = 'none', 500);
+        srText.textContent = "System Ready.";
         loop();
     }
 });
 
-// --- Recording ---
+// --- RECORDING SYSTEM ---
 recBtn.addEventListener('click', () => {
     if (!mediaRecorder || mediaRecorder.state === "inactive") {
         recordedChunks = [];
@@ -99,63 +117,49 @@ recBtn.addEventListener('click', () => {
         const audioDest = engine.ctx.createMediaStreamDestination();
         engine.master.connect(audioDest);
         stream.addTrack(audioDest.stream.getAudioTracks()[0]);
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 12000000 });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 15000000 });
         mediaRecorder.ondataavailable = (e) => recordedChunks.push(e.data);
         mediaRecorder.onstop = () => {
             const blob = new Blob(recordedChunks, { type: 'video/webm' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `Sonic-Vibes-Pro.webm`;
+            a.download = `Sonic_Inclusion_Master.webm`;
             a.click();
         };
         mediaRecorder.start();
-        recBtn.textContent = "⏹ STOP";
+        recBtn.textContent = "⏹ STOP & SAVE";
         recBtn.style.background = "#ff0044";
-        recBtn.style.color = "white";
+        recBtn.style.color = "#fff";
     } else {
         mediaRecorder.stop();
-        recBtn.textContent = "⏺ RECORD";
-        recBtn.style.background = "#111";
+        recBtn.textContent = "⏺ START RECORDING";
+        recBtn.style.background = "#000";
         recBtn.style.color = "#ff0044";
     }
 });
 
-// --- Audio Logic ---
-async function playBuffer(buffer, name) {
-    engine.stop();
-    const source = engine.ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    source.connect(engine.buses.music);
-    source.start(0);
-    await engine.resume();
-    engine.master.gain.value = 1.0;
-    srText.textContent = `Vibe: ${name}`;
-}
-
+// --- AUDIO HELPERS ---
 async function playDemoFile(filepath) {
     try {
-        srText.textContent = "⏳ LOADING...";
+        srText.textContent = "⏳ BUFFERING...";
         const response = await fetch(filepath);
         const arrayBuf = await response.arrayBuffer();
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
-        playBuffer(audioBuf, "Kasubo Demo");
-    } catch (err) { srText.textContent = "❌ ERROR"; }
+        engine.stop();
+        const source = engine.ctx.createBufferSource();
+        source.buffer = audioBuf; source.loop = true;
+        source.connect(engine.buses.music);
+        source.start(0); await engine.resume();
+        srText.textContent = `Master Output: Active`;
+    } catch (err) { srText.textContent = "❌ RESOURCE ERROR"; }
 }
-
 demoBtn.addEventListener('click', () => playDemoFile('media/kasubo hoerprobe.mp3'));
 
-// --- Animation Core ---
-function energy(bins, start, end) {
-    let sum = 0;
-    for (let i = start; i < end; i++) sum += bins[i];
-    return sum / (end - start + 1 || 1);
-}
-
-function drawGrid(w, h, low) {
-    c.strokeStyle = `rgba(0, 212, 255, ${0.04 + low/1500})`;
+// --- RENDER ENGINE ---
+function drawGrid(w, h, low, hue) {
+    c.strokeStyle = `hsla(${hue}, 100%, 50%, ${0.03 + low/1200})`;
     const step = 60;
-    gridOffset = (gridOffset + 1 + low/40) % step;
+    gridOffset = (gridOffset + 0.5 + low/40) % step;
     for (let x = gridOffset; x < w; x += step) {
         c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
     }
@@ -164,13 +168,30 @@ function drawGrid(w, h, low) {
     }
 }
 
-function drawWaveform(w, h, low, hue) {
+function loop() {
+    if (!visualizer) { raf = requestAnimationFrame(loop); return; }
+    visualizer.analyser.getByteFrequencyData(visualizer.dataFreq);
     visualizer.analyser.getByteTimeDomainData(visualizer.dataTime);
-    c.lineWidth = 2;
-    c.strokeStyle = `hsla(${hue}, 100%, 70%, 0.6)`;
+    const w = canvas.width, h = canvas.height, s = parseFloat(sens.value);
+
+    // Get Panel Values
+    const pAmount = parseInt(document.getElementById('partAmount').value);
+    const flashScale = parseInt(document.getElementById('flashInt').value);
+    const hShift = parseInt(document.getElementById('hueShift').value);
+
+    const low = (visualizer.dataFreq[2] + visualizer.dataFreq[4]) / 2;
+    const currentHue = (hShift + low * 0.4) % 360;
+
+    // Background Layer
+    c.fillStyle = "rgba(5, 5, 5, 0.22)";
+    c.fillRect(0, 0, w, h);
+    drawGrid(w, h, low, currentHue);
+
+    // Waveform Blitz
+    c.lineWidth = 1.5;
+    c.strokeStyle = `hsla(${currentHue}, 100%, 70%, 0.5)`;
     c.beginPath();
-    const sliceWidth = w / visualizer.dataTime.length;
-    let x = 0;
+    let x = 0; const sliceWidth = w / visualizer.dataTime.length;
     for (let i = 0; i < visualizer.dataTime.length; i++) {
         const v = visualizer.dataTime[i] / 128.0;
         const y = (v * h) / 2;
@@ -178,38 +199,13 @@ function drawWaveform(w, h, low, hue) {
         x += sliceWidth;
     }
     c.stroke();
-}
 
-function loop() {
-    if (!visualizer) { raf = requestAnimationFrame(loop); return; }
-    visualizer.analyser.getByteFrequencyData(visualizer.dataFreq);
-    const w = canvas.width;
-    const h = canvas.height;
-    const s = parseFloat(sens.value);
-
-    // GUI Werte holen
-    const pAmount = parseInt(document.getElementById('partAmount').value);
-    const flashSens = parseInt(document.getElementById('flashInt').value);
-    const hShift = parseInt(document.getElementById('hueShift').value);
-
-    const low = energy(visualizer.dataFreq, 2, 32);
-    const mid = energy(visualizer.dataFreq, 33, 128);
-    const high = energy(visualizer.dataFreq, 129, 255);
-    const currentHue = (hShift + low * 0.5) % 360;
-
-    // Background & Layers
-    c.fillStyle = "rgba(0, 0, 0, 0.25)";
-    c.fillRect(0, 0, w, h);
-    drawGrid(w, h, low);
-    drawWaveform(w, h, low, currentHue);
-
-    // Bass Reaktionen
-    if (low > 190) {
-        const shake = (Math.random() - 0.5) * 12;
-        srText.style.transform = `translate(${shake}px, ${shake}px) scale(${1 + low / 500})`;
-        c.fillStyle = `rgba(255, 255, 255, ${low / flashSens})`;
+    // Bass Impact
+    if (low > 195) {
+        c.fillStyle = `rgba(255, 255, 255, ${low / flashScale})`;
         c.fillRect(0, 0, w, h);
         for(let i = 0; i < pAmount; i++) particles.push(new Particle(w/2, h/2, currentHue));
+        srText.style.transform = `scale(${1 + low / 600}) rotate(${(Math.random()-0.5)*2}deg)`;
     } else {
         srText.style.transform = "scale(1)";
     }
@@ -217,27 +213,22 @@ function loop() {
     particles = particles.filter(p => p.life > 0);
     particles.forEach(p => { p.update(); p.draw(); });
 
-    // Concentric Circles
-    const bands = [
-        { e: low,  r: 90,  h: currentHue },
-        { e: mid,  r: 160, h: (hShift - 60 + mid * 0.8) % 360 },
-        { e: high, r: 230, h: (hShift + 60 + high * 1.2) % 360 }
-    ];
-
-    bands.forEach(b => {
+    // Visual Rings
+    [90, 160, 230].forEach((r, i) => {
+        const e = visualizer.dataFreq[i * 40 + 10];
         c.beginPath();
-        c.arc(w / 2, h / 2, b.r + (b.e / 4) * s, 0, Math.PI * 2);
-        c.fillStyle = `hsla(${b.h}, 90%, 60%, ${0.3 + (b.e / 400)})`;
+        c.arc(w / 2, h / 2, r + (e / 4) * s, 0, Math.PI * 2);
+        c.fillStyle = `hsla(${currentHue + i * 40}, 90%, 60%, ${0.25 + (e / 400)})`;
         c.fill();
-        if (b.e > 175) { c.strokeStyle = "white"; c.stroke(); }
+        if (e > 180) { c.strokeStyle = "rgba(255,255,255,0.7)"; c.stroke(); }
     });
 
-    // Central Branding
-    c.font = `900 ${60 + low/6}px sans-serif`;
+    // Branding "S"
+    c.font = `900 ${65 + low/6}px sans-serif`;
     c.fillStyle = "white";
     c.textAlign = "center"; c.textBaseline = "middle";
-    c.shadowBlur = low / 2;
-    c.shadowColor = `hsla(${currentHue}, 100%, 50%, 0.9)`;
+    c.shadowBlur = low / 2.5;
+    c.shadowColor = `hsla(${currentHue}, 100%, 50%, 0.8)`;
     c.fillText("S", w / 2, h / 2);
     c.shadowBlur = 0;
 
