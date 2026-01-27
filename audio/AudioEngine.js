@@ -1,9 +1,6 @@
 import { Transport } from "./Transport.js";
 import { createGain, setGainSmooth } from "./nodes.js";
 
-/**
- * AudioEngine - Zentrale für Tonverarbeitung
- */
 export class AudioEngine {
     constructor() {
         this.ctx = null;
@@ -15,28 +12,26 @@ export class AudioEngine {
     }
 
     on(type, fn) { this.listeners[type]?.add(fn); }
-    _emit(type, data) { this.listeners[type]?.forEach(fn => fn(data)); }
 
     async init() {
         if (this.ctx) return;
-        
-        // Erstellt den Audio-Kontext
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
         
-        // Master-Ausgang (Hier wird alles zusammengeführt)
-        this.master = createGain(this.ctx, 0.9);
+        // 1. Master Gain erstellen
+        this.master = createGain(this.ctx, 1.0);
+        
+        // 2. WICHTIG: Master explizit mit den Lautsprechern verbinden
         this.master.connect(this.ctx.destination);
         
-        // Musik-Bus (Hier landet deine MP3)
-        this.buses.music = createGain(this.ctx, 0.8);
+        // 3. Musik-Bus erstellen und mit Master verbinden
+        this.buses.music = createGain(this.ctx, 1.0);
         this.buses.music.connect(this.master);
         
         this.state = "ready";
     }
 
     async resume() {
-        if (!this.ctx) return;
-        if (this.ctx.state !== "running") {
+        if (this.ctx && this.ctx.state !== "running") {
             await this.ctx.resume();
         }
         this.state = "running";
@@ -46,27 +41,20 @@ export class AudioEngine {
         if (this.ctx) this.transport.stop(this.ctx.currentTime); 
     }
 
-    /**
-     * Erstellt eine Tonquelle, die automatisch mit dem Musik-Bus verbunden ist
-     */
     createSource(bus = "music") {
         if (!this.ctx) return null;
-        const g = createGain(this.ctx, 1);
-        // Verbindet die Quelle mit dem gewählten Bus oder direkt mit Master
+        const g = createGain(this.ctx, 1.0);
+        // Verbindet die Quelle mit dem Bus
         g.connect(this.buses[bus] || this.master);
         return g;
     }
 
-    /**
-     * Liefert die Daten für deine bunten Kreise
-     */
     getVisualizerData() {
         if (!this.ctx) return null;
         const analyser = this.ctx.createAnalyser();
         analyser.fftSize = 2048;
-        // Verbindet den Master mit dem Analyser für die Optik
+        // Analyser greift das Signal vom Master ab
         this.master.connect(analyser);
-        
         return {
             analyser,
             dataFreq: new Uint8Array(analyser.frequencyBinCount),
