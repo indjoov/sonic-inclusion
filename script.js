@@ -13,7 +13,7 @@ const engine = new AudioEngine();
 let visualizer = null;
 let raf;
 
-// 1. Initialisierung beim allerersten Klick auf die Seite
+// 1. Initialisierung beim ersten Klick auf die Seite
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init();
@@ -25,7 +25,6 @@ window.addEventListener('click', async () => {
 
 // --- Steuerung ---
 
-// Mikrofon
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -39,7 +38,6 @@ micBtn.addEventListener('click', async () => {
     }
 });
 
-// Eigene Datei laden
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -50,8 +48,8 @@ fileInput.addEventListener('change', async (e) => {
     }
 });
 
-// Die Kasubo-Demo im media-Ordner
 demoBtn.addEventListener('click', () => {
+    // Greift auf deine MP3 im media-Ordner zu
     playDemoFile('kasubo hoerprobe.mp3'); 
 });
 
@@ -62,13 +60,17 @@ async function playBuffer(buffer, name) {
     const source = engine.createSource("music");
     source.buffer = buffer;
     source.loop = true;
-    source.start(0); // WICHTIG: Startet den Ton!
+    
+    // Startet die Wiedergabe
+    source.start(0); 
+    
     await engine.resume();
     srText.textContent = `Spiele: ${name}`;
 }
 
 async function playDemoFile(filename) {
     try {
+        // Pfad zu deinem media-Ordner
         const response = await fetch(`media/${filename}`);
         if (!response.ok) throw new Error('Datei im media-Ordner nicht gefunden');
         const arrayBuf = await response.arrayBuffer();
@@ -121,7 +123,6 @@ function loop() {
     raf = requestAnimationFrame(loop);
 }
 
-// Canvas-Größe anpassen
 function fitCanvas() {
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width;
