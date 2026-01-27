@@ -25,11 +25,11 @@ window.addEventListener('click', async () => {
 
 // --- Steuerung ---
 
+// Mikrofon-Aktivierung
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const micSource = engine.ctx.createMediaStreamSource(stream);
-        // Wir erstellen einen Eingangskanal in der Engine
         const micGain = engine.createSource("music");
         micSource.connect(micGain);
         await engine.resume();
@@ -39,6 +39,7 @@ micBtn.addEventListener('click', async () => {
     }
 });
 
+// Eigene Datei laden
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -49,27 +50,24 @@ fileInput.addEventListener('change', async (e) => {
     }
 });
 
+// Demo-Song aus dem media-Ordner
 demoBtn.addEventListener('click', () => {
-    // Greift auf deine MP3 im media-Ordner zu
     playDemoFile('kasubo hoerprobe.mp3'); 
 });
 
 // --- Audio Funktionen ---
 
 async function playBuffer(buffer, name) {
-    // Stoppt alte Wiedergaben über die Engine-Logik
     engine.stop();
     
-    // LÖSUNG FÜR DEN FEHLER: Quelle direkt über den Web-Audio-Kontext erstellen
+    // Quelle direkt im Context erstellen
     const source = engine.ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
     
-    // Verbindet die Quelle mit dem Musik-Bus deiner AudioEngine
-    // Dadurch fließen die Daten durch den Master zum Analyser und Lautsprecher
+    // Verbindung zum Musik-Kanal der AudioEngine
     source.connect(engine.buses.music);
     
-    // Jetzt ist .start() garantiert eine Funktion
     source.start(0); 
     
     await engine.resume();
@@ -78,7 +76,6 @@ async function playBuffer(buffer, name) {
 
 async function playDemoFile(filename) {
     try {
-        // Sucht im media-Ordner
         const response = await fetch(`media/${filename}`);
         if (!response.ok) throw new Error('Datei nicht gefunden');
         const arrayBuf = await response.arrayBuffer();
@@ -111,21 +108,33 @@ function loop() {
 
     c.clearRect(0, 0, w, h);
 
+    // Frequenzbereiche berechnen
     const low = energy(visualizer.dataFreq, 2, 32);
     const mid = energy(visualizer.dataFreq, 33, 128);
     const high = energy(visualizer.dataFreq, 129, 255);
 
+    // DYNAMISCHE FARBEN & GROESSEN
     const bands = [
-        { e: low, r: 80, hue: 280 },
-        { e: mid, r: 140, hue: 200 },
-        { e: high, r: 200, hue: 340 }
+        { e: low,  r: 80,  hue: (280 + low * 0.5) % 360 },  // Bass (Lila/Blau)
+        { e: mid,  r: 140, hue: (200 + mid * 0.8) % 360 },  // Mitten (Türkis/Grün)
+        { e: high, r: 200, hue: (340 + high * 1.2) % 360 }  // Höhen (Pink/Rot)
     ];
 
     bands.forEach(b => {
         c.beginPath();
+        // Kreisgröße reagiert auf Lautstärke und Sensitivity-Regler
         c.arc(w / 2, h / 2, b.r + (b.e / 4) * s, 0, Math.PI * 2);
+        
+        // Helligkeit und Transparenz ändern sich mit dem Ton
         c.fillStyle = `hsla(${b.hue}, 80%, 60%, ${0.2 + (b.e / 400)})`;
         c.fill();
+        
+        // Glow-Effekt bei starken Impulsen
+        if (b.e > 150) {
+            c.strokeStyle = `rgba(255, 255, 255, ${b.e / 255})`;
+            c.lineWidth = 2;
+            c.stroke();
+        }
     });
 
     raf = requestAnimationFrame(loop);
