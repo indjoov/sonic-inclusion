@@ -14,7 +14,7 @@ const engine = new AudioEngine();
 let visualizer = null;
 let raf;
 
-// Initialize on first click
+// 1. Initialisierung beim ersten Klick
 window.addEventListener('click', async () => {
     if (engine.state === 'idle') {
         await engine.init({ debug: true });
@@ -29,15 +29,20 @@ window.addEventListener('click', async () => {
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const micSource = engine.ctx.mediaStreamSource(stream);
+        // KORREKTUR: createMediaStreamSource statt nur mediaStreamSource
+        const micSource = engine.ctx.createMediaStreamSource(stream);
         const micGain = engine.createSource("music");
         micSource.connect(micGain);
-        engine.resume();
+        
+        await engine.resume(); // Stellt sicher, dass die Engine läuft
         srText.textContent = "Microphone active.";
-    } catch (err) { alert("Mic error: " + err.message); }
+    } catch (err) { 
+        alert("Mic error: " + err.message); 
+    }
 });
 
 fileBtn.addEventListener('click', () => fileInput.click());
+
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -60,16 +65,16 @@ async function playBuffer(buffer, name) {
     source.buffer = buffer;
     source.loop = true;
     
-    // WICHTIG: Startet die Wiedergabe (hat vorher gefehlt)
+    // Startet die Wiedergabe
     source.start(0); 
     
-    engine.resume();
+    await engine.resume();
     srText.textContent = `Playing: ${name}`;
 }
 
 async function playDemoFile(filename) {
     try {
-        // Nutzt den media-Ordner Pfad
+        // Pfad zu deinem media-Ordner
         const response = await fetch(`media/${filename}`);
         if (!response.ok) throw new Error('File not found');
         const arrayBuf = await response.arrayBuffer();
@@ -81,7 +86,7 @@ async function playDemoFile(filename) {
     }
 }
 
-// --- Visualizer ---
+// --- Visualisierung ---
 
 function energy(bins, start, end) {
     let sum = 0;
@@ -90,7 +95,11 @@ function energy(bins, start, end) {
 }
 
 function loop() {
-    if (!visualizer) return;
+    if (!visualizer) {
+        raf = requestAnimationFrame(loop);
+        return;
+    }
+    
     visualizer.analyser.getByteFrequencyData(visualizer.dataFreq);
     visualizer.analyser.getByteTimeDomainData(visualizer.dataTime);
 
