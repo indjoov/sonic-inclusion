@@ -29,7 +29,7 @@ window.addEventListener('click', async () => {
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const micSource = engine.ctx.createMediaStreamSource(stream);
+        const micSource = engine.ctx.mediaStreamSource(stream);
         const micGain = engine.createSource("music");
         micSource.connect(micGain);
         engine.resume();
@@ -48,6 +48,7 @@ fileInput.addEventListener('change', async (e) => {
 });
 
 demoBtn.addEventListener('click', () => {
+    // Greift auf deine MP3 im media-Ordner zu
     playDemoFile('kasubo hoerprobe.mp3'); 
 });
 
@@ -58,13 +59,17 @@ async function playBuffer(buffer, name) {
     const source = engine.createSource("music");
     source.buffer = buffer;
     source.loop = true;
-    source.start(0);
+    
+    // WICHTIG: Startet die Wiedergabe (hat vorher gefehlt)
+    source.start(0); 
+    
     engine.resume();
     srText.textContent = `Playing: ${name}`;
 }
 
 async function playDemoFile(filename) {
     try {
+        // Nutzt den media-Ordner Pfad
         const response = await fetch(`media/${filename}`);
         if (!response.ok) throw new Error('File not found');
         const arrayBuf = await response.arrayBuffer();
