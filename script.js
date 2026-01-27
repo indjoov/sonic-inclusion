@@ -28,7 +28,6 @@ window.addEventListener('click', async () => {
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Nutzt die korrekte Web-Audio-Methode
         const micSource = engine.ctx.createMediaStreamSource(stream);
         const micGain = engine.createSource("music");
         micSource.connect(micGain);
