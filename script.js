@@ -25,7 +25,6 @@ window.addEventListener('click', async () => {
 
 // --- Steuerung ---
 
-// Mikrofon-Aktivierung
 micBtn.addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -39,7 +38,6 @@ micBtn.addEventListener('click', async () => {
     }
 });
 
-// Eigene Datei laden
 fileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -50,9 +48,9 @@ fileInput.addEventListener('change', async (e) => {
     }
 });
 
-// Demo-Song aus dem media-Ordner
+// Demo-Button mit präzisem Pfad
 demoBtn.addEventListener('click', () => {
-    // Falls der Name in GitHub anders ist, hier anpassen!
+    // Dieser Pfad muss exakt zu deinem GitHub-Ordner passen
     playDemoFile('./media/kasubo hoerprobe.mp3'); 
 });
 
@@ -60,15 +58,10 @@ demoBtn.addEventListener('click', () => {
 
 async function playBuffer(buffer, name) {
     engine.stop();
-    
-    // Quelle direkt im Context erstellen
     const source = engine.ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
-    
-    // Verbindung zum Musik-Kanal der AudioEngine
     source.connect(engine.buses.music);
-    
     source.start(0); 
     await engine.resume();
     engine.master.gain.value = 1.0; 
@@ -81,15 +74,16 @@ async function playDemoFile(filepath) {
         const response = await fetch(filepath);
         
         if (!response.ok) {
-            // Zeigt Fehler an, wenn die Datei nicht existiert
-            throw new Error(`Datei nicht gefunden (Status: ${response.status}). Prüfe den 'media' Ordner!`);
+            // Wenn die Datei nicht gefunden wird, siehst du das jetzt sofort auf dem Screen!
+            throw new Error(`Datei nicht gefunden (Status: ${response.status}). Prüfe den Ordner 'media' und den Dateinamen!`);
         }
         
-        const arrayBuf = await response.buffer ? await response.buffer() : await response.arrayBuffer();
+        const arrayBuf = await response.arrayBuffer();
         const audioBuf = await engine.ctx.decodeAudioData(arrayBuf);
         playBuffer(audioBuf, "Kasubo Demo");
     } catch (err) {
         console.error("Demo-Fehler:", err);
+        // Die Fehlermeldung erscheint direkt unter den Buttons
         srText.textContent = err.message;
     }
 }
