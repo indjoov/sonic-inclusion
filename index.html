@@ -18,7 +18,6 @@
   <main>
     <!-- ================= CONTROLS ================= -->
     <section class="controls" aria-label="Audio input controls">
-
       <button id="micBtn" class="primary">🎙️ Use Microphone</button>
       <button id="fileBtn">📁 Load Audio File</button>
       <button id="demoBtn">✨ Play Kasubo Demo</button>
@@ -55,36 +54,6 @@
       <canvas id="viz" width="960" height="540"></canvas>
     </section>
 
-    <!-- ================= ENGINE + RECORD ================= -->
-    <section class="engine-wrapper">
-
-      <button class="record-btn">⏺ RECORD</button>
-
-      <div class="engine">
-        <button class="engine-toggle" id="engineToggle">
-          ⚙️ ENGINE ▾
-        </button>
-
-        <div class="engine-panel" id="enginePanel">
-          <label>
-            Bass Zoom
-            <input type="range" min="0" max="1" step="0.01" value="0" />
-          </label>
-
-          <label>
-            Friction
-            <input type="range" min="0" max="1" step="0.01" value="0.3" />
-          </label>
-
-          <label>
-            Particles
-            <input type="range" min="0" max="1" step="0.01" value="0.5" />
-          </label>
-        </div>
-      </div>
-
-    </section>
-
     <!-- ================= A11Y ================= -->
     <section class="a11y">
       <p id="srText" aria-live="polite">
@@ -98,18 +67,5 @@
   </footer>
 
   <script type="module" src="script.js"></script>
-
-  <!-- ENGINE TOGGLE -->
-  <script>
-    const toggle = document.getElementById('engineToggle');
-    const panel = document.getElementById('enginePanel');
-
-    toggle.addEventListener('click', () => {
-      panel.classList.toggle('open');
-      toggle.textContent = panel.classList.contains('open')
-        ? '⚙️ ENGINE ▴'
-        : '⚙️ ENGINE ▾';
-    });
-  </script>
 </body>
 </html>
