@@ -1,195 +1,263 @@
-:root {
-  --bg: #0e0e13;
-  --panel: #171722;
-  --text: #e7e7ee;
-  --muted: #9aa0a6;
-  --brand: #7c4dff;
-  --danger: #ff2d55;
+:root{
+  --bg:#0b0b12;
+  --panel:rgba(20,20,32,.78);
+  --panel2:rgba(16,16,26,.86);
+  --text:#e7e7ee;
+  --muted:#a6a9b5;
+  --brand:#7c4dff;
+  --cyan:#00d4ff;
+  --danger:#ff2d55;
+  --stroke:rgba(255,255,255,.10);
+  --stroke2:rgba(255,255,255,.14);
+  --shadow:0 18px 55px rgba(0,0,0,.45);
 }
 
-* { box-sizing: border-box; }
+*{ box-sizing:border-box; }
 
-body {
+html, body { height: 100%; }
+
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(1200px 800px at 70% -10%, rgba(124,77,255,.20) 0, rgba(11,11,18,0) 55%),
+    radial-gradient(900px 600px at 20% 0%, rgba(0,212,255,.12) 0, rgba(11,11,18,0) 60%),
+    linear-gradient(180deg, #0b0b12, #07070c);
+}
+
+/* Header / Footer */
+header, footer{
+  text-align:center;
+  padding: clamp(14px, 3vw, 22px);
+}
+
+header h1{
+  margin: 10px 0 6px;
+  font-size: clamp(24px, 7vw, 44px);
+  letter-spacing: .5px;
+}
+
+.tagline{
   margin: 0;
-  font-family: system-ui, sans-serif;
-  color: var(--text);
-  background: radial-gradient(1200px 800px at 70% -10%, #1a1a28 0, var(--bg) 45%);
+  color: var(--muted);
+  opacity: .9;
+  font-size: clamp(12px, 3.5vw, 15px);
 }
 
-header, footer {
-  text-align: center;
-  padding: 1rem;
+footer small{
+  color: var(--muted);
+  opacity: .75;
 }
 
-main {
-  max-width: 1100px;
+main{
+  max-width: 980px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 16px;
+  padding-bottom: calc(120px + env(safe-area-inset-bottom)); /* space for HUD */
 }
 
-.controls {
+/* ================= CONTROLS CARD ================= */
+
+.controls{
   background: var(--panel);
-  border-radius: 16px;
-  padding: 1rem;
+  border: 1px solid var(--stroke);
+  border-radius: 20px;
+  padding: 16px;
   display: grid;
-  gap: 0.75rem;
+  gap: 12px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
 }
 
-button {
-  background: #2a2a3a;
+.controls button{
+  appearance:none;
+  -webkit-appearance:none;
+  border: 1px solid var(--stroke2);
+  background: rgba(40,40,60,.55);
   color: var(--text);
-  border: 1px solid #3a3a55;
-  border-radius: 12px;
-  padding: 0.7rem;
-  cursor: pointer;
-}
-
-button.primary {
-  background: var(--brand);
-}
-
-.stage {
-  margin-top: 1rem;
-  background: #000;
   border-radius: 16px;
-  overflow: hidden;
-}
-
-#viz {
-  width: 100%;
-  height: 60vh;
-  display: block;
-}
-
-/* ===== Bottom HUD (if you still use it in index.html) ===== */
-.engine-bar {
-  position: fixed;
-  bottom: calc(20px + env(safe-area-inset-bottom));
-  left: 0;
-  right: 0;
-  display: flex;
-  justify-content: center;
-  gap: 14px;
-  z-index: 2000;
-  padding: 0 12px;
-}
-
-.record-btn {
-  background: var(--danger);
-  color: white;
+  padding: 14px 14px;
+  cursor: pointer;
   font-weight: 800;
-  padding: 14px 20px;
-  border-radius: 999px;
+  letter-spacing: .2px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.28);
+  transition: transform .12s ease, background .12s ease, border-color .12s ease;
 }
 
-.engine-toggle {
-  background: rgba(10,10,10,0.70);
-  border: 1px solid rgba(0,212,255,0.75);
-  color: #8feaff;
-  padding: 14px 20px;
-  border-radius: 999px;
-  font-weight: 900;
-  letter-spacing: 2px;
+.controls button:active{
+  transform: translateY(1px) scale(.99);
 }
 
-.engine-panel {
-  position: fixed;
-  bottom: -110%;
-  left: 0;
-  right: 0;
-  background: rgba(10,10,10,0.96);
-  border-top: 1px solid rgba(0,212,255,0.75);
-  padding: 1rem;
-  transition: bottom 0.3s ease;
-  z-index: 1900;
+.controls button.primary{
+  background: linear-gradient(135deg, rgba(124,77,255,.92), rgba(124,77,255,.62));
+  border-color: rgba(124,77,255,.55);
 }
 
-.engine-panel.open {
-  bottom: calc(80px + env(safe-area-inset-bottom));
+.controls button:hover{
+  border-color: rgba(255,255,255,.22);
 }
 
-.engine-panel label {
-  display: block;
-  font-size: 0.9rem;
-  margin-bottom: 0.8rem;
+.controls button.primary:hover{
+  border-color: rgba(124,77,255,.75);
 }
 
-.engine-panel input[type="range"] {
+/* Sliders row */
+.sliders{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+@media (max-width: 560px){
+  .sliders{ grid-template-columns: 1fr; }
+}
+
+.sliders label{
+  display: grid;
+  gap: 8px;
+  font-weight: 800;
+  color: rgba(231,231,238,.92);
+}
+
+/* Give the labels a modern small caption feel */
+.sliders label{
+  font-size: 14px;
+}
+.sliders label > input,
+.sliders label > select{
+  font-size: 16px; /* prevents iOS zoom */
+}
+
+/* ================= MODERN RANGE (Sensitivity) ================= */
+
+input[type="range"]{
   width: 100%;
+  height: 40px;
+  background: rgba(0,0,0,0);
+  margin: 0;
+  padding: 0;
+  accent-color: var(--cyan);
 }
 
-.checkbox {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
+/* WebKit */
+input[type="range"]::-webkit-slider-runnable-track{
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  appearance:none;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  margin-top: -6px; /* centers thumb */
+  background: linear-gradient(135deg, rgba(0,212,255,.95), rgba(124,77,255,.75));
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: 0 10px 26px rgba(0,212,255,.18);
+}
+
+/* Firefox */
+input[type="range"]::-moz-range-track{
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+input[type="range"]::-moz-range-thumb{
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(0,212,255,.95), rgba(124,77,255,.75));
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: 0 10px 26px rgba(0,212,255,.18);
+}
+
+/* ================= MODERN SELECT (Color Mode) ================= */
+
+select{
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(14,14,22,.70);
+  color: var(--text);
+  padding: 12px 44px 12px 14px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.25);
+  outline: none;
+  -webkit-appearance:none;
+  appearance:none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(143,234,255,.95) 50%),
+    linear-gradient(135deg, rgba(143,234,255,.95) 50%, transparent 50%),
+    linear-gradient(to right, rgba(255,255,255,.10), rgba(255,255,255,.10));
+  background-position:
+    calc(100% - 20px) calc(50% - 4px),
+    calc(100% - 14px) calc(50% - 4px),
+    calc(100% - 40px) 50%;
+  background-size:
+    6px 6px,
+    6px 6px,
+    1px 18px;
+  background-repeat:no-repeat;
+}
+
+select:focus{
+  border-color: rgba(0,212,255,.55);
+  box-shadow: 0 0 0 3px rgba(0,212,255,.16), 0 10px 24px rgba(0,0,0,.25);
+}
+
+/* Make option list readable in some browsers */
+option{
+  background: #0f0f18;
+  color: var(--text);
+}
+
+/* ================= KBD hint ================= */
+
+.kbd-hint{
+  color: rgba(231,231,238,.78);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+kbd{
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.12);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+/* ================= STAGE ================= */
+
+.stage{
+  margin-top: 16px;
+  background: #000;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: var(--shadow);
+}
+
+#viz{
+  width: 100%;
+  height: min(62vh, 720px);
+  display: block;
 }
 
 /* Accessibility live region – screenreader-only (keeps a11y, hides visual text) */
-.a11y {
-  position: absolute;
-  left: -9999px;
-  top: auto;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-}
-
-/* ============================================================
-   ✅ MODERN DROPDOWN (Color Mode / Hue by pitch)
-   Works with: <select id="palette"> inside .controls
-   ============================================================ */
-
-.controls select,
-#palette {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  padding: 12px 44px 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(10,10,10,0.55);
-  color: rgba(255,255,255,0.92);
-  font-size: 14px;
-  line-height: 1.2;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
-  outline: none;
-}
-
-/* Make label a positioning context for the arrow */
-.controls label {
-  position: relative;
-}
-
-/* Dropdown arrow (works broadly; harmless if label has no select) */
-.controls label::after {
-  content: "";
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(10px); /* aligns under label text */
-  width: 18px;
-  height: 18px;
-  pointer-events: none;
-  opacity: 0.85;
-  background-repeat: no-repeat;
-  background-size: 18px 18px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%238feaff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-}
-
-/* Only show arrow on labels that actually contain a select */
-.controls label:not(:has(select))::after {
-  content: none;
-}
-
-.controls select:focus,
-#palette:focus {
-  border-color: rgba(143,234,255,0.65);
-  box-shadow: 0 0 0 3px rgba(143,234,255,0.18), 0 16px 50px rgba(0,0,0,0.45);
-}
-
-/* Android option sheet */
-.controls option,
-#palette option {
-  background: #0b0b0f;
-  color: #fff;
+.a11y{
+  position:absolute;
+  left:-9999px;
+  top:auto;
+  width:1px;
+  height:1px;
+  overflow:hidden;
 }
