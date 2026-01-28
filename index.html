@@ -8,8 +8,7 @@
 </head>
 
 <body>
-
-  <header class="hero">
+  <header>
     <h1>Audio → Color & Shape</h1>
     <p class="tagline">
       A tiny demo that turns sound into visual shapes and colors
@@ -17,7 +16,6 @@
   </header>
 
   <main>
-
     <!-- CONTROLS -->
     <section class="controls" aria-label="Audio input controls">
       <button id="micBtn" class="primary">🎙️ Use Microphone</button>
@@ -41,38 +39,63 @@
           </select>
         </label>
       </div>
-
-      <div class="kbd-hint">
-        ⌨️ <kbd>Space</kbd> Start/Stop · <kbd>M</kbd> Mic · <kbd>F</kbd> File · <kbd>D</kbd> Demo
-      </div>
     </section>
 
-    <!-- VISUAL STAGE -->
+    <!-- VISUAL -->
     <section class="stage">
       <canvas id="viz"></canvas>
     </section>
 
-    <!-- FLOATING ACTION BAR -->
-    <div class="action-bar">
-      <button id="recordBtn" class="record-btn">⏺ RECORD</button>
+    <!-- MODERN ENGINE + RECORD -->
+    <section class="engine-bar">
+      <button id="recordBtn" class="record-btn" aria-pressed="false">
+        ⏺ RECORD
+      </button>
 
-      <button id="engineToggle" class="engine-btn" aria-expanded="false">
+      <button
+        id="engineToggle"
+        class="engine-toggle"
+        aria-expanded="false"
+        aria-controls="enginePanel">
         ⚙️ ENGINE
       </button>
-    </div>
+    </section>
 
     <!-- ENGINE PANEL -->
-    <section id="enginePanel" class="engine-panel" aria-hidden="true">
-      <!-- Engine UI wird komplett aus script.js injiziert -->
-    </section>
+    <div
+      id="enginePanel"
+      class="engine-panel"
+      aria-hidden="true"
+      role="region"
+      aria-label="Engine Controls">
 
-    <!-- ACCESSIBILITY (screenreader only) -->
+      <label>
+        Particles
+        <input id="partAmount" type="range" min="0" max="30" value="10" />
+      </label>
+
+      <label>
+        Bass Zoom
+        <input id="zoomInt" type="range" min="0" max="100" value="0" />
+      </label>
+
+      <label>
+        Hue Shift
+        <input id="hueShift" type="range" min="0" max="360" value="280" />
+      </label>
+
+      <label class="checkbox">
+        <input id="reducedMotion" type="checkbox" />
+        Reduced Motion
+      </label>
+    </div>
+
+    <!-- A11Y -->
     <section class="a11y">
-      <p id="srText" aria-live="polite" role="status">
-        Visualization idle. Click anywhere to start.
+      <p id="srText" aria-live="polite">
+        Visualization idle.
       </p>
     </section>
-
   </main>
 
   <footer>
@@ -80,6 +103,5 @@
   </footer>
 
   <script type="module" src="script.js"></script>
-
 </body>
 </html>
