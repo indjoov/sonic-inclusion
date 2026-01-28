@@ -119,3 +119,12 @@ button.primary {
   gap: 0.5rem;
   align-items: center;
 }
+/* Accessibility live region – screenreader-only (keeps a11y, hides visual text) */
+.a11y {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
