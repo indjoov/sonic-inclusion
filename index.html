@@ -8,7 +8,8 @@
 </head>
 
 <body>
-  <header>
+
+  <header class="hero">
     <h1>Audio → Color & Shape</h1>
     <p class="tagline">
       A tiny demo that turns sound into visual shapes and colors
@@ -16,7 +17,8 @@
   </header>
 
   <main>
-    <!-- ================= CONTROLS ================= -->
+
+    <!-- CONTROLS -->
     <section class="controls" aria-label="Audio input controls">
       <button id="micBtn" class="primary">🎙️ Use Microphone</button>
       <button id="fileBtn">📁 Load Audio File</button>
@@ -41,25 +43,36 @@
       </div>
 
       <div class="kbd-hint">
-        ⌨️ Keyboard:
-        <kbd>Space</kbd> Start/Stop ·
-        <kbd>M</kbd> Mic ·
-        <kbd>F</kbd> File ·
-        <kbd>D</kbd> Demo
+        ⌨️ <kbd>Space</kbd> Start/Stop · <kbd>M</kbd> Mic · <kbd>F</kbd> File · <kbd>D</kbd> Demo
       </div>
     </section>
 
-    <!-- ================= VISUAL STAGE ================= -->
+    <!-- VISUAL STAGE -->
     <section class="stage">
-      <canvas id="viz" width="960" height="540"></canvas>
+      <canvas id="viz"></canvas>
     </section>
 
-    <!-- ================= A11Y ================= -->
+    <!-- FLOATING ACTION BAR -->
+    <div class="action-bar">
+      <button id="recordBtn" class="record-btn">⏺ RECORD</button>
+
+      <button id="engineToggle" class="engine-btn" aria-expanded="false">
+        ⚙️ ENGINE
+      </button>
+    </div>
+
+    <!-- ENGINE PANEL -->
+    <section id="enginePanel" class="engine-panel" aria-hidden="true">
+      <!-- Engine UI wird komplett aus script.js injiziert -->
+    </section>
+
+    <!-- ACCESSIBILITY (screenreader only) -->
     <section class="a11y">
-      <p id="srText" aria-live="polite">
+      <p id="srText" aria-live="polite" role="status">
         Visualization idle. Click anywhere to start.
       </p>
     </section>
+
   </main>
 
   <footer>
@@ -67,5 +80,6 @@
   </footer>
 
   <script type="module" src="script.js"></script>
+
 </body>
 </html>
