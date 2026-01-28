@@ -13,17 +13,20 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
-/* ================= A11Y ================= */
-
+// a11y live region
 if (srText) {
   srText.setAttribute('aria-live', 'polite');
   srText.setAttribute('role', 'status');
 }
-const setStatus = (msg) => srText && (srText.textContent = msg);
 
-/* ================= INTRO OVERLAY ================= */
+function setStatus(msg) {
+  if (srText) srText.textContent = msg;
+}
+
+/* ================= OVERLAY (autoplay-safe init) ================= */
 
 const overlay = document.createElement('div');
+overlay.id = 'intro-overlay';
 overlay.style.cssText = `
   position:fixed; inset:0; z-index:3000;
   display:flex; align-items:center; justify-content:center;
@@ -31,13 +34,12 @@ overlay.style.cssText = `
 `;
 overlay.innerHTML = `
   <div style="
-    text-align:center; color:white;
-    background:rgba(5,5,5,.97);
-    padding:60px; border-radius:30px;
-    border:1px solid #00d4ff;
+    text-align:center; color:white; font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background:rgba(5,5,5,0.97); padding:60px;
+    border-radius:30px; border:1px solid #00d4ff;
     box-shadow:0 0 80px rgba(0,212,255,.5);
   ">
-    <h1 style="letter-spacing:12px;">SONIC INCLUSION</h1>
+    <h1 style="margin:0 0 10px; letter-spacing:12px;">SONIC INCLUSION</h1>
     <p style="opacity:.6; letter-spacing:4px; font-size:12px;">
       CLICK TO INITIALIZE
     </p>
@@ -48,131 +50,292 @@ document.body.appendChild(overlay);
 /* ================= ENGINE ================= */
 
 const engine = new AudioEngine();
-let analyser, dataFreq, dataTime;
-let inputGain, monitorGain;
-let bufferSrc, micStream, micNode;
-let currentMode = 'idle';
 let raf = null;
 
-/* ================= STATE ================= */
+// stable analyser routing (mic/file/demo all feed this)
+let analyser = null;
+let dataFreq = null;
+let dataTime = null;
+
+// routing nodes
+let inputGain = null;     // all sources -> inputGain
+let monitorGain = null;   // what you actually hear -> master
+
+// input nodes
+let currentMode = 'idle'; // 'idle' | 'demo' | 'file' | 'mic'
+let bufferSrc = null;
+let micStream = null;
+let micSourceNode = null;
+
+/* ================= VISUAL STATE ================= */
 
 let particles = [];
 let rotation = 0;
+
+/* ================= A11Y / REDUCED MOTION ================= */
+
 let reducedMotion = false;
 
-/* ================= MIC MONITOR ================= */
+/* ================= MIC MONITOR + FEEDBACK GUARD ================= */
 
-let micMonitor = false;
-let micMonitorVol = 0.35;
-let feedbackMuted = false;
-let feedbackHoldUntil = 0;
+let micMonitor = false;        // checkbox
+let micMonitorVol = 0.35;      // 0..1
+let feedbackMuted = false;     // safety latch
+let feedbackHoldUntil = 0;     // timestamp ms
 
-const applyMicMonitorGain = () => {
+function applyMicMonitorGain() {
   if (!monitorGain) return;
-  monitorGain.gain.value =
-    currentMode === 'mic' && micMonitor && !feedbackMuted
-      ? micMonitorVol
-      : 0;
-};
+  const want = (currentMode === 'mic' && micMonitor && !feedbackMuted) ? micMonitorVol : 0;
+  monitorGain.gain.value = want;
+}
 
-/* ================= ENGINE GUI ================= */
+/* ================= CLEAN LEGACY UI (avoid duplicates) ================= */
 
-const gui = document.createElement('div');
-gui.style.cssText = `
-  position:fixed; bottom:90px; right:20px; z-index:1500;
-  width:220px;
-  background:rgba(10,10,10,.9);
-  border:1px solid #00d4ff;
-  border-radius:14px;
-  padding:12px;
-  font-family:sans-serif;
-  color:white;
-  backdrop-filter:blur(10px);
+function removeLegacyUI() {
+  // If you ever had previous injected UI, remove it
+  document.getElementById('si-hud')?.remove();
+  document.getElementById('si-enginePanel')?.remove();
+
+  // Old GUI leftovers (from older versions)
+  document.getElementById('engine-controls')?.remove();
+  document.getElementById('engine-controls-toggle')?.remove();
+}
+removeLegacyUI();
+
+/* ================= MODERN HUD (ENGINE + RECORD) ================= */
+
+const hud = document.createElement('div');
+hud.id = 'si-hud';
+hud.style.cssText = `
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 2000;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
 `;
 
-gui.innerHTML = `
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <strong style="color:#00d4ff; letter-spacing:2px;">ENGINE</strong>
-    <button id="toggleGui" aria-expanded="false"
-      style="border:1px solid #00d4ff; background:none;
-      color:#00d4ff; border-radius:8px; padding:2px 10px;">+</button>
+// RECORD button (modern)
+const recBtn = document.createElement('button');
+recBtn.id = 'si-recBtn';
+recBtn.type = 'button';
+recBtn.textContent = '⏺ RECORD';
+recBtn.setAttribute('aria-pressed', 'false');
+recBtn.style.cssText = `
+  pointer-events: auto;
+  background: #ff2b5a;
+  color: #111;
+  border: 1px solid rgba(255,255,255,0.15);
+  padding: 12px 16px;
+  border-radius: 999px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  box-shadow: 0 12px 30px rgba(255,43,90,0.25);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+// ENGINE toggle (compact)
+const engineToggle = document.createElement('button');
+engineToggle.id = 'si-engineToggle';
+engineToggle.type = 'button';
+engineToggle.textContent = '⚙️ ENGINE';
+engineToggle.setAttribute('aria-expanded', 'false');
+engineToggle.setAttribute('aria-controls', 'si-enginePanel');
+engineToggle.style.cssText = `
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: rgba(10,10,10,0.85);
+  color: #8feaff;
+  border: 1px solid rgba(0,212,255,0.65);
+  padding: 12px 16px;
+  border-radius: 999px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  box-shadow: 0 0 0 1px rgba(0,212,255,0.15), 0 16px 40px rgba(0,212,255,0.12);
+`;
+
+hud.appendChild(recBtn);
+hud.appendChild(engineToggle);
+document.body.appendChild(hud);
+
+// ENGINE PANEL (opens above HUD)
+const enginePanel = document.createElement('div');
+enginePanel.id = 'si-enginePanel';
+enginePanel.setAttribute('role', 'dialog');
+enginePanel.setAttribute('aria-label', 'Engine controls');
+enginePanel.setAttribute('aria-hidden', 'true');
+enginePanel.style.cssText = `
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(74px + env(safe-area-inset-bottom));
+  z-index: 2001;
+  background: rgba(10,10,10,0.92);
+  border: 1px solid rgba(0,212,255,0.65);
+  border-radius: 18px;
+  padding: 14px 14px 12px;
+  color: #fff;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+  display: none;
+`;
+
+enginePanel.innerHTML = `
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="width:36px; height:36px; border-radius:12px; border:1px solid rgba(0,212,255,0.5);
+                  display:flex; align-items:center; justify-content:center; color:#8feaff;">⚙️</div>
+      <div>
+        <div style="font-weight:900; letter-spacing:3px; color:#8feaff;">ENGINE</div>
+        <div style="font-size:12px; opacity:0.65;">Swipe down to close</div>
+      </div>
+    </div>
+    <button id="si-engineClose" type="button" aria-label="Close engine panel" style="
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.18);
+      color: #fff;
+      border-radius: 12px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 900;
+    ">✕</button>
   </div>
 
-  <div id="guiBody" aria-hidden="true"
-    style="display:none; margin-top:10px; touch-action:pan-y;">
+  <div style="display:grid; gap:10px;">
+    <label style="font-size:12px; opacity:0.8;">
+      PARTICLES
+      <input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;">
+    </label>
 
-    <label style="font-size:10px;">PARTICLES</label>
-    <input id="partAmount" type="range" min="0" max="30" value="10">
+    <label style="font-size:12px; opacity:0.8;">
+      BASS ZOOM
+      <input id="zoomInt" type="range" min="0" max="100" value="0" style="width:100%; margin-top:6px;">
+    </label>
 
-    <label style="font-size:10px;">BASS ZOOM</label>
-    <input id="zoomInt" type="range" min="0" max="100" value="0">
+    <label style="font-size:12px; opacity:0.8;">
+      HUE
+      <input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; margin-top:6px;">
+    </label>
 
-    <label style="font-size:10px;">HUE</label>
-    <input id="hueShift" type="range" min="0" max="360" value="280">
-
-    <div style="display:flex; gap:6px; margin:10px 0;">
-      <button id="presetCalm">CALM</button>
-      <button id="presetBass">BASS</button>
-      <button id="presetCine">CINE</button>
+    <div style="display:flex; gap:8px;">
+      <button id="presetCalm" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">CALM</button>
+      <button id="presetBass" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">BASS</button>
+      <button id="presetCine" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">CINE</button>
     </div>
 
-    <label style="font-size:11px;">
-      <input id="reducedMotion" type="checkbox"> Reduced Motion
+    <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
+      <input id="reducedMotion" type="checkbox">
+      Reduced Motion
     </label>
 
-    <hr>
+    <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.12);">
+      <label style="font-size:12px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <span>Mic Monitor</span>
+        <input id="micMonitor" type="checkbox">
+      </label>
 
-    <label style="font-size:11px;">
-      <input id="micMonitor" type="checkbox"> Mic Monitor
-    </label>
+      <label style="font-size:12px; opacity:0.8; display:block; margin-top:10px;">
+        Monitor Volume
+        <input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; margin-top:6px;">
+      </label>
 
-    <label style="font-size:10px;">
-      Monitor Volume
-      <input id="micMonitorVol" type="range" min="0" max="100" value="35">
-    </label>
-
-    <div id="feedbackWarn"
-      style="display:none; font-size:11px; color:#ff0044;">
-      🔇 Feedback muted
-    </div>
-
-    <div style="font-size:11px; opacity:.6; margin-top:6px;">
-      Swipe down to close
+      <div id="feedbackWarn" style="display:none; margin-top:10px; font-size:12px; color:#ff2b5a; font-weight:900;">
+        🔇 Feedback risk detected — mic monitor muted
+      </div>
     </div>
   </div>
 `;
-document.body.appendChild(gui);
 
-const toggleBtn = gui.querySelector('#toggleGui');
-const guiBody = gui.querySelector('#guiBody');
+document.body.appendChild(enginePanel);
 
-const setGuiOpen = (open) => {
-  guiBody.style.display = open ? 'block' : 'none';
-  toggleBtn.textContent = open ? '–' : '+';
-  toggleBtn.setAttribute('aria-expanded', open);
-  guiBody.setAttribute('aria-hidden', !open);
-};
+// Panel open/close with ARIA state
+let engineOpen = false;
 
-toggleBtn.onclick = () =>
-  setGuiOpen(guiBody.style.display === 'none');
+function setEngineOpen(open) {
+  engineOpen = open;
+  enginePanel.style.display = open ? 'block' : 'none';
+  enginePanel.setAttribute('aria-hidden', open ? 'false' : 'true');
+  engineToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
 
-/* Swipe down close */
-let touchStart = null;
-guiBody.addEventListener('touchstart', e => touchStart = e.touches[0].clientY);
-guiBody.addEventListener('touchmove', e => {
-  if (touchStart && e.touches[0].clientY - touchStart > 70) {
-    setGuiOpen(false);
-    touchStart = null;
+engineToggle.addEventListener('click', () => setEngineOpen(!engineOpen));
+enginePanel.querySelector('#si-engineClose').addEventListener('click', () => setEngineOpen(false));
+
+// Swipe-down close (mobile)
+let touchStartY = null;
+enginePanel.addEventListener('touchstart', (e) => {
+  touchStartY = e.touches?.[0]?.clientY ?? null;
+}, { passive: true });
+
+enginePanel.addEventListener('touchmove', (e) => {
+  if (touchStartY == null) return;
+  const y = e.touches?.[0]?.clientY ?? touchStartY;
+  const dy = y - touchStartY;
+  if (dy > 50) {
+    setEngineOpen(false);
+    touchStartY = null;
   }
+}, { passive: true });
+
+function autoCloseEngineForRecording() {
+  if (engineOpen) setEngineOpen(false);
+}
+
+/* ================= ENGINE PANEL CONTROL HOOKS ================= */
+
+const partEl = enginePanel.querySelector('#partAmount');
+const zoomEl = enginePanel.querySelector('#zoomInt');
+const hueEl  = enginePanel.querySelector('#hueShift');
+
+function preset(p, z, h) {
+  partEl.value = String(p);
+  zoomEl.value = String(z);
+  hueEl.value  = String(h);
+}
+
+enginePanel.querySelector('#presetCalm').addEventListener('click', () => preset(4, 0, 210));
+enginePanel.querySelector('#presetBass').addEventListener('click', () => preset(18, 10, 340));
+enginePanel.querySelector('#presetCine').addEventListener('click', () => preset(10, 4, 280));
+
+enginePanel.querySelector('#reducedMotion').addEventListener('change', (e) => {
+  reducedMotion = !!e.target.checked;
+  if (reducedMotion) particles = [];
 });
 
-/* ================= ENGINE INIT ================= */
+const micMonitorEl = enginePanel.querySelector('#micMonitor');
+const micMonitorVolEl = enginePanel.querySelector('#micMonitorVol');
+const feedbackWarnEl = enginePanel.querySelector('#feedbackWarn');
+
+micMonitorEl.checked = micMonitor;
+micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
+
+micMonitorEl.addEventListener('change', (e) => {
+  micMonitor = !!e.target.checked;
+  feedbackMuted = false;
+  feedbackWarnEl.style.display = 'none';
+  applyMicMonitorGain();
+  setStatus(micMonitor ? '🎙️ Mic monitor ON' : '🎙️ Mic monitor OFF');
+});
+
+micMonitorVolEl.addEventListener('input', (e) => {
+  micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100));
+  applyMicMonitorGain();
+});
+
+/* ================= INIT / ROUTING ================= */
 
 async function initEngine() {
   if (engine.state !== 'idle') return;
-  setStatus('Initializing engine…');
 
-  await engine.init({ startSuspended: true });
+  setStatus('⏳ Initializing engine…');
+  await engine.init({ startSuspended: true, debug: false });
 
   analyser = engine.ctx.createAnalyser();
   analyser.fftSize = 2048;
@@ -182,190 +345,399 @@ async function initEngine() {
   dataTime = new Uint8Array(analyser.fftSize);
 
   inputGain = engine.ctx.createGain();
-  monitorGain = engine.ctx.createGain();
+  inputGain.gain.value = 1;
 
+  monitorGain = engine.ctx.createGain();
+  monitorGain.gain.value = 1; // demo/file audible by default
+
+  // route:
+  // sources -> inputGain -> analyser (visual)
+  // sources -> inputGain -> monitorGain -> engine.master (audio)
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
   monitorGain.connect(engine.master);
 
-  overlay.remove();
-  loop();
-  setStatus('Engine ready');
+  overlay.style.display = 'none';
+  setStatus('✅ Engine ready (Demo / File / Mic)');
+  if (!raf) loop();
 }
 
 overlay.onclick = initEngine;
 
-/* ================= STOP ALL ================= */
+/* ================= CLEAN STOP ================= */
 
-async function stopAll() {
-  bufferSrc?.stop?.();
-  bufferSrc = null;
+async function stopAll({ suspend = true } = {}) {
+  if (bufferSrc) {
+    try { bufferSrc.onended = null; } catch {}
+    try { bufferSrc.stop(0); } catch {}
+    try { bufferSrc.disconnect(); } catch {}
+    bufferSrc = null;
+  }
 
-  micStream?.getTracks().forEach(t => t.stop());
-  micStream = null;
+  if (micSourceNode) {
+    try { micSourceNode.disconnect(); } catch {}
+    micSourceNode = null;
+  }
 
-  monitorGain && (monitorGain.gain.value = 0);
+  if (micStream) {
+    try { micStream.getTracks().forEach(t => t.stop()); } catch {}
+    micStream = null;
+  }
+
   currentMode = 'idle';
+  if (micBtn) micBtn.textContent = '🎙️ Use Microphone';
 
-  await engine.ctx.suspend();
+  // reset feedback warn
+  feedbackMuted = false;
+  feedbackHoldUntil = 0;
+  feedbackWarnEl.style.display = 'none';
+
+  // mute monitor by default if idle
+  if (monitorGain) monitorGain.gain.value = 0;
+
+  if (suspend) {
+    try { await engine.ctx.suspend(); } catch {}
+  }
 }
 
-/* ================= DEMO ================= */
+/* ================= DEMO (play once) ================= */
 
-demoBtn.onclick = async () => {
+async function playDemo(path) {
   await initEngine();
-  await stopAll();
+  await stopAll({ suspend: false });
 
-  const buf = await fetch('media/kasubo hoerprobe.mp3')
-    .then(r => r.arrayBuffer())
-    .then(b => engine.ctx.decodeAudioData(b));
+  setStatus('⏳ Loading demo…');
+
+  const buf = await fetch(path).then(r => r.arrayBuffer());
+  const audio = await engine.ctx.decodeAudioData(buf);
 
   await engine.resume();
   currentMode = 'demo';
 
+  // demo always audible
+  if (monitorGain) monitorGain.gain.value = 1;
+  feedbackMuted = false;
+  feedbackWarnEl.style.display = 'none';
+
   bufferSrc = engine.ctx.createBufferSource();
-  bufferSrc.buffer = buf;
+  bufferSrc.buffer = audio;
+  bufferSrc.loop = false;
   bufferSrc.connect(inputGain);
-  monitorGain.gain.value = 1;
-  bufferSrc.start();
 
-  setStatus('Demo playing');
-};
+  bufferSrc.onended = async () => {
+    await stopAll({ suspend: true });
+    setStatus('✅ Demo finished (played once)');
+  };
 
-/* ================= MIC ================= */
+  bufferSrc.start(0);
+  setStatus('🎧 Demo playing (once)');
+}
 
-micBtn.onclick = async () => {
+demoBtn?.addEventListener('click', () => playDemo('media/kasubo hoerprobe.mp3'));
+
+/* ================= FILE INPUT (play once) ================= */
+
+fileBtn?.addEventListener('click', async () => {
+  await initEngine();
+  fileInput?.click();
+});
+
+fileInput?.addEventListener('change', async (e) => {
+  try {
+    await initEngine();
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    await stopAll({ suspend: false });
+    setStatus('⏳ Decoding file…');
+
+    const arrayBuf = await file.arrayBuffer();
+    const audio = await engine.ctx.decodeAudioData(arrayBuf);
+
+    await engine.resume();
+    currentMode = 'file';
+
+    // file always audible
+    if (monitorGain) monitorGain.gain.value = 1;
+    feedbackMuted = false;
+    feedbackWarnEl.style.display = 'none';
+
+    bufferSrc = engine.ctx.createBufferSource();
+    bufferSrc.buffer = audio;
+    bufferSrc.loop = false;
+    bufferSrc.connect(inputGain);
+
+    bufferSrc.onended = async () => {
+      await stopAll({ suspend: true });
+      setStatus('✅ File playback finished');
+    };
+
+    bufferSrc.start(0);
+    setStatus(`🎵 Playing file: ${file.name}`);
+  } catch (err) {
+    console.error(err);
+    setStatus('❌ File playback error');
+  } finally {
+    if (fileInput) fileInput.value = '';
+  }
+});
+
+/* ================= MIC INPUT (toggle) ================= */
+
+micBtn?.addEventListener('click', async () => {
   await initEngine();
 
   if (currentMode === 'mic') {
-    await stopAll();
-    setStatus('Mic stopped');
+    await stopAll({ suspend: true });
+    setStatus('⏹ Mic stopped');
     return;
   }
 
-  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  await engine.resume();
-  currentMode = 'mic';
+  try {
+    await stopAll({ suspend: false });
+    setStatus('⏳ Requesting microphone…');
 
-  micNode = engine.ctx.createMediaStreamSource(micStream);
-  micNode.connect(inputGain);
-  applyMicMonitorGain();
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }
+    });
 
-  setStatus('Mic active');
-};
+    await engine.resume();
+    currentMode = 'mic';
 
-/* ================= RECORD ================= */
+    // mic muted unless monitor enabled
+    applyMicMonitorGain();
 
-const recBtn = document.createElement('button');
-recBtn.textContent = '⏺ RECORD';
-recBtn.style.cssText = `
-  position:fixed; bottom:20px; left:20px;
-  background:black; color:#ff0044;
-  border:1px solid #ff0044;
-  padding:10px 16px;
-  border-radius:10px;
-`;
-document.body.appendChild(recBtn);
+    micSourceNode = engine.ctx.createMediaStreamSource(micStream);
+    micSourceNode.connect(inputGain);
 
-let mediaRecorder, chunks = [];
+    if (micBtn) micBtn.textContent = '⏹ Stop Microphone';
+    setStatus(micMonitor ? '🎙️ Microphone active (monitor ON)' : '🎙️ Microphone active (monitor OFF)');
+  } catch (err) {
+    console.error(err);
+    await stopAll({ suspend: true });
+    setStatus('❌ Microphone permission / error');
+  }
+});
 
-recBtn.onclick = async () => {
+/* ================= KEYBOARD SHORTCUTS ================= */
+
+window.addEventListener('keydown', async (e) => {
+  const key = e.key.toLowerCase();
+
+  if (key === ' ') {
+    e.preventDefault();
+    if (currentMode !== 'idle') {
+      await stopAll({ suspend: true });
+      setStatus('⏹ Stopped');
+    } else {
+      await playDemo('media/kasubo hoerprobe.mp3');
+    }
+  }
+
+  if (key === 'm') micBtn?.click();
+  if (key === 'f') fileBtn?.click();
+  if (key === 'd') demoBtn?.click();
+
+  if (key === 'escape') setEngineOpen(false);
+});
+
+/* ================= RECORDING (canvas + master audio) ================= */
+
+let mediaRecorder = null;
+let recordedChunks = [];
+
+recBtn.addEventListener('click', async () => {
   await initEngine();
-  await engine.resume();
 
   if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-    setGuiOpen(false);
+    recordedChunks = [];
+
+    // UX: close engine when recording starts
+    autoCloseEngineForRecording();
+
+    // ensure audio context running for capture
+    await engine.resume();
 
     const stream = canvas.captureStream(60);
-    const dest = engine.ctx.createMediaStreamDestination();
-    engine.master.connect(dest);
-    stream.addTrack(dest.stream.getAudioTracks()[0]);
 
-    mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    const recDest = engine.ctx.createMediaStreamDestination();
+    engine.master.connect(recDest);
+
+    const audioTrack = recDest.stream.getAudioTracks()[0];
+    if (audioTrack) stream.addTrack(audioTrack);
+
+    const mimeCandidates = [
+      'video/webm; codecs=vp9',
+      'video/webm; codecs=vp8',
+      'video/webm',
+    ];
+
+    let chosen = '';
+    for (const m of mimeCandidates) {
+      if (MediaRecorder.isTypeSupported(m)) { chosen = m; break; }
+    }
+
+    mediaRecorder = new MediaRecorder(stream, chosen ? { mimeType: chosen } : undefined);
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    };
+
     mediaRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
+      try { engine.master.disconnect(recDest); } catch {}
+      try { audioTrack?.stop(); } catch {}
+
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'Sonic_Inclusion.webm';
+      a.download = 'Sonic_Inclusion_Cinematic.webm';
       a.click();
-      chunks = [];
+
+      setStatus('✅ Recording saved');
     };
 
     mediaRecorder.start();
+
     recBtn.textContent = '⏹ STOP';
-    setStatus('Recording…');
+    recBtn.setAttribute('aria-pressed', 'true');
+    recBtn.style.background = '#111';
+    recBtn.style.color = '#ff2b5a';
+    recBtn.style.borderColor = 'rgba(255,43,90,0.75)';
+
+    setStatus('⏺ Recording…');
   } else {
     mediaRecorder.stop();
+
     recBtn.textContent = '⏺ RECORD';
-    setStatus('Recording saved');
+    recBtn.setAttribute('aria-pressed', 'false');
+    recBtn.style.background = '#ff2b5a';
+    recBtn.style.color = '#111';
+    recBtn.style.borderColor = 'rgba(255,255,255,0.15)';
+
+    setStatus('⏹ Stopping recording…');
   }
-};
+});
 
 /* ================= VISUALS ================= */
 
 class Particle {
-  constructor(x, y, h) {
+  constructor(x, y, hue) {
     this.x = x; this.y = y;
-    this.vx = (Math.random() - .5) * 8;
-    this.vy = (Math.random() - .5) * 8;
-    this.life = 1; this.h = h;
+    this.vx = (Math.random() - 0.5) * 10;
+    this.vy = (Math.random() - 0.5) * 10;
+    this.life = 1;
+    this.hue = hue;
   }
-  update() { this.x += this.vx; this.y += this.vy; this.life -= .03; }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= 0.03;
+  }
   draw() {
-    c.fillStyle = `hsla(${this.h},100%,60%,${this.life})`;
-    c.beginPath(); c.arc(this.x, this.y, 2, 0, Math.PI * 2); c.fill();
+    c.fillStyle = `hsla(${this.hue},100%,60%,${this.life})`;
+    c.beginPath();
+    c.arc(this.x, this.y, 2, 0, Math.PI * 2);
+    c.fill();
   }
+}
+
+function rmsFromTimeDomain(arr) {
+  let sum = 0;
+  for (let i = 0; i < arr.length; i++) {
+    const v = (arr[i] - 128) / 128;
+    sum += v * v;
+  }
+  return Math.sqrt(sum / arr.length);
 }
 
 /* ================= LOOP ================= */
 
 function loop() {
-  if (!analyser) return requestAnimationFrame(loop);
+  if (!analyser) {
+    raf = requestAnimationFrame(loop);
+    return;
+  }
 
   analyser.getByteFrequencyData(dataFreq);
   analyser.getByteTimeDomainData(dataTime);
 
-  const w = canvas.width, h = canvas.height;
+  // feedback guard (mic mode only)
+  const now = performance.now();
+  const micRms = rmsFromTimeDomain(dataTime);
+
+  const LOUD = 0.22;
+  const QUIET = 0.10;
+  const HOLD_MS = 2500;
+
+  if (currentMode === 'mic' && micMonitor) {
+    if (!feedbackMuted && micRms > LOUD) {
+      feedbackMuted = true;
+      feedbackHoldUntil = now + HOLD_MS;
+      applyMicMonitorGain();
+      feedbackWarnEl.style.display = 'block';
+      setStatus('🔇 Feedback risk — mic monitor muted');
+    }
+
+    if (feedbackMuted && now > feedbackHoldUntil && micRms < QUIET) {
+      feedbackMuted = false;
+      applyMicMonitorGain();
+      feedbackWarnEl.style.display = 'none';
+      setStatus('✅ Mic monitor safe again');
+    }
+  }
+
+  const w = canvas.width;
+  const h = canvas.height;
   const low = (dataFreq[2] + dataFreq[4]) / 2;
 
-  const p = parseInt(gui.querySelector('#partAmount').value);
-  const z = parseInt(gui.querySelector('#zoomInt').value) / 1000;
-  const hue = (parseInt(gui.querySelector('#hueShift').value) + low * .4) % 360;
+  const pAmount = parseInt(partEl.value, 10);
+  const zoomSens = parseInt(zoomEl.value, 10) / 1000;
+  const hueShift = parseInt(hueEl.value, 10);
 
-  c.fillStyle = 'rgba(5,5,5,.3)';
+  const zoom = reducedMotion ? 1 : 1 + (low * zoomSens);
+  const hue = (hueShift + low * 0.4) % 360;
+
+  c.fillStyle = 'rgba(5,5,5,0.30)';
   c.fillRect(0, 0, w, h);
 
   c.save();
-  c.translate(w/2, h/2);
-  c.scale(1 + low * z, 1 + low * z);
-  c.translate(-w/2, -h/2);
+  c.translate(w / 2, h / 2);
+  c.scale(zoom, zoom);
+  c.translate(-w / 2, -h / 2);
 
-  if (!reducedMotion) rotation += .002;
+  if (!reducedMotion) rotation += 0.002;
 
-  c.strokeStyle = `hsla(${hue},100%,50%,.25)`;
-  for (let i = 0; i < 40; i++) {
+  c.strokeStyle = `hsla(${hue},100%,50%,0.22)`;
+  for (let i = 0; i < 60; i++) {
+    const v = dataFreq[i];
     c.beginPath();
-    c.arc(w/2, h/2, 80 + dataFreq[i], 0, Math.PI * 2);
+    c.arc(w / 2, h / 2, 100 + v, 0, Math.PI * 2);
     c.stroke();
   }
 
-  if (!reducedMotion && low > 200)
-    for (let i = 0; i < p; i++)
-      particles.push(new Particle(w/2, h/2, hue));
+  if (!reducedMotion && low > 200) {
+    for (let i = 0; i < pAmount; i++) {
+      particles.push(new Particle(w / 2, h / 2, hue));
+    }
+  }
 
-  particles = particles.filter(p => p.life > 0);
+  particles = reducedMotion ? [] : particles.filter(p => p.life > 0);
   particles.forEach(p => { p.update(); p.draw(); });
 
   c.restore();
-  requestAnimationFrame(loop);
+
+  raf = requestAnimationFrame(loop);
 }
 
 /* ================= RESIZE ================= */
 
-const resize = () => {
+function resize() {
   canvas.width = innerWidth;
   canvas.height = innerHeight;
-};
+}
 window.addEventListener('resize', resize);
 resize();
