@@ -16,7 +16,7 @@
   </header>
 
   <main>
-    <!-- CONTROLS -->
+    <!-- ================= CONTROLS ================= -->
     <section class="controls" aria-label="Audio input controls">
       <button id="micBtn" class="primary">🎙️ Use Microphone</button>
       <button id="fileBtn">📁 Load Audio File</button>
@@ -39,61 +39,25 @@
           </select>
         </label>
       </div>
+
+      <div class="kbd-hint">
+        ⌨️ Keyboard:
+        <kbd>Space</kbd> Start/Stop ·
+        <kbd>M</kbd> Mic ·
+        <kbd>F</kbd> File ·
+        <kbd>D</kbd> Demo
+      </div>
     </section>
 
-    <!-- VISUAL -->
+    <!-- ================= VISUAL STAGE ================= -->
     <section class="stage">
-      <canvas id="viz"></canvas>
+      <canvas id="viz" width="960" height="540"></canvas>
     </section>
 
-    <!-- MODERN ENGINE + RECORD -->
-    <section class="engine-bar">
-      <button id="recordBtn" class="record-btn" aria-pressed="false">
-        ⏺ RECORD
-      </button>
-
-      <button
-        id="engineToggle"
-        class="engine-toggle"
-        aria-expanded="false"
-        aria-controls="enginePanel">
-        ⚙️ ENGINE
-      </button>
-    </section>
-
-    <!-- ENGINE PANEL -->
-    <div
-      id="enginePanel"
-      class="engine-panel"
-      aria-hidden="true"
-      role="region"
-      aria-label="Engine Controls">
-
-      <label>
-        Particles
-        <input id="partAmount" type="range" min="0" max="30" value="10" />
-      </label>
-
-      <label>
-        Bass Zoom
-        <input id="zoomInt" type="range" min="0" max="100" value="0" />
-      </label>
-
-      <label>
-        Hue Shift
-        <input id="hueShift" type="range" min="0" max="360" value="280" />
-      </label>
-
-      <label class="checkbox">
-        <input id="reducedMotion" type="checkbox" />
-        Reduced Motion
-      </label>
-    </div>
-
-    <!-- A11Y -->
-    <section class="a11y">
+    <!-- ================= A11Y ================= -->
+    <section class="a11y" aria-label="Live description for screen readers">
       <p id="srText" aria-live="polite">
-        Visualization idle.
+        Visualization idle. Click anywhere to start.
       </p>
     </section>
   </main>
