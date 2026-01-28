@@ -61,47 +61,51 @@ button.primary {
   display: block;
 }
 
+/* ===== Bottom HUD (if you still use it in index.html) ===== */
 .engine-bar {
   position: fixed;
-  bottom: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
   left: 0;
   right: 0;
   display: flex;
   justify-content: center;
   gap: 14px;
   z-index: 2000;
+  padding: 0 12px;
 }
 
 .record-btn {
   background: var(--danger);
   color: white;
-  font-weight: 700;
+  font-weight: 800;
   padding: 14px 20px;
   border-radius: 999px;
 }
 
 .engine-toggle {
-  background: transparent;
-  border: 1px solid #00d4ff;
-  color: #00d4ff;
+  background: rgba(10,10,10,0.70);
+  border: 1px solid rgba(0,212,255,0.75);
+  color: #8feaff;
   padding: 14px 20px;
   border-radius: 999px;
+  font-weight: 900;
+  letter-spacing: 2px;
 }
 
 .engine-panel {
   position: fixed;
-  bottom: -100%;
+  bottom: -110%;
   left: 0;
   right: 0;
   background: rgba(10,10,10,0.96);
-  border-top: 1px solid #00d4ff;
+  border-top: 1px solid rgba(0,212,255,0.75);
   padding: 1rem;
   transition: bottom 0.3s ease;
   z-index: 1900;
 }
 
 .engine-panel.open {
-  bottom: 80px;
+  bottom: calc(80px + env(safe-area-inset-bottom));
 }
 
 .engine-panel label {
@@ -119,6 +123,7 @@ button.primary {
   gap: 0.5rem;
   align-items: center;
 }
+
 /* Accessibility live region – screenreader-only (keeps a11y, hides visual text) */
 .a11y {
   position: absolute;
@@ -127,4 +132,64 @@ button.primary {
   width: 1px;
   height: 1px;
   overflow: hidden;
+}
+
+/* ============================================================
+   ✅ MODERN DROPDOWN (Color Mode / Hue by pitch)
+   Works with: <select id="palette"> inside .controls
+   ============================================================ */
+
+.controls select,
+#palette {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  padding: 12px 44px 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(10,10,10,0.55);
+  color: rgba(255,255,255,0.92);
+  font-size: 14px;
+  line-height: 1.2;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+  outline: none;
+}
+
+/* Make label a positioning context for the arrow */
+.controls label {
+  position: relative;
+}
+
+/* Dropdown arrow (works broadly; harmless if label has no select) */
+.controls label::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(10px); /* aligns under label text */
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+  opacity: 0.85;
+  background-repeat: no-repeat;
+  background-size: 18px 18px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%238feaff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+/* Only show arrow on labels that actually contain a select */
+.controls label:not(:has(select))::after {
+  content: none;
+}
+
+.controls select:focus,
+#palette:focus {
+  border-color: rgba(143,234,255,0.65);
+  box-shadow: 0 0 0 3px rgba(143,234,255,0.18), 0 16px 50px rgba(0,0,0,0.45);
+}
+
+/* Android option sheet */
+.controls option,
+#palette option {
+  background: #0b0b0f;
+  color: #fff;
 }
