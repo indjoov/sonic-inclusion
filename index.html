@@ -1,65 +1,115 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sonic Inclusion - Audio → Color & Shape</title>
-    <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sonic Inclusion – Audio → Color & Shape</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
-    <header>
-        <h1>Sonic Inclusion - Audio → Color & Shape</h1>
-        <p class="tagline">A tiny demo that turns sound into visual shapes and colors</p>
-    </header>
+  <header>
+    <h1>Audio → Color & Shape</h1>
+    <p class="tagline">
+      A tiny demo that turns sound into visual shapes and colors
+    </p>
+  </header>
 
-    <main>
-        <section class="controls" aria-label="Audio input controls">
-            <button id="micBtn" class="primary">🎙️ Use Microphone</button>
-            <button id="fileBtn">📁 Load Audio File</button>
-            <button id="demoBtn">✨ Play Kasubo Demo</button>
+  <main>
+    <!-- ================= CONTROLS ================= -->
+    <section class="controls" aria-label="Audio input controls">
 
-            <input id="fileInput" type="file" accept="audio/*" hidden>
+      <button id="micBtn" class="primary">🎙️ Use Microphone</button>
+      <button id="fileBtn">📁 Load Audio File</button>
+      <button id="demoBtn">✨ Play Kasubo Demo</button>
 
-            <div class="sliders">
-                <label>
-                    Sensitivity
-                    <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1">
-                </label>
+      <input id="fileInput" type="file" accept="audio/*" hidden />
 
-                <label>
-                    Color Mode
-                    <select id="palette">
-                        <option value="hue">Hue by pitch (default)</option>
-                        <option value="energy">Hue by energy</option>
-                        <option value="grayscale">High-contrast grayscale</option>
-                    </select>
-                </label>
-            </div>
+      <div class="sliders">
+        <label>
+          Sensitivity
+          <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1" />
+        </label>
 
-            <div class="kbd-hint">
-                ⌨️ Keyboard:
-                <kbd>Space</kbd> = Start/Stop ·
-                <kbd>M</kbd> = Mic ·
-                <kbd>F</kbd> = File ·
-                <kbd>D</kbd> = Demo
-            </div>
-        </section>
+        <label>
+          Color Mode
+          <select id="palette">
+            <option value="hue">Hue by pitch (default)</option>
+            <option value="energy">Hue by energy</option>
+            <option value="grayscale">High-contrast grayscale</option>
+          </select>
+        </label>
+      </div>
 
-        <section class="stage" aria-label="Visualization">
-            <canvas id="viz" width="960" height="540"></canvas>
-        </section>
+      <div class="kbd-hint">
+        ⌨️ Keyboard:
+        <kbd>Space</kbd> Start/Stop ·
+        <kbd>M</kbd> Mic ·
+        <kbd>F</kbd> File ·
+        <kbd>D</kbd> Demo
+      </div>
+    </section>
 
-        <section class="a11y" aria-label="Live description for screen readers">
-            <p id="srText" aria-live="polite">
-                Visualization idle. Click anywhere to initialize.
-            </p>
-        </section>
-    </main>
+    <!-- ================= VISUAL STAGE ================= -->
+    <section class="stage">
+      <canvas id="viz" width="960" height="540"></canvas>
+    </section>
 
-    <footer>
-        <small>© 2025 Indjoov Arts · Sonic Inclusion Prototype</small>
-    </footer>
+    <!-- ================= ENGINE + RECORD ================= -->
+    <section class="engine-wrapper">
 
-    <script type="module" src="script.js"></script>
+      <button class="record-btn">⏺ RECORD</button>
+
+      <div class="engine">
+        <button class="engine-toggle" id="engineToggle">
+          ⚙️ ENGINE ▾
+        </button>
+
+        <div class="engine-panel" id="enginePanel">
+          <label>
+            Bass Zoom
+            <input type="range" min="0" max="1" step="0.01" value="0" />
+          </label>
+
+          <label>
+            Friction
+            <input type="range" min="0" max="1" step="0.01" value="0.3" />
+          </label>
+
+          <label>
+            Particles
+            <input type="range" min="0" max="1" step="0.01" value="0.5" />
+          </label>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ================= A11Y ================= -->
+    <section class="a11y">
+      <p id="srText" aria-live="polite">
+        Visualization idle. Click anywhere to start.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <small>© 2025 Indjoov Arts · Sonic Inclusion Prototype</small>
+  </footer>
+
+  <script type="module" src="script.js"></script>
+
+  <!-- ENGINE TOGGLE -->
+  <script>
+    const toggle = document.getElementById('engineToggle');
+    const panel = document.getElementById('enginePanel');
+
+    toggle.addEventListener('click', () => {
+      panel.classList.toggle('open');
+      toggle.textContent = panel.classList.contains('open')
+        ? '⚙️ ENGINE ▴'
+        : '⚙️ ENGINE ▾';
+    });
+  </script>
 </body>
 </html>
