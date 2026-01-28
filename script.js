@@ -24,27 +24,46 @@ function setStatus(msg) {
 }
 
 /* ================= OVERLAY (autoplay-safe init) ================= */
+/* ✅ Updated: responsive + safe-area + always fits on mobile */
 
 const overlay = document.createElement('div');
 overlay.id = 'intro-overlay';
 overlay.style.cssText = `
   position:fixed; inset:0; z-index:3000;
   display:flex; align-items:center; justify-content:center;
-  background:black; cursor:pointer;
+  padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+  background: rgba(0,0,0,0.92);
+  cursor:pointer;
 `;
+
 overlay.innerHTML = `
   <div style="
-    text-align:center; color:white; font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-    background:rgba(5,5,5,0.97); padding:60px;
-    border-radius:30px; border:1px solid #00d4ff;
-    box-shadow:0 0 80px rgba(0,212,255,.5);
+    width: min(92vw, 560px);
+    text-align:center;
+    color:white;
+    font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background: rgba(5,5,5,0.94);
+    padding: clamp(22px, 6vw, 56px);
+    border-radius: 22px;
+    border: 1px solid rgba(0,212,255,0.55);
+    box-shadow: 0 0 70px rgba(0,212,255,.22);
   ">
-    <h1 style="margin:0 0 10px; letter-spacing:12px;">SONIC INCLUSION</h1>
-    <p style="opacity:.6; letter-spacing:4px; font-size:12px;">
-      CLICK TO INITIALIZE
-    </p>
+    <h1 style="
+      margin:0 0 12px;
+      letter-spacing: clamp(6px, 2.6vw, 14px);
+      font-size: clamp(22px, 6.5vw, 44px);
+      line-height: 1.05;
+    ">SONIC<br/>INCLUSION</h1>
+
+    <p style="
+      margin:0;
+      opacity:.65;
+      letter-spacing: clamp(2px, 1.2vw, 6px);
+      font-size: clamp(11px, 3.2vw, 14px);
+    ">CLICK TO INITIALIZE</p>
   </div>
 `;
+
 document.body.appendChild(overlay);
 
 /* ================= ENGINE ================= */
