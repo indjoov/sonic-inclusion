@@ -7,25 +7,24 @@ const c = canvas.getContext('2d');
 
 const srText = document.getElementById('srText');
 const sens = document.getElementById('sens');
-const palette = document.getElementById('palette');
 
 const micBtn = document.getElementById('micBtn');
 const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
+const paletteSel = document.getElementById('palette');
 
 // a11y live region
 if (srText) {
   srText.setAttribute('aria-live', 'polite');
   srText.setAttribute('role', 'status');
 }
-
 function setStatus(msg) {
   if (srText) srText.textContent = msg;
 }
 
 /* ================= OVERLAY (autoplay-safe init) ================= */
-/* ✅ responsive + safe-area */
+/* responsive + safe-area + always fits on mobile */
 
 const overlay = document.createElement('div');
 overlay.id = 'intro-overlay';
@@ -64,7 +63,6 @@ overlay.innerHTML = `
     ">CLICK TO INITIALIZE</p>
   </div>
 `;
-
 document.body.appendChild(overlay);
 
 /* ================= ENGINE ================= */
@@ -72,7 +70,7 @@ document.body.appendChild(overlay);
 const engine = new AudioEngine();
 let raf = null;
 
-// stable analyser routing
+// stable analyser routing (mic/file/demo all feed this)
 let analyser = null;
 let dataFreq = null;
 let dataTime = null;
@@ -98,10 +96,10 @@ let reducedMotion = false;
 
 /* ================= MIC MONITOR + FEEDBACK GUARD ================= */
 
-let micMonitor = false;
-let micMonitorVol = 0.35;
-let feedbackMuted = false;
-let feedbackHoldUntil = 0;
+let micMonitor = false;        // checkbox
+let micMonitorVol = 0.35;      // 0..1
+let feedbackMuted = false;     // safety latch
+let feedbackHoldUntil = 0;     // timestamp ms
 
 function applyMicMonitorGain() {
   if (!monitorGain) return;
@@ -116,8 +114,6 @@ function removeLegacyUI() {
   document.getElementById('si-enginePanel')?.remove();
   document.getElementById('engine-controls')?.remove();
   document.getElementById('engine-controls-toggle')?.remove();
-  document.querySelector('.record-btn')?.remove(); // if ever existed in DOM
-  document.querySelector('.engine')?.remove();     // legacy engine wrapper
 }
 removeLegacyUI();
 
@@ -183,10 +179,9 @@ hud.appendChild(recBtn);
 hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
-// ENGINE PANEL
+// ENGINE PANEL (opens above HUD)
 const enginePanel = document.createElement('div');
 enginePanel.id = 'si-enginePanel';
-enginePanel.classList.add('engine-panel-modern');
 enginePanel.setAttribute('role', 'dialog');
 enginePanel.setAttribute('aria-label', 'Engine controls');
 enginePanel.setAttribute('aria-hidden', 'true');
@@ -371,13 +366,20 @@ async function initEngine() {
   monitorGain.gain.value = 1; // demo/file audible by default
 
   // route:
+  // sources -> inputGain -> analyser (visual)
+  // sources -> inputGain -> monitorGain -> engine.master (audio)
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
   monitorGain.connect(engine.master);
 
   overlay.style.display = 'none';
+
+  // ✅ Mobile app-mode after init (more space for viz)
+  document.body.classList.add('running');
+
   setStatus('✅ Engine ready (Demo / File / Mic)');
-  resize(); // make sure canvas is sharp right away
+  resize();
+
   if (!raf) loop();
 }
 
@@ -408,13 +410,16 @@ async function stopAll({ suspend = true } = {}) {
 
   feedbackMuted = false;
   feedbackHoldUntil = 0;
-  if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+  feedbackWarnEl.style.display = 'none';
 
   if (monitorGain) monitorGain.gain.value = 0;
 
   if (suspend) {
     try { await engine.ctx.suspend(); } catch {}
   }
+
+  // Optional: show header/footer again when stopped
+  // document.body.classList.remove('running');
 }
 
 /* ================= DEMO (play once) ================= */
@@ -433,7 +438,7 @@ async function playDemo(path) {
 
   if (monitorGain) monitorGain.gain.value = 1;
   feedbackMuted = false;
-  if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+  feedbackWarnEl.style.display = 'none';
 
   bufferSrc = engine.ctx.createBufferSource();
   bufferSrc.buffer = audio;
@@ -475,7 +480,7 @@ fileInput?.addEventListener('change', async (e) => {
 
     if (monitorGain) monitorGain.gain.value = 1;
     feedbackMuted = false;
-    if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+    feedbackWarnEl.style.display = 'none';
 
     bufferSrc = engine.ctx.createBufferSource();
     bufferSrc.buffer = audio;
@@ -598,8 +603,8 @@ recBtn.addEventListener('click', async () => {
 
     mediaRecorder = new MediaRecorder(stream, chosen ? { mimeType: chosen } : undefined);
 
-    mediaRecorder.ondataavailable = (ev) => {
-      if (ev.data && ev.data.size > 0) recordedChunks.push(ev.data);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
     };
 
     mediaRecorder.onstop = () => {
@@ -669,26 +674,6 @@ function rmsFromTimeDomain(arr) {
   return Math.sqrt(sum / arr.length);
 }
 
-/* ================= COLOR MODE HELPERS ================= */
-
-function getEnergyFromSpectrum(freq, bins = 80) {
-  const n = Math.min(bins, freq.length);
-  let sum = 0;
-  for (let i = 0; i < n; i++) sum += freq[i];
-  return sum / n; // 0..255-ish
-}
-
-function getCentroidFromSpectrum(freq, bins = 80) {
-  const n = Math.min(bins, freq.length);
-  let num = 0, den = 0;
-  for (let i = 1; i < n; i++) {
-    const v = freq[i];
-    num += i * v;
-    den += v;
-  }
-  return den ? (num / den) : 0; // ~0..bins
-}
-
 /* ================= LOOP ================= */
 
 function loop() {
@@ -713,50 +698,39 @@ function loop() {
       feedbackMuted = true;
       feedbackHoldUntil = now + HOLD_MS;
       applyMicMonitorGain();
-      if (feedbackWarnEl) feedbackWarnEl.style.display = 'block';
+      feedbackWarnEl.style.display = 'block';
       setStatus('🔇 Feedback risk — mic monitor muted');
     }
 
     if (feedbackMuted && now > feedbackHoldUntil && micRms < QUIET) {
       feedbackMuted = false;
       applyMicMonitorGain();
-      if (feedbackWarnEl) feedbackWarnEl.style.display = 'none';
+      feedbackWarnEl.style.display = 'none';
       setStatus('✅ Mic monitor safe again');
     }
   }
 
-  // canvas draw size (in CSS px; we scaled context in resize())
-  const rect = canvas.getBoundingClientRect();
-  const w = rect.width;
-  const h = rect.height;
-
-  // audio features
+  const w = canvas.width;
+  const h = canvas.height;
   const low = (dataFreq[2] + dataFreq[4]) / 2;
 
-  const sensitivity = parseFloat(sens?.value ?? '1'); // 0.2..3
   const pAmount = parseInt(partEl.value, 10);
-  const zoomSens = (parseInt(zoomEl.value, 10) / 1000) * sensitivity;
+  const zoomSens = parseInt(zoomEl.value, 10) / 1000;
   const hueShift = parseInt(hueEl.value, 10);
 
-  const mode = palette?.value ?? 'hue';
-  const sat = (mode === 'grayscale') ? 0 : 100;
-
-  let hue = hueShift;
-
-  if (mode === 'energy') {
-    const energy = getEnergyFromSpectrum(dataFreq, 90);
-    hue = (hueShift + energy * 0.6) % 360;
-  } else if (mode === 'hue') {
-    const centroid = getCentroidFromSpectrum(dataFreq, 90);
-    hue = (hueShift + centroid * 3.2) % 360;
+  // palette modes
+  const palette = paletteSel?.value || 'hue';
+  let hue;
+  if (palette === 'energy') {
+    hue = (hueShift + (low * 1.2)) % 360;
+  } else if (palette === 'grayscale') {
+    hue = 0;
   } else {
-    // grayscale: keep hue but saturation = 0
-    hue = hueShift;
+    hue = (hueShift + low * 0.4) % 360;
   }
 
   const zoom = reducedMotion ? 1 : 1 + (low * zoomSens);
 
-  // paint fade
   c.fillStyle = 'rgba(5,5,5,0.30)';
   c.fillRect(0, 0, w, h);
 
@@ -767,8 +741,14 @@ function loop() {
 
   if (!reducedMotion) rotation += 0.002;
 
-  // rings
-  c.strokeStyle = `hsla(${hue},${sat}%,50%,0.22)`;
+  // stroke style per palette
+  if (palette === 'grayscale') {
+    const g = Math.min(255, Math.max(40, Math.floor(low)));
+    c.strokeStyle = `rgba(${g},${g},${g},0.22)`;
+  } else {
+    c.strokeStyle = `hsla(${hue},100%,50%,0.22)`;
+  }
+
   for (let i = 0; i < 60; i++) {
     const v = dataFreq[i];
     c.beginPath();
@@ -776,11 +756,9 @@ function loop() {
     c.stroke();
   }
 
-  // particles (sensitivity makes it easier/harder to trigger)
-  const trigger = 200 / Math.max(0.2, sensitivity);
-  if (!reducedMotion && low > trigger) {
+  if (!reducedMotion && low > 200) {
     for (let i = 0; i < pAmount; i++) {
-      particles.push(new Particle(w / 2, h / 2, hue));
+      particles.push(new Particle(w / 2, h / 2, palette === 'grayscale' ? 0 : hue));
     }
   }
 
@@ -792,18 +770,24 @@ function loop() {
   raf = requestAnimationFrame(loop);
 }
 
-/* ================= RESIZE (sharp canvas) ================= */
+/* ================= RESIZE (sharp on mobile) ================= */
 
 function resize() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
   const rect = canvas.getBoundingClientRect();
-  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
-  canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(rect.height * dpr);
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
 
-  // draw in CSS pixels
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+
+    // draw in CSS pixels coordinates
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
 }
 
-window.addEventListener('resize', resize);
+window.addEventListener('resize', resize, { passive: true });
+window.addEventListener('orientationchange', resize, { passive: true });
 resize();
