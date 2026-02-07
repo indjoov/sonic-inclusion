@@ -3,140 +3,63 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Audio → Color & Shape</title>
-  <link rel="stylesheet" href="./style.css" />
+  <title>Sonic Inclusion – Audio → Color & Shape</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
-  <div class="bg"></div>
+  <header>
+    <h1>Audio → Color & Shape</h1>
+    <p class="tagline">A tiny demo that turns sound into visual shapes and colors</p>
+  </header>
 
-  <main class="wrap">
-    <header class="hero">
-      <h1>Audio → Color &amp; Shape</h1>
-      <p>A tiny demo that turns sound into visual shapes and colors</p>
-    </header>
+  <main>
+    <section class="controls" aria-label="Audio input controls">
+      <button id="micBtn" class="primary">🎙️ Use Microphone</button>
+      <button id="fileBtn">📁 Load Audio File</button>
+      <button id="demoBtn">✨ Play Kasubo Demo</button>
 
-    <section class="panel">
-      <div class="actions">
-        <button id="btnMic" class="btn btn-primary">
-          <span class="ico">🎙</span> Use Microphone
-        </button>
+      <input id="fileInput" type="file" accept="audio/*" hidden />
 
-        <label class="btn btn-ghost fileBtn">
-          <span class="ico">📁</span> Load Audio File
-          <input id="fileInput" type="file" accept="audio/*" hidden />
+      <div class="sliders">
+        <label>
+          Sensitivity
+          <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1" />
         </label>
 
-        <button id="btnDemo" class="btn btn-ghost">
-          <span class="ico">✨</span> Play Kasubo Demo
-        </button>
+        <label>
+          Color Mode
+          <select id="palette">
+            <option value="hue">Hue by pitch (default)</option>
+            <option value="energy">Hue by energy</option>
+            <option value="grayscale">High-contrast grayscale</option>
+          </select>
+        </label>
       </div>
 
-      <div class="divider"></div>
-
-      <div class="controls">
-        <div class="card">
-          <div class="cardTitle">Sensitivity</div>
-          <div class="row">
-            <input id="sens" type="range" min="0" max="100" value="32" />
-            <div id="sensVal" class="pill">0.32×</div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="cardTitle">Color Mode</div>
-          <div class="row">
-            <select id="colorMode">
-              <option value="pitch" selected>Hue by pitch (default)</option>
-              <option value="single">Single hue</option>
-              <option value="mono">Monochrome</option>
-              <option value="fire">Fire</option>
-              <option value="ice">Ice</option>
-            </select>
-            <div class="pill hint">▾</div>
-          </div>
-        </div>
-
-        <div class="hintRow">
-          <span class="kbd">⌨</span>
-          <span>Keyboard:</span>
-          <span class="key">Space</span><span class="muted">Start/Stop</span>
-          <span class="dot">·</span>
-          <span class="key">M</span><span class="muted">Mic</span>
-          <span class="dot">·</span>
-          <span class="key">F</span><span class="muted">File</span>
-          <span class="dot">·</span>
-          <span class="key">D</span><span class="muted">Demo</span>
-          <span class="dot">·</span>
-          <span class="key">Esc</span><span class="muted">Close Engine</span>
-        </div>
+      <div class="kbd-hint">
+        ⌨️ Keyboard:
+        <kbd>Space</kbd> Start/Stop ·
+        <kbd>M</kbd> Mic ·
+        <kbd>F</kbd> File ·
+        <kbd>D</kbd> Demo ·
+        <kbd>Esc</kbd> Close Engine
       </div>
     </section>
 
-    <section class="vizCard" aria-label="Visualization">
+    <section class="stage">
       <canvas id="viz"></canvas>
+    </section>
 
-      <div class="bottomBar">
-        <button id="btnRecord" class="btn btn-record">
-          <span class="recDot"></span> RECORD
-        </button>
-
-        <button id="btnEngine" class="btn btn-engine">
-          <span class="ico">⚙</span> ENGINE
-        </button>
-      </div>
-
-      <div class="footerTag">Indjoov Arts · Sonic Inclusion Prototype</div>
+    <section class="a11y" aria-label="Live description for screen readers">
+      <p id="srText" aria-live="polite">Visualization idle. Click anywhere to start.</p>
     </section>
   </main>
 
-  <!-- Engine modal -->
-  <div id="engineModal" class="modal" aria-hidden="true">
-    <div class="modalBackdrop"></div>
-    <div class="modalCard">
-      <div class="modalTitle">
-        <div>
-          <div class="modalH1">SONIC<br/>INCLUSION</div>
-          <div class="modalSub">CLICK TO INITIALIZE</div>
-        </div>
-      </div>
+  <footer>
+    <small>© 2025 Indjoov Arts · Sonic Inclusion Prototype</small>
+  </footer>
 
-      <div class="modalBody">
-        <div class="statusGrid">
-          <div class="statusItem">
-            <div class="statusLabel">Audio</div>
-            <div id="stAudio" class="statusValue">Not initialized</div>
-          </div>
-          <div class="statusItem">
-            <div class="statusLabel">Source</div>
-            <div id="stSource" class="statusValue">—</div>
-          </div>
-          <div class="statusItem">
-            <div class="statusLabel">Recording</div>
-            <div id="stRec" class="statusValue">Off</div>
-          </div>
-          <div class="statusItem">
-            <div class="statusLabel">FPS</div>
-            <div id="stFps" class="statusValue">—</div>
-          </div>
-        </div>
-
-        <div class="modalKeys">
-          <div class="mkTitle">Hotkeys</div>
-          <div class="mkRow"><span class="key">Space</span> Start/Stop current source</div>
-          <div class="mkRow"><span class="key">M</span> Microphone</div>
-          <div class="mkRow"><span class="key">F</span> Load file</div>
-          <div class="mkRow"><span class="key">D</span> Demo synth</div>
-          <div class="mkRow"><span class="key">Esc</span> Close</div>
-        </div>
-
-        <div class="modalActions">
-          <button id="btnInit" class="btn btn-primary wide">Initialize Audio Engine</button>
-          <button id="btnCloseEngine" class="btn btn-ghost wide">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script src="./script.js"></script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>
