@@ -3,6 +3,7 @@ import { AudioEngine } from './audio/AudioEngine.js';
 /* ================= BASIC SETUP ================= */
 
 const canvas = document.getElementById('viz');
+const stageEl = document.querySelector('.stage');
 const c = canvas.getContext('2d');
 
 const srText = document.getElementById('srText');
@@ -14,7 +15,6 @@ const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
-// a11y live region
 if (srText) {
   srText.setAttribute('aria-live', 'polite');
   srText.setAttribute('role', 'status');
@@ -25,7 +25,6 @@ function setStatus(msg) {
 }
 
 /* ================= OVERLAY (autoplay-safe init) ================= */
-/* responsive + safe-area + always fits on mobile */
 
 const overlay = document.createElement('div');
 overlay.id = 'intro-overlay';
@@ -71,17 +70,14 @@ document.body.appendChild(overlay);
 const engine = new AudioEngine();
 let raf = null;
 
-// stable analyser routing (mic/file/demo all feed this)
 let analyser = null;
 let dataFreq = null;
 let dataTime = null;
 
-// routing nodes
-let inputGain = null;     // all sources -> inputGain
-let monitorGain = null;   // what you actually hear -> master
+let inputGain = null;
+let monitorGain = null;
 
-// input nodes
-let currentMode = 'idle'; // 'idle' | 'demo' | 'file' | 'mic'
+let currentMode = 'idle';
 let bufferSrc = null;
 let micStream = null;
 let micSourceNode = null;
@@ -91,38 +87,31 @@ let micSourceNode = null;
 let particles = [];
 let rotation = 0;
 
-/* ===== DPR-safe canvas sizing (fixes "shifted to corner") ===== */
+/* ================= DPR-safe canvas sizing ================= */
 
-let viewW = 960; // logical CSS pixels
-let viewH = 540;
+let viewW = 960; // CSS px
+let viewH = 540; // CSS px
 
-/* ===== Auto-centering + Safe framing =====
-   We compute a "safe center" and "safe radius" so visuals never touch the edge,
-   even with HUD space / weird aspect ratios.
-*/
+/* ================= SAFE FRAME ================= */
+
 function safeFrame() {
-  // padding in CSS px (adds breathing room)
   const pad = Math.max(14, Math.min(28, Math.round(Math.min(viewW, viewH) * 0.04)));
-
   const cx = viewW * 0.5;
   const cy = viewH * 0.5;
-
-  // safe radius: keep distance from edges
   const r = Math.max(60, Math.min(cx, cy) - pad);
-
   return { cx, cy, r, pad };
 }
 
-/* ================= A11Y / REDUCED MOTION ================= */
+/* ================= REDUCED MOTION ================= */
 
 let reducedMotion = false;
 
 /* ================= MIC MONITOR + FEEDBACK GUARD ================= */
 
-let micMonitor = false;        // checkbox
-let micMonitorVol = 0.35;      // 0..1
-let feedbackMuted = false;     // safety latch
-let feedbackHoldUntil = 0;     // timestamp ms
+let micMonitor = false;
+let micMonitorVol = 0.35;
+let feedbackMuted = false;
+let feedbackHoldUntil = 0;
 
 function applyMicMonitorGain() {
   if (!monitorGain) return;
@@ -130,7 +119,7 @@ function applyMicMonitorGain() {
   monitorGain.gain.value = want;
 }
 
-/* ================= CLEAN LEGACY UI (avoid duplicates) ================= */
+/* ================= CLEAN LEGACY UI ================= */
 
 function removeLegacyUI() {
   document.getElementById('si-hud')?.remove();
@@ -140,7 +129,7 @@ function removeLegacyUI() {
 }
 removeLegacyUI();
 
-/* ================= MODERN HUD (ENGINE + RECORD) ================= */
+/* ================= HUD ================= */
 
 const hud = document.createElement('div');
 hud.id = 'si-hud';
@@ -185,7 +174,6 @@ engineToggle.setAttribute('aria-expanded', 'false');
 engineToggle.setAttribute('aria-controls', 'si-enginePanel');
 engineToggle.style.cssText = `
   pointer-events: auto;
-  flex: 0 0 auto;
   background: rgba(10,10,10,0.85);
   color: #8feaff;
   border: 1px solid rgba(0,212,255,0.65);
@@ -200,7 +188,8 @@ hud.appendChild(recBtn);
 hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
-// ENGINE PANEL
+/* ================= ENGINE PANEL ================= */
+
 const enginePanel = document.createElement('div');
 enginePanel.id = 'si-enginePanel';
 enginePanel.setAttribute('role', 'dialog');
@@ -319,7 +308,7 @@ function autoCloseEngineForRecording() {
   if (engineOpen) setEngineOpen(false);
 }
 
-/* ================= ENGINE PANEL CONTROL HOOKS ================= */
+/* ================= ENGINE PANEL HOOKS ================= */
 
 const partEl = enginePanel.querySelector('#partAmount');
 const zoomEl = enginePanel.querySelector('#zoomInt');
@@ -359,6 +348,25 @@ micMonitorVolEl.addEventListener('input', (e) => {
   applyMicMonitorGain();
 });
 
+/* ================= LAYOUT: viewport-fit stage height ================= */
+/* ✅ Fix: Stage passt sich dem verfügbaren Viewport an (inkl. HUD) */
+
+function updateStageHeight() {
+  if (!stageEl) return;
+
+  const hudRect = hud.getBoundingClientRect();
+  const stageRect = stageEl.getBoundingClientRect();
+
+  // Platz nach unten bis HUD (mit etwas Luft)
+  const gap = 14;
+  const available = (window.innerHeight - hudRect.height - gap) - stageRect.top;
+
+  // clamp: nicht zu klein / nicht absurd groß
+  const h = Math.max(260, Math.min(740, Math.floor(available)));
+
+  document.documentElement.style.setProperty('--vizH', `${h}px`);
+}
+
 /* ================= INIT / ROUTING ================= */
 
 async function initEngine() {
@@ -378,7 +386,7 @@ async function initEngine() {
   inputGain.gain.value = 1;
 
   monitorGain = engine.ctx.createGain();
-  monitorGain.gain.value = 1; // demo/file audible by default
+  monitorGain.gain.value = 1;
 
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
@@ -386,6 +394,11 @@ async function initEngine() {
 
   overlay.style.display = 'none';
   setStatus('✅ Engine ready (Demo / File / Mic)');
+
+  // layout after overlay hide
+  updateStageHeight();
+  resizeCanvasDPR();
+
   if (!raf) loop();
 }
 
@@ -456,6 +469,7 @@ async function playDemo(path) {
   bufferSrc.start(0);
   setStatus('🎧 Demo playing (once)');
 }
+
 demoBtn?.addEventListener('click', () => playDemo('media/kasubo hoerprobe.mp3'));
 
 /* ================= FILE INPUT (play once) ================= */
@@ -707,7 +721,6 @@ function loop() {
     }
   }
 
-  // ✅ Use logical CSS pixels (viewW/viewH) — fixes the corner shift
   const w = viewW;
   const h = viewH;
   if (!w || !h) { raf = requestAnimationFrame(loop); return; }
@@ -718,21 +731,16 @@ function loop() {
   const zoomSens = parseInt(zoomEl.value, 10) / 1000;
   const hueShift = parseInt(hueEl.value, 10);
 
-  // Sensitivity affects zoom + particle threshold
   const sens = sensEl ? parseFloat(sensEl.value) : 1;
-
   const zoom = reducedMotion ? 1 : 1 + (low * zoomSens * sens);
 
-  // ===== Color modes =====
   const mode = paletteEl?.value || 'hue';
   let hue = (hueShift + low * 0.4) % 360;
   if (mode === 'energy') hue = (hueShift + (micRms * 900)) % 360;
 
-  // grayscale uses hue but low saturation later
   const sat = (mode === 'grayscale') ? 0 : 100;
   const lum = (mode === 'grayscale') ? 85 : 50;
 
-  // ===== Safe framing =====
   const { cx, cy, r } = safeFrame();
 
   c.fillStyle = 'rgba(5,5,5,0.28)';
@@ -740,14 +748,12 @@ function loop() {
 
   c.save();
 
-  // Auto-center & zoom around safe center
   c.translate(cx, cy);
   c.scale(zoom, zoom);
   c.translate(-cx, -cy);
 
   if (!reducedMotion) rotation += 0.002;
 
-  // ring count adapts to radius (safe framing)
   const rings = clamp(Math.floor(r / 8), 36, 90);
 
   c.lineWidth = 1;
@@ -756,25 +762,20 @@ function loop() {
   for (let i = 0; i < rings; i++) {
     const v = dataFreq[i % dataFreq.length];
     const rr = r * 0.35 + (i * (r * 0.65 / rings)) + (v * 0.75);
-
     c.beginPath();
     c.arc(cx, cy, rr, 0, Math.PI * 2);
     c.stroke();
   }
 
-  // particles spawn at center but never exceed safe frame
-  const threshold = 180 / sens; // higher sens => easier to spawn
+  const threshold = 180 / sens;
   if (!reducedMotion && low > threshold) {
-    for (let i = 0; i < pAmount; i++) {
-      particles.push(new Particle(cx, cy, hue));
-    }
+    for (let i = 0; i < pAmount; i++) particles.push(new Particle(cx, cy, hue));
   }
 
   particles = reducedMotion ? [] : particles.filter(p => p.life > 0);
   particles.forEach(p => {
     p.update();
 
-    // Soft clamp particles into safe circle
     const dx = p.x - cx;
     const dy = p.y - cy;
     const dist = Math.hypot(dx, dy);
@@ -791,13 +792,12 @@ function loop() {
   });
 
   c.restore();
-
   raf = requestAnimationFrame(loop);
 }
 
 /* ================= RESIZE (DPR safe) ================= */
 
-function resize() {
+function resizeCanvasDPR() {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const rect = canvas.getBoundingClientRect();
 
@@ -812,9 +812,23 @@ function resize() {
     canvas.height = pxH;
   }
 
-  // Draw in CSS pixels
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-window.addEventListener('resize', resize);
-resize();
+function onResizeAll() {
+  updateStageHeight();
+  // warten bis CSS height angewendet ist
+  requestAnimationFrame(() => {
+    resizeCanvasDPR();
+  });
+}
+
+window.addEventListener('resize', onResizeAll);
+window.addEventListener('orientationchange', onResizeAll);
+window.addEventListener('scroll', () => {
+  // nur leicht reagieren, damit es nicht nervt
+  clearTimeout(window.__siScrollT);
+  window.__siScrollT = setTimeout(onResizeAll, 120);
+});
+
+onResizeAll();
