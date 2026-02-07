@@ -25,7 +25,6 @@ body{
     linear-gradient(180deg, #0b0b12, #07070c);
 }
 
-/* Header / Footer */
 header, footer{
   text-align:center;
   padding: clamp(14px, 3vw, 22px);
@@ -81,25 +80,18 @@ main{
   font-weight: 800;
   letter-spacing: .2px;
   box-shadow: 0 10px 24px rgba(0,0,0,.28);
-  transition: transform .12s ease, border-color .12s ease;
+  transition: transform .12s ease, background .12s ease, border-color .12s ease;
 }
 
-.controls button:active{
-  transform: translateY(1px) scale(.99);
-}
+.controls button:active{ transform: translateY(1px) scale(.99); }
 
 .controls button.primary{
   background: linear-gradient(135deg, rgba(124,77,255,.92), rgba(124,77,255,.62));
   border-color: rgba(124,77,255,.55);
 }
 
-.controls button:hover{
-  border-color: rgba(255,255,255,.22);
-}
-
-.controls button.primary:hover{
-  border-color: rgba(124,77,255,.75);
-}
+.controls button:hover{ border-color: rgba(255,255,255,.22); }
+.controls button.primary:hover{ border-color: rgba(124,77,255,.75); }
 
 /* Sliders row */
 .sliders{
@@ -113,9 +105,9 @@ main{
 }
 
 @media (max-width: 560px){
-  .sliders{ grid-template-columns: 1fr; }
   .controls{ padding: 16px; gap: 12px; }
   .controls button{ padding: 15px 14px; }
+  .sliders{ grid-template-columns: 1fr; }
 }
 
 .sliders label{
@@ -136,7 +128,7 @@ main{
   font-size: 16px; /* prevents iOS zoom */
 }
 
-/* ================= MODERN RANGE ================= */
+/* ================= RANGE ================= */
 
 input[type="range"]{
   width: 100%;
@@ -154,7 +146,6 @@ input[type="range"]::-webkit-slider-runnable-track{
   background: rgba(255,255,255,.10);
   border: 1px solid rgba(255,255,255,.10);
 }
-
 input[type="range"]::-webkit-slider-thumb{
   -webkit-appearance:none;
   appearance:none;
@@ -174,7 +165,6 @@ input[type="range"]::-moz-range-track{
   background: rgba(255,255,255,.10);
   border: 1px solid rgba(255,255,255,.10);
 }
-
 input[type="range"]::-moz-range-thumb{
   width: 24px;
   height: 24px;
@@ -184,7 +174,7 @@ input[type="range"]::-moz-range-thumb{
   box-shadow: 0 10px 26px rgba(0,212,255,.18);
 }
 
-/* ================= MODERN SELECT ================= */
+/* ================= SELECT ================= */
 
 select{
   width: 100%;
@@ -211,16 +201,11 @@ select{
     1px 18px;
   background-repeat:no-repeat;
 }
-
 select:focus{
   border-color: rgba(0,212,255,.55);
   box-shadow: 0 0 0 3px rgba(0,212,255,.16), 0 10px 24px rgba(0,0,0,.25);
 }
-
-option{
-  background: #0f0f18;
-  color: var(--text);
-}
+option{ background: #0f0f18; color: var(--text); }
 
 /* ================= KBD hint ================= */
 
@@ -229,7 +214,6 @@ option{
   font-size: 13px;
   line-height: 1.4;
 }
-
 kbd{
   display: inline-block;
   padding: 2px 8px;
@@ -290,20 +274,27 @@ kbd{
   overflow:hidden;
 }
 
-/* Optional: give injected engine panel buttons consistent styling */
-.engine-panel-modern button{
-  background: rgba(255,255,255,.08);
-  border: 1px solid rgba(255,255,255,.14);
-  color: var(--text);
-  font-weight: 900;
+/* ================= MOBILE APP MODE (after init) ================= */
+
+body.running header,
+body.running footer{
+  display:none;
 }
 
-.engine-panel-modern button:active{
-  transform: translateY(1px);
+body.running main{
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px;
+  padding-bottom: calc(120px + env(safe-area-inset-bottom));
 }
 
-.engine-panel-modern input[type="checkbox"]{
-  width: 20px;
-  height: 20px;
-  accent-color: var(--cyan);
+@media (max-width: 560px){
+  body.running .kbd-hint{ display:none; }
+  body.running .stage{ margin-top: 12px; border-radius: 18px; }
+  body.running #viz{ height: min(78vh, 820px); }
+}
+
+/* Slightly bigger viz on phones even before init */
+@media (max-width: 560px){
+  #viz{ height: min(70vh, 760px); }
 }
