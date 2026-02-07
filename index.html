@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -8,12 +9,13 @@
 </head>
 
 <body>
-  <header>
-    <h1>Audio → Color & Shape</h1>
+  <header class="site-header">
+    <h1>Audio → Color &amp; Shape</h1>
     <p class="tagline">A tiny demo that turns sound into visual shapes and colors</p>
   </header>
 
   <main>
+    <!-- ================= CONTROLS ================= -->
     <section class="controls" aria-label="Audio input controls">
       <button id="micBtn" class="primary">🎙️ Use Microphone</button>
       <button id="fileBtn">📁 Load Audio File</button>
@@ -30,7 +32,7 @@
         <label>
           Color Mode
           <select id="palette">
-            <option value="hue">Hue by pitch (default)</option>
+            <option value="hue" selected>Hue by pitch (default)</option>
             <option value="energy">Hue by energy</option>
             <option value="grayscale">High-contrast grayscale</option>
           </select>
@@ -47,16 +49,18 @@
       </div>
     </section>
 
-    <section class="stage">
+    <!-- ================= VISUAL STAGE ================= -->
+    <section class="stage" aria-label="Visualization stage">
       <canvas id="viz"></canvas>
     </section>
 
+    <!-- ================= A11Y ================= -->
     <section class="a11y" aria-label="Live description for screen readers">
-      <p id="srText" aria-live="polite">Visualization idle. Click anywhere to start.</p>
+      <p id="srText">Visualization idle. Click to initialize.</p>
     </section>
   </main>
 
-  <footer>
+  <footer class="site-footer">
     <small>© 2025 Indjoov Arts · Sonic Inclusion Prototype</small>
   </footer>
 
