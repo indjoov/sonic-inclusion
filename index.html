@@ -31,7 +31,7 @@
         <label>
           Color Mode
           <select id="palette">
-            <option value="hue" selected>Hue by pitch (default)</option>
+            <option value="hue">Hue by pitch (default)</option>
             <option value="energy">Hue by energy</option>
             <option value="grayscale">High-contrast grayscale</option>
           </select>
@@ -49,13 +49,15 @@
     </section>
 
     <!-- ================= VISUAL STAGE ================= -->
-    <section class="stage" aria-label="Visualization">
-      <canvas id="viz" width="960" height="540" aria-hidden="true"></canvas>
+    <section class="stage">
+      <canvas id="viz" width="960" height="540"></canvas>
     </section>
 
     <!-- ================= A11Y ================= -->
     <section class="a11y" aria-label="Live description for screen readers">
-      <p id="srText" aria-live="polite">Visualization idle. Click anywhere to start.</p>
+      <p id="srText" aria-live="polite">
+        Visualization idle. Click anywhere to start.
+      </p>
     </section>
   </main>
 
