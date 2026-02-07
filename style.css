@@ -1,3 +1,4 @@
+/* style.css */
 :root{
   --bg:#0b0b12;
   --panel:rgba(20,20,32,.78);
@@ -9,13 +10,10 @@
   --stroke:rgba(255,255,255,.10);
   --stroke2:rgba(255,255,255,.14);
   --shadow:0 18px 55px rgba(0,0,0,.45);
-
-  /* JS setzt diese Variablen dynamisch (Viewport-fit) */
-  --vizH: min(62vh, 720px);
 }
 
 *{ box-sizing:border-box; }
-html, body { height: 100%; }
+html, body{ height:100%; }
 
 body{
   margin:0;
@@ -27,12 +25,13 @@ body{
     linear-gradient(180deg, #0b0b12, #07070c);
 }
 
-header, footer{
+/* Header / Footer */
+.site-header, .site-footer{
   text-align:center;
   padding: clamp(14px, 3vw, 22px);
 }
 
-header h1{
+.site-header h1{
   margin: 10px 0 6px;
   font-size: clamp(24px, 7vw, 44px);
   letter-spacing: .5px;
@@ -45,7 +44,7 @@ header h1{
   font-size: clamp(12px, 3.5vw, 15px);
 }
 
-footer small{
+.site-footer small{
   color: var(--muted);
   opacity: .75;
 }
@@ -54,10 +53,10 @@ main{
   max-width: 980px;
   margin: 0 auto;
   padding: 16px;
-  padding-bottom: calc(120px + env(safe-area-inset-bottom));
+  padding-bottom: calc(120px + env(safe-area-inset-bottom)); /* space for HUD */
 }
 
-/* Controls */
+/* ================= CONTROLS CARD ================= */
 .controls{
   background: var(--panel);
   border: 1px solid var(--stroke);
@@ -83,12 +82,14 @@ main{
   box-shadow: 0 10px 24px rgba(0,0,0,.28);
   transition: transform .12s ease, background .12s ease, border-color .12s ease;
 }
+
 .controls button:active{ transform: translateY(1px) scale(.99); }
+.controls button:hover{ border-color: rgba(255,255,255,.22); }
+
 .controls button.primary{
   background: linear-gradient(135deg, rgba(124,77,255,.92), rgba(124,77,255,.62));
   border-color: rgba(124,77,255,.55);
 }
-.controls button:hover{ border-color: rgba(255,255,255,.22); }
 .controls button.primary:hover{ border-color: rgba(124,77,255,.75); }
 
 /* Sliders */
@@ -101,14 +102,18 @@ main{
   padding-top: 10px;
   border-top: 1px solid rgba(255,255,255,.08);
 }
-@media (max-width: 560px){ .sliders{ grid-template-columns: 1fr; } }
+@media (max-width: 560px){
+  .sliders{ grid-template-columns: 1fr; }
+  .controls{ padding: 16px; gap: 12px; }
+  .controls button{ padding: 15px 14px; }
+}
 
 .sliders label{
   display: grid;
   gap: 8px;
   font-weight: 800;
-  font-size: 14px;
   color: rgba(231,231,238,.92);
+  font-size: 14px;
   background: rgba(0,0,0,.16);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 18px;
@@ -210,16 +215,18 @@ kbd{
   font-size: 12px;
 }
 
-/* Stage */
+/* ================= STAGE (SAFE FRAMING + CENTERING) ================= */
 .stage{
   margin-top: 16px;
+  position: relative;
   background: #000;
   border-radius: 22px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.08);
   box-shadow: var(--shadow);
-  position: relative;
-  min-height: 260px;
+
+  /* auto-centering the stage in the page */
+  width: 100%;
 }
 
 .stage::before{
@@ -234,14 +241,14 @@ kbd{
     inset 0 0 80px rgba(0,212,255,.06);
 }
 
-/* ✅ wichtig: Höhe kommt jetzt dynamisch aus --vizH */
 #viz{
   width: 100%;
-  height: var(--vizH);
+  height: min(62vh, 720px);
   display: block;
+  /* the JS will match internal canvas pixels to this box */
 }
 
-/* a11y live region – hidden */
+/* a11y screenreader-only */
 .a11y{
   position:absolute;
   left:-9999px;
