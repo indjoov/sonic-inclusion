@@ -6,19 +6,20 @@ const canvas = document.getElementById('viz');
 const c = canvas.getContext('2d');
 
 const srText = document.getElementById('srText');
-const sens = document.getElementById('sens');
+const sensEl = document.getElementById('sens');
+const paletteEl = document.getElementById('palette');
 
 const micBtn = document.getElementById('micBtn');
 const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
-const paletteSel = document.getElementById('palette');
 
 // a11y live region
 if (srText) {
   srText.setAttribute('aria-live', 'polite');
   srText.setAttribute('role', 'status');
 }
+
 function setStatus(msg) {
   if (srText) srText.textContent = msg;
 }
@@ -90,6 +91,28 @@ let micSourceNode = null;
 let particles = [];
 let rotation = 0;
 
+/* ===== DPR-safe canvas sizing (fixes "shifted to corner") ===== */
+
+let viewW = 960; // logical CSS pixels
+let viewH = 540;
+
+/* ===== Auto-centering + Safe framing =====
+   We compute a "safe center" and "safe radius" so visuals never touch the edge,
+   even with HUD space / weird aspect ratios.
+*/
+function safeFrame() {
+  // padding in CSS px (adds breathing room)
+  const pad = Math.max(14, Math.min(28, Math.round(Math.min(viewW, viewH) * 0.04)));
+
+  const cx = viewW * 0.5;
+  const cy = viewH * 0.5;
+
+  // safe radius: keep distance from edges
+  const r = Math.max(60, Math.min(cx, cy) - pad);
+
+  return { cx, cy, r, pad };
+}
+
 /* ================= A11Y / REDUCED MOTION ================= */
 
 let reducedMotion = false;
@@ -134,7 +157,6 @@ hud.style.cssText = `
   pointer-events: none;
 `;
 
-// RECORD button (modern)
 const recBtn = document.createElement('button');
 recBtn.id = 'si-recBtn';
 recBtn.type = 'button';
@@ -155,7 +177,6 @@ recBtn.style.cssText = `
   gap: 10px;
 `;
 
-// ENGINE toggle (compact)
 const engineToggle = document.createElement('button');
 engineToggle.id = 'si-engineToggle';
 engineToggle.type = 'button';
@@ -179,7 +200,7 @@ hud.appendChild(recBtn);
 hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
-// ENGINE PANEL (opens above HUD)
+// ENGINE PANEL
 const enginePanel = document.createElement('div');
 enginePanel.id = 'si-enginePanel';
 enginePanel.setAttribute('role', 'dialog');
@@ -267,23 +288,18 @@ enginePanel.innerHTML = `
     </div>
   </div>
 `;
-
 document.body.appendChild(enginePanel);
 
-// Panel open/close with ARIA state
 let engineOpen = false;
-
 function setEngineOpen(open) {
   engineOpen = open;
   enginePanel.style.display = open ? 'block' : 'none';
   enginePanel.setAttribute('aria-hidden', open ? 'false' : 'true');
   engineToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
-
 engineToggle.addEventListener('click', () => setEngineOpen(!engineOpen));
 enginePanel.querySelector('#si-engineClose').addEventListener('click', () => setEngineOpen(false));
 
-// Swipe-down close (mobile)
 let touchStartY = null;
 enginePanel.addEventListener('touchstart', (e) => {
   touchStartY = e.touches?.[0]?.clientY ?? null;
@@ -314,7 +330,6 @@ function preset(p, z, h) {
   zoomEl.value = String(z);
   hueEl.value  = String(h);
 }
-
 enginePanel.querySelector('#presetCalm').addEventListener('click', () => preset(4, 0, 210));
 enginePanel.querySelector('#presetBass').addEventListener('click', () => preset(18, 10, 340));
 enginePanel.querySelector('#presetCine').addEventListener('click', () => preset(10, 4, 280));
@@ -365,21 +380,12 @@ async function initEngine() {
   monitorGain = engine.ctx.createGain();
   monitorGain.gain.value = 1; // demo/file audible by default
 
-  // route:
-  // sources -> inputGain -> analyser (visual)
-  // sources -> inputGain -> monitorGain -> engine.master (audio)
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
   monitorGain.connect(engine.master);
 
   overlay.style.display = 'none';
-
-  // ✅ Mobile app-mode after init (more space for viz)
-  document.body.classList.add('running');
-
   setStatus('✅ Engine ready (Demo / File / Mic)');
-  resize();
-
   if (!raf) loop();
 }
 
@@ -417,9 +423,6 @@ async function stopAll({ suspend = true } = {}) {
   if (suspend) {
     try { await engine.ctx.suspend(); } catch {}
   }
-
-  // Optional: show header/footer again when stopped
-  // document.body.classList.remove('running');
 }
 
 /* ================= DEMO (play once) ================= */
@@ -453,7 +456,6 @@ async function playDemo(path) {
   bufferSrc.start(0);
   setStatus('🎧 Demo playing (once)');
 }
-
 demoBtn?.addEventListener('click', () => playDemo('media/kasubo hoerprobe.mp3'));
 
 /* ================= FILE INPUT (play once) ================= */
@@ -528,7 +530,6 @@ micBtn?.addEventListener('click', async () => {
     await engine.resume();
     currentMode = 'mic';
 
-    // mic muted unless monitor enabled
     applyMicMonitorGain();
 
     micSourceNode = engine.ctx.createMediaStreamSource(micStream);
@@ -561,7 +562,6 @@ window.addEventListener('keydown', async (e) => {
   if (key === 'm') micBtn?.click();
   if (key === 'f') fileBtn?.click();
   if (key === 'd') demoBtn?.click();
-
   if (key === 'escape') setEngineOpen(false);
 });
 
@@ -575,11 +575,7 @@ recBtn.addEventListener('click', async () => {
 
   if (!mediaRecorder || mediaRecorder.state === 'inactive') {
     recordedChunks = [];
-
-    // UX: close engine when recording starts
     autoCloseEngineForRecording();
-
-    // ensure audio context running for capture
     await engine.resume();
 
     const stream = canvas.captureStream(60);
@@ -674,6 +670,8 @@ function rmsFromTimeDomain(arr) {
   return Math.sqrt(sum / arr.length);
 }
 
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
 /* ================= LOOP ================= */
 
 function loop() {
@@ -685,7 +683,6 @@ function loop() {
   analyser.getByteFrequencyData(dataFreq);
   analyser.getByteTimeDomainData(dataTime);
 
-  // feedback guard (mic mode only)
   const now = performance.now();
   const micRms = rmsFromTimeDomain(dataTime);
 
@@ -710,84 +707,114 @@ function loop() {
     }
   }
 
-  const w = canvas.width;
-  const h = canvas.height;
+  // ✅ Use logical CSS pixels (viewW/viewH) — fixes the corner shift
+  const w = viewW;
+  const h = viewH;
+  if (!w || !h) { raf = requestAnimationFrame(loop); return; }
+
   const low = (dataFreq[2] + dataFreq[4]) / 2;
 
   const pAmount = parseInt(partEl.value, 10);
   const zoomSens = parseInt(zoomEl.value, 10) / 1000;
   const hueShift = parseInt(hueEl.value, 10);
 
-  // palette modes
-  const palette = paletteSel?.value || 'hue';
-  let hue;
-  if (palette === 'energy') {
-    hue = (hueShift + (low * 1.2)) % 360;
-  } else if (palette === 'grayscale') {
-    hue = 0;
-  } else {
-    hue = (hueShift + low * 0.4) % 360;
-  }
+  // Sensitivity affects zoom + particle threshold
+  const sens = sensEl ? parseFloat(sensEl.value) : 1;
 
-  const zoom = reducedMotion ? 1 : 1 + (low * zoomSens);
+  const zoom = reducedMotion ? 1 : 1 + (low * zoomSens * sens);
 
-  c.fillStyle = 'rgba(5,5,5,0.30)';
+  // ===== Color modes =====
+  const mode = paletteEl?.value || 'hue';
+  let hue = (hueShift + low * 0.4) % 360;
+  if (mode === 'energy') hue = (hueShift + (micRms * 900)) % 360;
+
+  // grayscale uses hue but low saturation later
+  const sat = (mode === 'grayscale') ? 0 : 100;
+  const lum = (mode === 'grayscale') ? 85 : 50;
+
+  // ===== Safe framing =====
+  const { cx, cy, r } = safeFrame();
+
+  c.fillStyle = 'rgba(5,5,5,0.28)';
   c.fillRect(0, 0, w, h);
 
   c.save();
-  c.translate(w / 2, h / 2);
+
+  // Auto-center & zoom around safe center
+  c.translate(cx, cy);
   c.scale(zoom, zoom);
-  c.translate(-w / 2, -h / 2);
+  c.translate(-cx, -cy);
 
   if (!reducedMotion) rotation += 0.002;
 
-  // stroke style per palette
-  if (palette === 'grayscale') {
-    const g = Math.min(255, Math.max(40, Math.floor(low)));
-    c.strokeStyle = `rgba(${g},${g},${g},0.22)`;
-  } else {
-    c.strokeStyle = `hsla(${hue},100%,50%,0.22)`;
-  }
+  // ring count adapts to radius (safe framing)
+  const rings = clamp(Math.floor(r / 8), 36, 90);
 
-  for (let i = 0; i < 60; i++) {
-    const v = dataFreq[i];
+  c.lineWidth = 1;
+  c.strokeStyle = `hsla(${hue},${sat}%,${lum}%,0.22)`;
+
+  for (let i = 0; i < rings; i++) {
+    const v = dataFreq[i % dataFreq.length];
+    const rr = r * 0.35 + (i * (r * 0.65 / rings)) + (v * 0.75);
+
     c.beginPath();
-    c.arc(w / 2, h / 2, 100 + v, 0, Math.PI * 2);
+    c.arc(cx, cy, rr, 0, Math.PI * 2);
     c.stroke();
   }
 
-  if (!reducedMotion && low > 200) {
+  // particles spawn at center but never exceed safe frame
+  const threshold = 180 / sens; // higher sens => easier to spawn
+  if (!reducedMotion && low > threshold) {
     for (let i = 0; i < pAmount; i++) {
-      particles.push(new Particle(w / 2, h / 2, palette === 'grayscale' ? 0 : hue));
+      particles.push(new Particle(cx, cy, hue));
     }
   }
 
   particles = reducedMotion ? [] : particles.filter(p => p.life > 0);
-  particles.forEach(p => { p.update(); p.draw(); });
+  particles.forEach(p => {
+    p.update();
+
+    // Soft clamp particles into safe circle
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const dist = Math.hypot(dx, dy);
+    const maxDist = r * 0.95;
+    if (dist > maxDist) {
+      const t = maxDist / (dist || 1);
+      p.x = cx + dx * t;
+      p.y = cy + dy * t;
+      p.vx *= -0.45;
+      p.vy *= -0.45;
+    }
+
+    p.draw();
+  });
 
   c.restore();
 
   raf = requestAnimationFrame(loop);
 }
 
-/* ================= RESIZE (sharp on mobile) ================= */
+/* ================= RESIZE (DPR safe) ================= */
 
 function resize() {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const rect = canvas.getBoundingClientRect();
 
-  const w = Math.max(1, Math.round(rect.width * dpr));
-  const h = Math.max(1, Math.round(rect.height * dpr));
+  viewW = Math.max(1, Math.round(rect.width));
+  viewH = Math.max(1, Math.round(rect.height));
 
-  if (canvas.width !== w || canvas.height !== h) {
-    canvas.width = w;
-    canvas.height = h;
+  const pxW = Math.max(1, Math.round(rect.width * dpr));
+  const pxH = Math.max(1, Math.round(rect.height * dpr));
 
-    // draw in CSS pixels coordinates
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (canvas.width !== pxW || canvas.height !== pxH) {
+    canvas.width = pxW;
+    canvas.height = pxH;
   }
+
+  // Draw in CSS pixels
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-window.addEventListener('resize', resize, { passive: true });
-window.addEventListener('orientationchange', resize, { passive: true });
+window.addEventListener('resize', resize);
 resize();
