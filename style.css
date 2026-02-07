@@ -13,7 +13,6 @@
 }
 
 *{ box-sizing:border-box; }
-
 html, body { height: 100%; }
 
 body{
@@ -63,9 +62,9 @@ main{
   background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: 20px;
-  padding: 16px;
+  padding: 18px;
   display: grid;
-  gap: 12px;
+  gap: 14px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
 }
@@ -76,13 +75,13 @@ main{
   border: 1px solid var(--stroke2);
   background: rgba(40,40,60,.55);
   color: var(--text);
-  border-radius: 16px;
-  padding: 14px 14px;
+  border-radius: 18px;
+  padding: 16px 16px;
   cursor: pointer;
   font-weight: 800;
   letter-spacing: .2px;
   box-shadow: 0 10px 24px rgba(0,0,0,.28);
-  transition: transform .12s ease, background .12s ease, border-color .12s ease;
+  transition: transform .12s ease, border-color .12s ease;
 }
 
 .controls button:active{
@@ -108,10 +107,15 @@ main{
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   align-items: end;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.08);
 }
 
 @media (max-width: 560px){
   .sliders{ grid-template-columns: 1fr; }
+  .controls{ padding: 16px; gap: 12px; }
+  .controls button{ padding: 15px 14px; }
 }
 
 .sliders label{
@@ -119,18 +123,20 @@ main{
   gap: 8px;
   font-weight: 800;
   color: rgba(231,231,238,.92);
+  font-size: 14px;
+  background: rgba(0,0,0,.16);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  padding: 12px 12px 10px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.18);
 }
 
-/* Give the labels a modern small caption feel */
-.sliders label{
-  font-size: 14px;
-}
 .sliders label > input,
 .sliders label > select{
   font-size: 16px; /* prevents iOS zoom */
 }
 
-/* ================= MODERN RANGE (Sensitivity) ================= */
+/* ================= MODERN RANGE ================= */
 
 input[type="range"]{
   width: 100%;
@@ -155,7 +161,7 @@ input[type="range"]::-webkit-slider-thumb{
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  margin-top: -6px; /* centers thumb */
+  margin-top: -6px;
   background: linear-gradient(135deg, rgba(0,212,255,.95), rgba(124,77,255,.75));
   border: 1px solid rgba(255,255,255,.22);
   box-shadow: 0 10px 26px rgba(0,212,255,.18);
@@ -178,7 +184,7 @@ input[type="range"]::-moz-range-thumb{
   box-shadow: 0 10px 26px rgba(0,212,255,.18);
 }
 
-/* ================= MODERN SELECT (Color Mode) ================= */
+/* ================= MODERN SELECT ================= */
 
 select{
   width: 100%;
@@ -211,7 +217,6 @@ select:focus{
   box-shadow: 0 0 0 3px rgba(0,212,255,.16), 0 10px 24px rgba(0,0,0,.25);
 }
 
-/* Make option list readable in some browsers */
 option{
   background: #0f0f18;
   color: var(--text);
@@ -244,61 +249,6 @@ kbd{
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.08);
   box-shadow: var(--shadow);
-}
-
-#viz{
-  width: 100%;
-  height: min(62vh, 720px);
-  display: block;
-}
-
-/* Accessibility live region – screenreader-only (keeps a11y, hides visual text) */
-.a11y{
-  position:absolute;
-  left:-9999px;
-  top:auto;
-  width:1px;
-  height:1px;
-  overflow:hidden;
-}
-/* === POLISH 1: Controls spacing + app-like card === */
-
-.controls{
-  padding: 18px;
-  gap: 14px;
-}
-
-.controls button{
-  padding: 16px 16px;
-  border-radius: 18px;
-}
-
-@media (max-width: 560px){
-  .controls{
-    padding: 16px;
-    gap: 12px;
-  }
-  .controls button{
-    padding: 15px 14px;
-  }
-}
-
-.sliders{
-  margin-top: 2px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255,255,255,.08);
-}
-
-.sliders label{
-  background: rgba(0,0,0,.16);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 18px;
-  padding: 12px 12px 10px;
-  box-shadow: 0 12px 30px rgba(0,0,0,.18);
-}
-/* === POLISH 2: Stage subtle inner glow === */
-
-.stage{
   position: relative;
 }
 
@@ -322,4 +272,38 @@ kbd{
   border-radius: 24px;
   box-shadow: 0 18px 60px rgba(0,0,0,.45);
   opacity: .65;
+}
+
+#viz{
+  width: 100%;
+  height: min(62vh, 720px);
+  display: block;
+}
+
+/* Accessibility live region – screenreader-only */
+.a11y{
+  position:absolute;
+  left:-9999px;
+  top:auto;
+  width:1px;
+  height:1px;
+  overflow:hidden;
+}
+
+/* Optional: give injected engine panel buttons consistent styling */
+.engine-panel-modern button{
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  color: var(--text);
+  font-weight: 900;
+}
+
+.engine-panel-modern button:active{
+  transform: translateY(1px);
+}
+
+.engine-panel-modern input[type="checkbox"]{
+  width: 20px;
+  height: 20px;
+  accent-color: var(--cyan);
 }
