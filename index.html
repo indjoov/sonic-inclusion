@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Sonic Inclusion – Audio → Color & Shape</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -14,7 +14,6 @@
   </header>
 
   <main>
-    <!-- ================= CONTROLS ================= -->
     <section class="controls" aria-label="Audio input controls">
       <button id="micBtn" class="primary">🎙️ Use Microphone</button>
       <button id="fileBtn">📁 Load Audio File</button>
@@ -48,16 +47,12 @@
       </div>
     </section>
 
-    <!-- ================= VISUAL STAGE ================= -->
     <section class="stage">
-      <canvas id="viz" width="960" height="540"></canvas>
+      <canvas id="viz"></canvas>
     </section>
 
-    <!-- ================= A11Y ================= -->
     <section class="a11y" aria-label="Live description for screen readers">
-      <p id="srText" aria-live="polite">
-        Visualization idle. Click anywhere to start.
-      </p>
+      <p id="srText" aria-live="polite">Visualization idle. Click anywhere to start.</p>
     </section>
   </main>
 
