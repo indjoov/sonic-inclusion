@@ -1,20 +1,23 @@
+// script.js
 import { AudioEngine } from './audio/AudioEngine.js';
 
 /* ================= BASIC SETUP ================= */
 
 const canvas = document.getElementById('viz');
-const stageEl = document.querySelector('.stage');
 const c = canvas.getContext('2d');
 
+const stageEl = canvas.closest('.stage');
+
 const srText = document.getElementById('srText');
-const sensEl = document.getElementById('sens');
-const paletteEl = document.getElementById('palette');
+const sens = document.getElementById('sens');
+const palette = document.getElementById('palette');
 
 const micBtn = document.getElementById('micBtn');
 const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
+// a11y live region
 if (srText) {
   srText.setAttribute('aria-live', 'polite');
   srText.setAttribute('role', 'status');
@@ -25,6 +28,7 @@ function setStatus(msg) {
 }
 
 /* ================= OVERLAY (autoplay-safe init) ================= */
+/* Responsive + safe-area + always fits */
 
 const overlay = document.createElement('div');
 overlay.id = 'intro-overlay';
@@ -70,13 +74,16 @@ document.body.appendChild(overlay);
 const engine = new AudioEngine();
 let raf = null;
 
+// analyser routing (mic/file/demo all feed this)
 let analyser = null;
 let dataFreq = null;
 let dataTime = null;
 
+// routing nodes
 let inputGain = null;
 let monitorGain = null;
 
+// input nodes
 let currentMode = 'idle';
 let bufferSrc = null;
 let micStream = null;
@@ -87,22 +94,7 @@ let micSourceNode = null;
 let particles = [];
 let rotation = 0;
 
-/* ================= DPR-safe canvas sizing ================= */
-
-let viewW = 960; // CSS px
-let viewH = 540; // CSS px
-
-/* ================= SAFE FRAME ================= */
-
-function safeFrame() {
-  const pad = Math.max(14, Math.min(28, Math.round(Math.min(viewW, viewH) * 0.04)));
-  const cx = viewW * 0.5;
-  const cy = viewH * 0.5;
-  const r = Math.max(60, Math.min(cx, cy) - pad);
-  return { cx, cy, r, pad };
-}
-
-/* ================= REDUCED MOTION ================= */
+/* ================= A11Y / REDUCED MOTION ================= */
 
 let reducedMotion = false;
 
@@ -129,7 +121,7 @@ function removeLegacyUI() {
 }
 removeLegacyUI();
 
-/* ================= HUD ================= */
+/* ================= MODERN HUD (ENGINE + RECORD) ================= */
 
 const hud = document.createElement('div');
 hud.id = 'si-hud';
@@ -146,6 +138,7 @@ hud.style.cssText = `
   pointer-events: none;
 `;
 
+// RECORD
 const recBtn = document.createElement('button');
 recBtn.id = 'si-recBtn';
 recBtn.type = 'button';
@@ -166,6 +159,7 @@ recBtn.style.cssText = `
   gap: 10px;
 `;
 
+// ENGINE toggle
 const engineToggle = document.createElement('button');
 engineToggle.id = 'si-engineToggle';
 engineToggle.type = 'button';
@@ -174,6 +168,7 @@ engineToggle.setAttribute('aria-expanded', 'false');
 engineToggle.setAttribute('aria-controls', 'si-enginePanel');
 engineToggle.style.cssText = `
   pointer-events: auto;
+  flex: 0 0 auto;
   background: rgba(10,10,10,0.85);
   color: #8feaff;
   border: 1px solid rgba(0,212,255,0.65);
@@ -188,8 +183,7 @@ hud.appendChild(recBtn);
 hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
-/* ================= ENGINE PANEL ================= */
-
+// ENGINE PANEL
 const enginePanel = document.createElement('div');
 enginePanel.id = 'si-enginePanel';
 enginePanel.setAttribute('role', 'dialog');
@@ -279,6 +273,7 @@ enginePanel.innerHTML = `
 `;
 document.body.appendChild(enginePanel);
 
+// Panel open/close
 let engineOpen = false;
 function setEngineOpen(open) {
   engineOpen = open;
@@ -289,11 +284,11 @@ function setEngineOpen(open) {
 engineToggle.addEventListener('click', () => setEngineOpen(!engineOpen));
 enginePanel.querySelector('#si-engineClose').addEventListener('click', () => setEngineOpen(false));
 
+// Swipe-down close (mobile)
 let touchStartY = null;
 enginePanel.addEventListener('touchstart', (e) => {
   touchStartY = e.touches?.[0]?.clientY ?? null;
 }, { passive: true });
-
 enginePanel.addEventListener('touchmove', (e) => {
   if (touchStartY == null) return;
   const y = e.touches?.[0]?.clientY ?? touchStartY;
@@ -308,7 +303,7 @@ function autoCloseEngineForRecording() {
   if (engineOpen) setEngineOpen(false);
 }
 
-/* ================= ENGINE PANEL HOOKS ================= */
+/* ================= ENGINE PANEL CONTROL HOOKS ================= */
 
 const partEl = enginePanel.querySelector('#partAmount');
 const zoomEl = enginePanel.querySelector('#zoomInt');
@@ -348,24 +343,31 @@ micMonitorVolEl.addEventListener('input', (e) => {
   applyMicMonitorGain();
 });
 
-/* ================= LAYOUT: viewport-fit stage height ================= */
-/* ✅ Fix: Stage passt sich dem verfügbaren Viewport an (inkl. HUD) */
+/* ================= SAFE FRAMING + AUTO CENTERING (IMPORTANT) ================= */
+/* Canvas internal size always matches the STAGE box (not window). HiDPI-safe. */
 
-function updateStageHeight() {
-  if (!stageEl) return;
+function fitCanvasToStage() {
+  const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1)); // cap for perf
+  const rect = (stageEl || canvas).getBoundingClientRect();
 
-  const hudRect = hud.getBoundingClientRect();
-  const stageRect = stageEl.getBoundingClientRect();
+  const cssW = Math.max(1, Math.floor(rect.width));
+  const cssH = Math.max(1, Math.floor(rect.height));
 
-  // Platz nach unten bis HUD (mit etwas Luft)
-  const gap = 14;
-  const available = (window.innerHeight - hudRect.height - gap) - stageRect.top;
+  const pxW = Math.floor(cssW * dpr);
+  const pxH = Math.floor(cssH * dpr);
 
-  // clamp: nicht zu klein / nicht absurd groß
-  const h = Math.max(260, Math.min(740, Math.floor(available)));
-
-  document.documentElement.style.setProperty('--vizH', `${h}px`);
+  if (canvas.width !== pxW || canvas.height !== pxH) {
+    canvas.width = pxW;
+    canvas.height = pxH;
+    // draw coordinates in CSS pixels
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
 }
+
+const ro = new ResizeObserver(() => fitCanvasToStage());
+if (stageEl) ro.observe(stageEl);
+window.addEventListener('resize', fitCanvasToStage);
+fitCanvasToStage();
 
 /* ================= INIT / ROUTING ================= */
 
@@ -386,7 +388,7 @@ async function initEngine() {
   inputGain.gain.value = 1;
 
   monitorGain = engine.ctx.createGain();
-  monitorGain.gain.value = 1;
+  monitorGain.gain.value = 1; // demo/file audible by default
 
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
@@ -394,14 +396,8 @@ async function initEngine() {
 
   overlay.style.display = 'none';
   setStatus('✅ Engine ready (Demo / File / Mic)');
-
-  // layout after overlay hide
-  updateStageHeight();
-  resizeCanvasDPR();
-
   if (!raf) loop();
 }
-
 overlay.onclick = initEngine;
 
 /* ================= CLEAN STOP ================= */
@@ -469,7 +465,6 @@ async function playDemo(path) {
   bufferSrc.start(0);
   setStatus('🎧 Demo playing (once)');
 }
-
 demoBtn?.addEventListener('click', () => playDemo('media/kasubo hoerprobe.mp3'));
 
 /* ================= FILE INPUT (play once) ================= */
@@ -576,6 +571,7 @@ window.addEventListener('keydown', async (e) => {
   if (key === 'm') micBtn?.click();
   if (key === 'f') fileBtn?.click();
   if (key === 'd') demoBtn?.click();
+
   if (key === 'escape') setEngineOpen(false);
 });
 
@@ -652,7 +648,7 @@ recBtn.addEventListener('click', async () => {
   }
 });
 
-/* ================= VISUALS ================= */
+/* ================= VISUAL HELPERS ================= */
 
 class Particle {
   constructor(x, y, hue) {
@@ -684,7 +680,7 @@ function rmsFromTimeDomain(arr) {
   return Math.sqrt(sum / arr.length);
 }
 
-function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
 /* ================= LOOP ================= */
 
@@ -694,9 +690,13 @@ function loop() {
     return;
   }
 
+  // keep stage-fit stable
+  fitCanvasToStage();
+
   analyser.getByteFrequencyData(dataFreq);
   analyser.getByteTimeDomainData(dataTime);
 
+  // feedback guard (mic mode only)
   const now = performance.now();
   const micRms = rmsFromTimeDomain(dataTime);
 
@@ -721,114 +721,78 @@ function loop() {
     }
   }
 
-  const w = viewW;
-  const h = viewH;
-  if (!w || !h) { raf = requestAnimationFrame(loop); return; }
+  const w = canvas.width / (window.devicePixelRatio || 1);
+  const h = canvas.height / (window.devicePixelRatio || 1);
 
   const low = (dataFreq[2] + dataFreq[4]) / 2;
 
   const pAmount = parseInt(partEl.value, 10);
   const zoomSens = parseInt(zoomEl.value, 10) / 1000;
-  const hueShift = parseInt(hueEl.value, 10);
 
-  const sens = sensEl ? parseFloat(sensEl.value) : 1;
-  const zoom = reducedMotion ? 1 : 1 + (low * zoomSens * sens);
+  // sensitivity influences zoom/impact
+  const sensVal = sens ? parseFloat(sens.value) : 1;
+  const zoom = reducedMotion ? 1 : 1 + (low * zoomSens * (0.7 + sensVal * 0.6));
 
-  const mode = paletteEl?.value || 'hue';
-  let hue = (hueShift + low * 0.4) % 360;
-  if (mode === 'energy') hue = (hueShift + (micRms * 900)) % 360;
+  const mode = palette?.value || 'hue';
+  const hueBase = parseInt(hueEl.value, 10);
 
-  const sat = (mode === 'grayscale') ? 0 : 100;
-  const lum = (mode === 'grayscale') ? 85 : 50;
+  let hue = hueBase;
 
-  const { cx, cy, r } = safeFrame();
+  if (mode === 'energy') {
+    hue = (hueBase + low * 0.7) % 360;
+  } else if (mode === 'grayscale') {
+    hue = 0; // will be ignored by grayscale drawing
+  } else {
+    // "hue by pitch" lightweight approximation: use spectral centroid-ish
+    let num = 0, den = 0;
+    for (let i = 1; i < 80; i++) {
+      const v = dataFreq[i];
+      num += i * v;
+      den += v;
+    }
+    const centroid = den > 0 ? (num / den) : 0; // ~0..80
+    hue = (hueBase + centroid * 4.2) % 360;
+  }
 
+  // fade
   c.fillStyle = 'rgba(5,5,5,0.28)';
   c.fillRect(0, 0, w, h);
 
-  c.save();
+  // SAFE FRAMING: always draw around true center of stage
+  const cx = w / 2;
+  const cy = h / 2;
 
+  c.save();
   c.translate(cx, cy);
   c.scale(zoom, zoom);
   c.translate(-cx, -cy);
 
   if (!reducedMotion) rotation += 0.002;
 
-  const rings = clamp(Math.floor(r / 8), 36, 90);
+  if (mode === 'grayscale') {
+    const g = clamp(40 + low * 0.9, 60, 210);
+    c.strokeStyle = `rgba(${g},${g},${g},0.20)`;
+  } else {
+    c.strokeStyle = `hsla(${hue},100%,50%,0.22)`;
+  }
 
-  c.lineWidth = 1;
-  c.strokeStyle = `hsla(${hue},${sat}%,${lum}%,0.22)`;
-
-  for (let i = 0; i < rings; i++) {
-    const v = dataFreq[i % dataFreq.length];
-    const rr = r * 0.35 + (i * (r * 0.65 / rings)) + (v * 0.75);
+  for (let i = 0; i < 60; i++) {
+    const v = dataFreq[i];
     c.beginPath();
-    c.arc(cx, cy, rr, 0, Math.PI * 2);
+    c.arc(cx, cy, 0.18 * Math.min(w, h) + v, 0, Math.PI * 2);
     c.stroke();
   }
 
-  const threshold = 180 / sens;
-  if (!reducedMotion && low > threshold) {
-    for (let i = 0; i < pAmount; i++) particles.push(new Particle(cx, cy, hue));
+  if (!reducedMotion && low > 200) {
+    for (let i = 0; i < pAmount; i++) {
+      particles.push(new Particle(cx, cy, hue));
+    }
   }
 
   particles = reducedMotion ? [] : particles.filter(p => p.life > 0);
-  particles.forEach(p => {
-    p.update();
-
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const dist = Math.hypot(dx, dy);
-    const maxDist = r * 0.95;
-    if (dist > maxDist) {
-      const t = maxDist / (dist || 1);
-      p.x = cx + dx * t;
-      p.y = cy + dy * t;
-      p.vx *= -0.45;
-      p.vy *= -0.45;
-    }
-
-    p.draw();
-  });
+  particles.forEach(p => { p.update(); p.draw(); });
 
   c.restore();
+
   raf = requestAnimationFrame(loop);
 }
-
-/* ================= RESIZE (DPR safe) ================= */
-
-function resizeCanvasDPR() {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const rect = canvas.getBoundingClientRect();
-
-  viewW = Math.max(1, Math.round(rect.width));
-  viewH = Math.max(1, Math.round(rect.height));
-
-  const pxW = Math.max(1, Math.round(rect.width * dpr));
-  const pxH = Math.max(1, Math.round(rect.height * dpr));
-
-  if (canvas.width !== pxW || canvas.height !== pxH) {
-    canvas.width = pxW;
-    canvas.height = pxH;
-  }
-
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-
-function onResizeAll() {
-  updateStageHeight();
-  // warten bis CSS height angewendet ist
-  requestAnimationFrame(() => {
-    resizeCanvasDPR();
-  });
-}
-
-window.addEventListener('resize', onResizeAll);
-window.addEventListener('orientationchange', onResizeAll);
-window.addEventListener('scroll', () => {
-  // nur leicht reagieren, damit es nicht nervt
-  clearTimeout(window.__siScrollT);
-  window.__siScrollT = setTimeout(onResizeAll, 120);
-});
-
-onResizeAll();
