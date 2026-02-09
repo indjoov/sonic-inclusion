@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 
 /* ================= BASIC SETUP ================= */
@@ -52,6 +53,7 @@ overlay.innerHTML = `
       font-size: clamp(22px, 6.5vw, 44px);
       line-height: 1.05;
     ">SONIC<br/>INCLUSION</h1>
+
     <p style="
       margin:0;
       opacity:.65;
@@ -67,34 +69,45 @@ document.body.appendChild(overlay);
 const engine = new AudioEngine();
 let raf = null;
 
-// ✅ Use your engine.getVisualizerData()
 let analyser = null;
 let dataFreq = null;
 let dataTime = null;
 
-// routing nodes
 let inputGain = null;
 let monitorGain = null;
 
-// input nodes
 let currentMode = 'idle';
 let bufferSrc = null;
 let micStream = null;
 let micSourceNode = null;
 
-/* ================= THREE (Visual) ================= */
+/* ================= MODES (A + B) ================= */
+
+let inclusionMode = false;  // B
+let flashSafe = true;
+let flashLimit = 0.65;
+
+let partAmount = 14;    // A
+let bassZoom = 0.10;
+let hueShiftDeg = 280;
+let reducedMotion = false;
+
+/* ================= THREE ================= */
 
 let renderer, scene, camera;
-let particlePoints, particleGeom, particleMat;
-let sigil, sigilWire;
 
+// particles
+let particlePoints, particleGeom, particleMat;
 const particleCount = 12000;
 let basePos, pos, vel;
 
-let hueShiftDeg = 280;
-let bassZoom = 0;     // 0..1
-let partAmount = 10;  // 0..30
-let reducedMotion = false;
+// sigil group
+let sigilGroup = null;
+let sigilFill = null;
+let sigilLines = null;
+
+// cage
+let cageWire = null;
 
 /* ================= MIC MONITOR + FEEDBACK GUARD ================= */
 
@@ -136,6 +149,7 @@ hud.style.cssText = `
   pointer-events: none;
 `;
 
+// RECORD
 const recBtn = document.createElement('button');
 recBtn.id = 'si-recBtn';
 recBtn.type = 'button';
@@ -156,6 +170,7 @@ recBtn.style.cssText = `
   gap: 10px;
 `;
 
+// ENGINE toggle
 const engineToggle = document.createElement('button');
 engineToggle.id = 'si-engineToggle';
 engineToggle.type = 'button';
@@ -179,6 +194,7 @@ hud.appendChild(recBtn);
 hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
+// ENGINE PANEL
 const enginePanel = document.createElement('div');
 enginePanel.id = 'si-enginePanel';
 enginePanel.setAttribute('role', 'dialog');
@@ -225,12 +241,12 @@ enginePanel.innerHTML = `
   <div style="display:grid; gap:10px;">
     <label style="font-size:12px; opacity:0.8;">
       PARTICLES (energy)
-      <input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;">
+      <input id="partAmount" type="range" min="0" max="30" value="14" style="width:100%; margin-top:6px;">
     </label>
 
     <label style="font-size:12px; opacity:0.8;">
       BASS ZOOM
-      <input id="zoomInt" type="range" min="0" max="100" value="0" style="width:100%; margin-top:6px;">
+      <input id="zoomInt" type="range" min="0" max="100" value="10" style="width:100%; margin-top:6px;">
     </label>
 
     <label style="font-size:12px; opacity:0.8;">
@@ -247,6 +263,16 @@ enginePanel.innerHTML = `
     <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
       <input id="reducedMotion" type="checkbox">
       Reduced Motion
+    </label>
+
+    <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
+      <input id="inclusionMode" type="checkbox">
+      Inclusion Mode (High-Contrast + Stable)
+    </label>
+
+    <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
+      <input id="flashSafe" type="checkbox" checked>
+      Flash-safe limiter
     </label>
 
     <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.12);">
@@ -268,6 +294,7 @@ enginePanel.innerHTML = `
 `;
 document.body.appendChild(enginePanel);
 
+// Panel open/close
 let engineOpen = false;
 function setEngineOpen(open) {
   engineOpen = open;
@@ -278,6 +305,7 @@ function setEngineOpen(open) {
 engineToggle.addEventListener('click', () => setEngineOpen(!engineOpen));
 enginePanel.querySelector('#si-engineClose').addEventListener('click', () => setEngineOpen(false));
 
+// Swipe-down close (mobile)
 let touchStartY = null;
 enginePanel.addEventListener('touchstart', (e) => {
   touchStartY = e.touches?.[0]?.clientY ?? null;
@@ -285,40 +313,65 @@ enginePanel.addEventListener('touchstart', (e) => {
 enginePanel.addEventListener('touchmove', (e) => {
   if (touchStartY == null) return;
   const y = e.touches?.[0]?.clientY ?? touchStartY;
-  if (y - touchStartY > 50) {
+  const dy = y - touchStartY;
+  if (dy > 50) {
     setEngineOpen(false);
     touchStartY = null;
   }
 }, { passive: true });
 
+/* ================= ENGINE PANEL CONTROL HOOKS ================= */
+
 const partEl = enginePanel.querySelector('#partAmount');
 const zoomEl = enginePanel.querySelector('#zoomInt');
 const hueEl  = enginePanel.querySelector('#hueShift');
+
+const reducedEl = enginePanel.querySelector('#reducedMotion');
+const inclusionEl = enginePanel.querySelector('#inclusionMode');
+const flashSafeEl = enginePanel.querySelector('#flashSafe');
 
 const micMonitorEl = enginePanel.querySelector('#micMonitor');
 const micMonitorVolEl = enginePanel.querySelector('#micMonitorVol');
 const feedbackWarnEl = enginePanel.querySelector('#feedbackWarn');
 
 function preset(p, z, h) {
+  partAmount = p; bassZoom = z / 100; hueShiftDeg = h;
   partEl.value = String(p);
   zoomEl.value = String(z);
   hueEl.value  = String(h);
-  partAmount = Number(p);
-  bassZoom = Number(z) / 100;
-  hueShiftDeg = Number(h);
 }
-enginePanel.querySelector('#presetCalm').addEventListener('click', () => preset(6, 0, 210));
-enginePanel.querySelector('#presetBass').addEventListener('click', () => preset(18, 12, 340));
-enginePanel.querySelector('#presetCine').addEventListener('click', () => preset(12, 6, 280));
+enginePanel.querySelector('#presetCalm').addEventListener('click', () => preset(10, 6, 210));
+enginePanel.querySelector('#presetBass').addEventListener('click', () => preset(20, 14, 340));
+enginePanel.querySelector('#presetCine').addEventListener('click', () => preset(14, 10, 280));
 
-enginePanel.querySelector('#reducedMotion').addEventListener('change', (e) => {
+partEl.addEventListener('input', (e) => { partAmount = Number(e.target.value); });
+zoomEl.addEventListener('input', (e) => { bassZoom = Number(e.target.value) / 100; });
+hueEl.addEventListener('input', (e) => { hueShiftDeg = Number(e.target.value); });
+
+reducedEl.addEventListener('change', (e) => {
   reducedMotion = !!e.target.checked;
   setStatus(reducedMotion ? '🫧 Reduced motion enabled' : '✨ Reduced motion disabled');
 });
 
+inclusionEl.addEventListener('change', (e) => {
+  inclusionMode = !!e.target.checked;
+  if (inclusionMode) {
+    reducedMotion = true;
+    reducedEl.checked = true;
+    preset(10, 6, 210);
+    setStatus('🫶 Inclusion Mode ON (stable + high-contrast)');
+  } else {
+    setStatus('🕯️ Ritual Mode ON');
+  }
+});
+
+flashSafeEl.addEventListener('change', (e) => {
+  flashSafe = !!e.target.checked;
+  setStatus(flashSafe ? '🛡️ Flash-safe ON' : '⚠️ Flash-safe OFF');
+});
+
 micMonitorEl.checked = micMonitor;
 micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
-
 micMonitorEl.addEventListener('change', (e) => {
   micMonitor = !!e.target.checked;
   feedbackMuted = false;
@@ -331,29 +384,42 @@ micMonitorVolEl.addEventListener('input', (e) => {
   applyMicMonitorGain();
 });
 
-partEl.addEventListener('input', (e) => { partAmount = Number(e.target.value); });
-zoomEl.addEventListener('input', (e) => { bassZoom = Number(e.target.value) / 100; });
-hueEl.addEventListener('input', (e) => { hueShiftDeg = Number(e.target.value); });
+/* ================= SAFE FRAMING + HI-DPI ================= */
+
+function fitCanvasToStage() {
+  const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+  const rect = (stageEl || canvas).getBoundingClientRect();
+  const cssW = Math.max(1, Math.floor(rect.width));
+  const cssH = Math.max(1, Math.floor(rect.height));
+
+  if (renderer) {
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(cssW, cssH, false);
+  }
+  if (camera) {
+    camera.aspect = cssW / cssH;
+    camera.updateProjectionMatrix();
+  }
+}
+const ro = new ResizeObserver(() => fitCanvasToStage());
+if (stageEl) ro.observe(stageEl);
+window.addEventListener('resize', fitCanvasToStage);
 
 /* ================= THREE INIT ================= */
 
 function initThree() {
-  renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: true,
-    alpha: true,
-    powerPreference: 'high-performance'
-  });
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setClearColor(0x000000, 1);
 
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x000000, 0.065);
+  scene.fog = new THREE.FogExp2(0x000000, 0.08);
 
-  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 250);
   camera.position.set(0, 0.2, 18);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.35));
 
+  // particles
   particleGeom = new THREE.BufferGeometry();
   basePos = new Float32Array(particleCount * 3);
   pos = new Float32Array(particleCount * 3);
@@ -368,13 +434,8 @@ function initThree() {
     const y = r * Math.cos(phi) * 0.85;
     const z = r * Math.sin(phi) * Math.sin(theta);
 
-    basePos[i * 3 + 0] = x;
-    basePos[i * 3 + 1] = y;
-    basePos[i * 3 + 2] = z;
-
-    pos[i * 3 + 0] = x;
-    pos[i * 3 + 1] = y;
-    pos[i * 3 + 2] = z;
+    basePos[i * 3 + 0] = x; basePos[i * 3 + 1] = y; basePos[i * 3 + 2] = z;
+    pos[i * 3 + 0] = x;     pos[i * 3 + 1] = y;     pos[i * 3 + 2] = z;
 
     vel[i * 3 + 0] = (Math.random() - 0.5) * 0.02;
     vel[i * 3 + 1] = (Math.random() - 0.5) * 0.02;
@@ -396,71 +457,106 @@ function initThree() {
   particlePoints = new THREE.Points(particleGeom, particleMat);
   scene.add(particlePoints);
 
-  const sigGeo = new THREE.TorusKnotGeometry(1.35, 0.32, 180, 16);
-  const sigMat = new THREE.MeshBasicMaterial({
-    color: 0x7c4dff,
-    transparent: true,
-    opacity: 0.85
-  });
-  sigil = new THREE.Mesh(sigGeo, sigMat);
-  scene.add(sigil);
-
-  const wire = new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(2.2, 1));
-  sigilWire = new THREE.LineSegments(
+  // cage
+  const wire = new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(2.6, 2));
+  cageWire = new THREE.LineSegments(
     wire,
-    new THREE.LineBasicMaterial({ color: 0x00d4ff, transparent: true, opacity: 0.35 })
+    new THREE.LineBasicMaterial({ color: 0x00d4ff, transparent: true, opacity: 0.25 })
   );
-  scene.add(sigilWire);
+  scene.add(cageWire);
+
+  // sigil (SVG -> 3D)
+  loadSigilSVG('media/indjoov-sigil.svg');
 
   fitCanvasToStage();
 }
 
-/* ================= RESIZE ================= */
+/* SVG -> Sigil */
+function loadSigilSVG(url) {
+  const loader = new SVGLoader();
 
-function fitCanvasToStage() {
-  const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
-  const rect = (stageEl || canvas).getBoundingClientRect();
-  const cssW = Math.max(1, Math.floor(rect.width));
-  const cssH = Math.max(1, Math.floor(rect.height));
+  loader.load(
+    url,
+    (data) => {
+      if (sigilGroup) {
+        scene.remove(sigilGroup);
+        sigilGroup.traverse(o => o.geometry?.dispose?.());
+        sigilGroup = null;
+      }
 
-  if (renderer) {
-    renderer.setPixelRatio(dpr);
-    renderer.setSize(cssW, cssH, false);
-  }
-  if (camera) {
-    camera.aspect = cssW / cssH;
-    camera.updateProjectionMatrix();
-  }
+      sigilGroup = new THREE.Group();
+
+      const fillMat = new THREE.MeshBasicMaterial({ color: 0x7c4dff, transparent: true, opacity: 0.78, depthWrite: false });
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x00d4ff, transparent: true, opacity: 0.55 });
+
+      const shapes = [];
+      const lines = [];
+
+      for (const p of data.paths) {
+        const s = SVGLoader.createShapes(p);
+        for (const shape of s) shapes.push(shape);
+
+        const points = p.subPaths?.flatMap(sp => sp.getPoints(220)) ?? [];
+        if (points.length > 2) {
+          const g = new THREE.BufferGeometry().setFromPoints(points.map(pt => new THREE.Vector3(pt.x, -pt.y, 0)));
+          const l = new THREE.Line(g, lineMat);
+          lines.push(l);
+        }
+      }
+
+      if (shapes.length) {
+        const geom = new THREE.ShapeGeometry(shapes);
+        sigilFill = new THREE.Mesh(geom, fillMat);
+        sigilGroup.add(sigilFill);
+      }
+
+      sigilLines = new THREE.Group();
+      for (const l of lines) sigilLines.add(l);
+      sigilGroup.add(sigilLines);
+
+      // center + scale
+      const box = new THREE.Box3().setFromObject(sigilGroup);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+
+      sigilGroup.position.sub(center); // center to origin
+
+      const maxDim = Math.max(size.x, size.y) || 1;
+      const scale = 4.4 / maxDim; // target size
+      sigilGroup.scale.setScalar(scale);
+
+      sigilGroup.rotation.x = -0.15;
+      sigilGroup.rotation.y = 0.25;
+
+      scene.add(sigilGroup);
+      setStatus('✅ Sigil loaded (SVG → 3D)');
+    },
+    undefined,
+    () => setStatus('⚠️ Sigil SVG not found — check /media/indjoov-sigil.svg')
+  );
 }
-const ro = new ResizeObserver(() => fitCanvasToStage());
-if (stageEl) ro.observe(stageEl);
-window.addEventListener('resize', fitCanvasToStage);
 
 /* ================= INIT / ROUTING ================= */
 
 async function initEngine() {
-  // ✅ Your engine uses "idle" → "ready" → "running"
   if (engine.state !== 'idle') return;
 
   setStatus('⏳ Initializing engine…');
-
-  // ✅ Your init() has no params
   await engine.init();
 
-  // ✅ Use your helper (connects analyser to master internally)
   const viz = engine.getVisualizerData();
   analyser = viz.analyser;
   dataFreq = viz.dataFreq;
   dataTime = viz.dataTime;
 
-  // local routing nodes
   inputGain = engine.ctx.createGain();
   inputGain.gain.value = 1;
 
   monitorGain = engine.ctx.createGain();
-  monitorGain.gain.value = 1; // demo/file audible by default
+  monitorGain.gain.value = 1;
 
-  // route: input → analyser + monitor → master
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
   monitorGain.connect(engine.master);
@@ -473,7 +569,7 @@ async function initEngine() {
 }
 overlay.onclick = initEngine;
 
-/* ================= STOP ================= */
+/* ================= CLEAN STOP ================= */
 
 async function stopAll({ suspend = true } = {}) {
   if (bufferSrc) {
@@ -500,7 +596,6 @@ async function stopAll({ suspend = true } = {}) {
 
   if (monitorGain) monitorGain.gain.value = 0;
 
-  // optional suspend
   if (suspend && engine.ctx) {
     try { await engine.ctx.suspend(); } catch {}
   }
@@ -592,11 +687,7 @@ micBtn?.addEventListener('click', async () => {
     setStatus('⏳ Requesting microphone…');
 
     micStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      }
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     });
 
     await engine.resume();
@@ -616,7 +707,7 @@ micBtn?.addEventListener('click', async () => {
   }
 });
 
-/* ================= KEYBOARD ================= */
+/* ================= KEYBOARD SHORTCUTS ================= */
 
 window.addEventListener('keydown', async (e) => {
   const key = e.key.toLowerCase();
@@ -630,14 +721,13 @@ window.addEventListener('keydown', async (e) => {
       await playDemo('media/kasubo hoerprobe.mp3');
     }
   }
-
   if (key === 'm') micBtn?.click();
   if (key === 'f') fileBtn?.click();
   if (key === 'd') demoBtn?.click();
   if (key === 'escape') setEngineOpen(false);
 });
 
-/* ================= RECORDING ================= */
+/* ================= RECORDING (canvas + master audio) ================= */
 
 let mediaRecorder = null;
 let recordedChunks = [];
@@ -652,7 +742,6 @@ recBtn.addEventListener('click', async () => {
 
     const stream = canvas.captureStream(60);
 
-    // capture audio from master (additional connection is OK)
     const recDest = engine.ctx.createMediaStreamDestination();
     engine.master.connect(recDest);
 
@@ -678,7 +767,7 @@ recBtn.addEventListener('click', async () => {
       const blob = new Blob(recordedChunks, { type: 'video/webm' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'Sonic_Inclusion_RitualField.webm';
+      a.download = 'Sonic_Inclusion_Sigil.webm';
       a.click();
 
       setStatus('✅ Recording saved');
@@ -706,7 +795,7 @@ recBtn.addEventListener('click', async () => {
   }
 });
 
-/* ================= VISUAL LOOP HELPERS ================= */
+/* ================= VISUAL HELPERS ================= */
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -762,7 +851,7 @@ function feedbackGuard(rms) {
   }
 }
 
-/* ================= MAIN LOOP ================= */
+/* ================= LOOP ================= */
 
 let a11yTick = 0;
 
@@ -791,25 +880,46 @@ function loop() {
   if (palette === 'hue' && dataFreq) hue = (estimatePitchHue(dataFreq) + hueShiftDeg) % 360;
   if (palette === 'energy') hue = (hueShiftDeg + (bass * 120) + (mid * 80)) % 360;
 
-  if (palette === 'grayscale') {
-    particleMat.color.setRGB(0.92, 0.92, 0.97);
-    sigil.material.color.setRGB(0.95, 0.95, 0.98);
-    sigilWire.material.color.setRGB(0.65, 0.65, 0.75);
-  } else {
-    particleMat.color.setHSL(hue / 360, 1.0, 0.62);
-    sigil.material.color.setHSL(((hue + 70) % 360) / 360, 1.0, 0.58);
-    sigilWire.material.color.setHSL(((hue + 160) % 360) / 360, 1.0, 0.55);
+  const energyRaw = clamp((rms * 2.2 + bass * 1.6) * sens, 0, 2.0);
+  const pulseRaw  = (bass * 1.8 + mid * 0.6) * sens;
+
+  let energy = energyRaw;
+  let pulse = pulseRaw;
+  if (flashSafe) {
+    energy = Math.min(energy, 1.0);
+    pulse = Math.min(pulse, 1.0);
   }
 
-  const energy = clamp((rms * 2.2 + bass * 1.6) * sens, 0, 2.0);
-  const pulse = (bass * 1.8 + mid * 0.6) * sens;
+  const forceHighContrast = inclusionMode || (palette === 'grayscale');
 
-  const drift = reducedMotion ? 0.35 : 1.0;
+  if (forceHighContrast) {
+    particleMat.color.setRGB(0.95, 0.95, 0.98);
+    particleMat.opacity = 0.55;
+
+    if (sigilFill?.material) { sigilFill.material.color.setRGB(0.98,0.98,0.99); sigilFill.material.opacity = 0.35; }
+    if (sigilLines) sigilLines.traverse(o => { if (o.material) { o.material.color.setRGB(0.85,0.85,0.90); o.material.opacity = 0.55; } });
+    if (cageWire?.material) { cageWire.material.color.setRGB(0.75,0.75,0.80); cageWire.material.opacity = 0.18; }
+  } else {
+    particleMat.color.setHSL(hue / 360, 1.0, 0.62);
+    particleMat.opacity = 0.95;
+
+    if (sigilFill?.material) { sigilFill.material.color.setHSL(((hue + 70) % 360) / 360, 1.0, 0.58); sigilFill.material.opacity = 0.78; }
+    if (sigilLines) sigilLines.traverse(o => { if (o.material) { o.material.color.setHSL(((hue + 160) % 360) / 360, 1.0, 0.55); o.material.opacity = 0.55; } });
+    if (cageWire?.material) { cageWire.material.color.setHSL(((hue + 140) % 360) / 360, 1.0, 0.5); cageWire.material.opacity = 0.22; }
+  }
+
+  if (flashSafe) {
+    particleMat.opacity = Math.min(particleMat.opacity, 0.35 + flashLimit);
+    if (sigilFill?.material) sigilFill.material.opacity = Math.min(sigilFill.material.opacity, 0.25 + flashLimit * 0.7);
+    if (cageWire?.material) cageWire.material.opacity = Math.min(cageWire.material.opacity, 0.14 + flashLimit * 0.35);
+  }
+
+  const drift = (reducedMotion || inclusionMode) ? 0.35 : 1.0;
   const zoom = 1 + (bassZoom * 0.9) + (bass * 0.65);
   const active = clamp(partAmount / 30, 0, 1);
 
+  // particles move
   const posAttr = particleGeom.getAttribute('position');
-
   for (let i = 0; i < particleCount; i++) {
     const ix = i * 3;
 
@@ -847,23 +957,29 @@ function loop() {
     pos[ix + 1] += (ty - pos[ix + 1]) * 0.0025;
     pos[ix + 2] += (tz - pos[ix + 2]) * 0.0025;
   }
-
   posAttr.needsUpdate = true;
 
+  // ritual motion (sigil + cage + camera)
   const t = performance.now() * 0.001;
-  const s = 1 + pulse * 0.35;
-  sigil.rotation.x = t * 0.35 + treble * 0.6;
-  sigil.rotation.y = t * 0.55 + mid * 0.4;
-  sigil.scale.setScalar(s);
 
-  sigilWire.rotation.y = -t * 0.25;
-  sigilWire.rotation.x = t * 0.12;
-  sigilWire.position.y = Math.sin(t * 0.7) * 0.05;
+  if (sigilGroup) {
+    const s = 1 + pulse * 0.42;
+    sigilGroup.rotation.z = t * 0.25 + treble * 0.35;
+    sigilGroup.rotation.y = 0.25 + Math.sin(t * 0.45) * 0.12 + mid * 0.12;
+    sigilGroup.rotation.x = -0.15 + Math.cos(t * 0.35) * 0.08 + bass * 0.08;
+    sigilGroup.scale.setScalar(s);
+  }
 
-  camera.position.x = Math.sin(t * 0.25) * (reducedMotion ? 0.05 : 0.25);
-  camera.position.y = 0.2 + Math.cos(t * 0.22) * (reducedMotion ? 0.05 : 0.18);
+  if (cageWire) {
+    cageWire.rotation.y = -t * 0.22;
+    cageWire.rotation.x = t * 0.10;
+  }
+
+  camera.position.x = Math.sin(t * 0.22) * ((reducedMotion || inclusionMode) ? 0.05 : 0.28);
+  camera.position.y = 0.2 + Math.cos(t * 0.20) * ((reducedMotion || inclusionMode) ? 0.05 : 0.18);
   camera.lookAt(0, 0, 0);
 
+  // a11y text
   a11yTick++;
   if (a11yTick % 30 === 0) {
     const mood =
