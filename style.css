@@ -1,3 +1,4 @@
+/* style.css */
 :root{
   --bg:#0b0b12;
   --panel:rgba(20,20,32,.78);
@@ -22,6 +23,7 @@ body{
     linear-gradient(180deg, #0b0b12, #07070c);
 }
 
+/* Header / Footer */
 .site-header, .site-footer{
   text-align:center;
   padding: clamp(14px, 3vw, 22px);
@@ -46,9 +48,10 @@ main{
   max-width: 980px;
   margin: 0 auto;
   padding: 16px;
-  padding-bottom: calc(120px + env(safe-area-inset-bottom));
+  padding-bottom: calc(120px + env(safe-area-inset-bottom)); /* space for HUD */
 }
 
+/* ================= CONTROLS CARD ================= */
 .controls{
   background: var(--panel);
   border: 1px solid var(--stroke);
@@ -81,6 +84,7 @@ main{
 }
 .controls button.primary:hover{ border-color: rgba(124,77,255,.75); }
 
+/* Sliders */
 .sliders{
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -107,11 +111,11 @@ main{
   padding: 12px 12px 10px;
   box-shadow: 0 12px 30px rgba(0,0,0,.18);
 }
-.sliders label > input,
-.sliders label > select{
-  font-size: 16px;
+.sliders label > input,.sliders label > select{
+  font-size: 16px; /* prevents iOS zoom */
 }
 
+/* Range */
 input[type="range"]{
   width: 100%;
   height: 40px;
@@ -137,7 +141,22 @@ input[type="range"]::-webkit-slider-thumb{
   border: 1px solid rgba(255,255,255,.22);
   box-shadow: 0 10px 26px rgba(0,212,255,.18);
 }
+input[type="range"]::-moz-range-track{
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.10);
+}
+input[type="range"]::-moz-range-thumb{
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(0,212,255,.95), rgba(124,77,255,.75));
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: 0 10px 26px rgba(0,212,255,.18);
+}
 
+/* Select */
 select{
   width: 100%;
   border-radius: 16px;
@@ -169,6 +188,7 @@ select:focus{
 }
 option{ background:#0f0f18; color:var(--text); }
 
+/* KBD hint */
 .kbd-hint{
   color: rgba(231,231,238,.78);
   font-size: 13px;
@@ -184,6 +204,7 @@ kbd{
   font-size: 12px;
 }
 
+/* ================= STAGE ================= */
 .stage{
   margin-top: 16px;
   position: relative;
@@ -211,6 +232,7 @@ kbd{
   display: block;
 }
 
+/* a11y screenreader-only */
 .a11y{
   position:absolute;
   left:-9999px;
