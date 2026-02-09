@@ -1,34 +1,29 @@
-// script.js
+import * as THREE from 'three';
 import { AudioEngine } from './audio/AudioEngine.js';
 
 /* ================= BASIC SETUP ================= */
 
 const canvas = document.getElementById('viz');
-const c = canvas.getContext('2d');
-
 const stageEl = canvas.closest('.stage');
 
 const srText = document.getElementById('srText');
-const sens = document.getElementById('sens');
-const palette = document.getElementById('palette');
+const sensEl = document.getElementById('sens');
+const paletteEl = document.getElementById('palette');
 
 const micBtn = document.getElementById('micBtn');
 const fileBtn = document.getElementById('fileBtn');
 const demoBtn = document.getElementById('demoBtn');
 const fileInput = document.getElementById('fileInput');
 
-// a11y live region
 if (srText) {
   srText.setAttribute('aria-live', 'polite');
   srText.setAttribute('role', 'status');
 }
-
 function setStatus(msg) {
   if (srText) srText.textContent = msg;
 }
 
 /* ================= OVERLAY (autoplay-safe init) ================= */
-/* Responsive + safe-area + always fits */
 
 const overlay = document.createElement('div');
 overlay.id = 'intro-overlay';
@@ -39,7 +34,6 @@ overlay.style.cssText = `
   background: rgba(0,0,0,0.92);
   cursor:pointer;
 `;
-
 overlay.innerHTML = `
   <div style="
     width: min(92vw, 560px);
@@ -58,7 +52,6 @@ overlay.innerHTML = `
       font-size: clamp(22px, 6.5vw, 44px);
       line-height: 1.05;
     ">SONIC<br/>INCLUSION</h1>
-
     <p style="
       margin:0;
       opacity:.65;
@@ -69,12 +62,12 @@ overlay.innerHTML = `
 `;
 document.body.appendChild(overlay);
 
-/* ================= ENGINE ================= */
+/* ================= ENGINE (Audio) ================= */
 
 const engine = new AudioEngine();
 let raf = null;
 
-// analyser routing (mic/file/demo all feed this)
+// ✅ Use your engine.getVisualizerData()
 let analyser = null;
 let dataFreq = null;
 let dataTime = null;
@@ -89,13 +82,18 @@ let bufferSrc = null;
 let micStream = null;
 let micSourceNode = null;
 
-/* ================= VISUAL STATE ================= */
+/* ================= THREE (Visual) ================= */
 
-let particles = [];
-let rotation = 0;
+let renderer, scene, camera;
+let particlePoints, particleGeom, particleMat;
+let sigil, sigilWire;
 
-/* ================= A11Y / REDUCED MOTION ================= */
+const particleCount = 12000;
+let basePos, pos, vel;
 
+let hueShiftDeg = 280;
+let bassZoom = 0;     // 0..1
+let partAmount = 10;  // 0..30
 let reducedMotion = false;
 
 /* ================= MIC MONITOR + FEEDBACK GUARD ================= */
@@ -138,7 +136,6 @@ hud.style.cssText = `
   pointer-events: none;
 `;
 
-// RECORD
 const recBtn = document.createElement('button');
 recBtn.id = 'si-recBtn';
 recBtn.type = 'button';
@@ -159,7 +156,6 @@ recBtn.style.cssText = `
   gap: 10px;
 `;
 
-// ENGINE toggle
 const engineToggle = document.createElement('button');
 engineToggle.id = 'si-engineToggle';
 engineToggle.type = 'button';
@@ -183,7 +179,6 @@ hud.appendChild(recBtn);
 hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
-// ENGINE PANEL
 const enginePanel = document.createElement('div');
 enginePanel.id = 'si-enginePanel';
 enginePanel.setAttribute('role', 'dialog');
@@ -229,7 +224,7 @@ enginePanel.innerHTML = `
 
   <div style="display:grid; gap:10px;">
     <label style="font-size:12px; opacity:0.8;">
-      PARTICLES
+      PARTICLES (energy)
       <input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;">
     </label>
 
@@ -273,7 +268,6 @@ enginePanel.innerHTML = `
 `;
 document.body.appendChild(enginePanel);
 
-// Panel open/close
 let engineOpen = false;
 function setEngineOpen(open) {
   engineOpen = open;
@@ -284,7 +278,6 @@ function setEngineOpen(open) {
 engineToggle.addEventListener('click', () => setEngineOpen(!engineOpen));
 enginePanel.querySelector('#si-engineClose').addEventListener('click', () => setEngineOpen(false));
 
-// Swipe-down close (mobile)
 let touchStartY = null;
 enginePanel.addEventListener('touchstart', (e) => {
   touchStartY = e.touches?.[0]?.clientY ?? null;
@@ -292,40 +285,36 @@ enginePanel.addEventListener('touchstart', (e) => {
 enginePanel.addEventListener('touchmove', (e) => {
   if (touchStartY == null) return;
   const y = e.touches?.[0]?.clientY ?? touchStartY;
-  const dy = y - touchStartY;
-  if (dy > 50) {
+  if (y - touchStartY > 50) {
     setEngineOpen(false);
     touchStartY = null;
   }
 }, { passive: true });
 
-function autoCloseEngineForRecording() {
-  if (engineOpen) setEngineOpen(false);
-}
-
-/* ================= ENGINE PANEL CONTROL HOOKS ================= */
-
 const partEl = enginePanel.querySelector('#partAmount');
 const zoomEl = enginePanel.querySelector('#zoomInt');
 const hueEl  = enginePanel.querySelector('#hueShift');
+
+const micMonitorEl = enginePanel.querySelector('#micMonitor');
+const micMonitorVolEl = enginePanel.querySelector('#micMonitorVol');
+const feedbackWarnEl = enginePanel.querySelector('#feedbackWarn');
 
 function preset(p, z, h) {
   partEl.value = String(p);
   zoomEl.value = String(z);
   hueEl.value  = String(h);
+  partAmount = Number(p);
+  bassZoom = Number(z) / 100;
+  hueShiftDeg = Number(h);
 }
-enginePanel.querySelector('#presetCalm').addEventListener('click', () => preset(4, 0, 210));
-enginePanel.querySelector('#presetBass').addEventListener('click', () => preset(18, 10, 340));
-enginePanel.querySelector('#presetCine').addEventListener('click', () => preset(10, 4, 280));
+enginePanel.querySelector('#presetCalm').addEventListener('click', () => preset(6, 0, 210));
+enginePanel.querySelector('#presetBass').addEventListener('click', () => preset(18, 12, 340));
+enginePanel.querySelector('#presetCine').addEventListener('click', () => preset(12, 6, 280));
 
 enginePanel.querySelector('#reducedMotion').addEventListener('change', (e) => {
   reducedMotion = !!e.target.checked;
-  if (reducedMotion) particles = [];
+  setStatus(reducedMotion ? '🫧 Reduced motion enabled' : '✨ Reduced motion disabled');
 });
-
-const micMonitorEl = enginePanel.querySelector('#micMonitor');
-const micMonitorVolEl = enginePanel.querySelector('#micMonitorVol');
-const feedbackWarnEl = enginePanel.querySelector('#feedbackWarn');
 
 micMonitorEl.checked = micMonitor;
 micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
@@ -337,62 +326,146 @@ micMonitorEl.addEventListener('change', (e) => {
   applyMicMonitorGain();
   setStatus(micMonitor ? '🎙️ Mic monitor ON' : '🎙️ Mic monitor OFF');
 });
-
 micMonitorVolEl.addEventListener('input', (e) => {
   micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100));
   applyMicMonitorGain();
 });
 
-/* ================= SAFE FRAMING + AUTO CENTERING (IMPORTANT) ================= */
-/* Canvas internal size always matches the STAGE box (not window). HiDPI-safe. */
+partEl.addEventListener('input', (e) => { partAmount = Number(e.target.value); });
+zoomEl.addEventListener('input', (e) => { bassZoom = Number(e.target.value) / 100; });
+hueEl.addEventListener('input', (e) => { hueShiftDeg = Number(e.target.value); });
+
+/* ================= THREE INIT ================= */
+
+function initThree() {
+  renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: true,
+    powerPreference: 'high-performance'
+  });
+  renderer.setClearColor(0x000000, 1);
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x000000, 0.065);
+
+  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+  camera.position.set(0, 0.2, 18);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+
+  particleGeom = new THREE.BufferGeometry();
+  basePos = new Float32Array(particleCount * 3);
+  pos = new Float32Array(particleCount * 3);
+  vel = new Float32Array(particleCount * 3);
+
+  for (let i = 0; i < particleCount; i++) {
+    const r = 6.5 + Math.random() * 5.0;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.cos(phi) * 0.85;
+    const z = r * Math.sin(phi) * Math.sin(theta);
+
+    basePos[i * 3 + 0] = x;
+    basePos[i * 3 + 1] = y;
+    basePos[i * 3 + 2] = z;
+
+    pos[i * 3 + 0] = x;
+    pos[i * 3 + 1] = y;
+    pos[i * 3 + 2] = z;
+
+    vel[i * 3 + 0] = (Math.random() - 0.5) * 0.02;
+    vel[i * 3 + 1] = (Math.random() - 0.5) * 0.02;
+    vel[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
+  }
+
+  particleGeom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  particleGeom.computeBoundingSphere();
+
+  particleMat = new THREE.PointsMaterial({
+    size: 0.04,
+    color: 0x8feaff,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  particlePoints = new THREE.Points(particleGeom, particleMat);
+  scene.add(particlePoints);
+
+  const sigGeo = new THREE.TorusKnotGeometry(1.35, 0.32, 180, 16);
+  const sigMat = new THREE.MeshBasicMaterial({
+    color: 0x7c4dff,
+    transparent: true,
+    opacity: 0.85
+  });
+  sigil = new THREE.Mesh(sigGeo, sigMat);
+  scene.add(sigil);
+
+  const wire = new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(2.2, 1));
+  sigilWire = new THREE.LineSegments(
+    wire,
+    new THREE.LineBasicMaterial({ color: 0x00d4ff, transparent: true, opacity: 0.35 })
+  );
+  scene.add(sigilWire);
+
+  fitCanvasToStage();
+}
+
+/* ================= RESIZE ================= */
 
 function fitCanvasToStage() {
-  const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1)); // cap for perf
+  const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
   const rect = (stageEl || canvas).getBoundingClientRect();
-
   const cssW = Math.max(1, Math.floor(rect.width));
   const cssH = Math.max(1, Math.floor(rect.height));
 
-  const pxW = Math.floor(cssW * dpr);
-  const pxH = Math.floor(cssH * dpr);
-
-  if (canvas.width !== pxW || canvas.height !== pxH) {
-    canvas.width = pxW;
-    canvas.height = pxH;
-    // draw coordinates in CSS pixels
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (renderer) {
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(cssW, cssH, false);
+  }
+  if (camera) {
+    camera.aspect = cssW / cssH;
+    camera.updateProjectionMatrix();
   }
 }
-
 const ro = new ResizeObserver(() => fitCanvasToStage());
 if (stageEl) ro.observe(stageEl);
 window.addEventListener('resize', fitCanvasToStage);
-fitCanvasToStage();
 
 /* ================= INIT / ROUTING ================= */
 
 async function initEngine() {
+  // ✅ Your engine uses "idle" → "ready" → "running"
   if (engine.state !== 'idle') return;
 
   setStatus('⏳ Initializing engine…');
-  await engine.init({ startSuspended: true, debug: false });
 
-  analyser = engine.ctx.createAnalyser();
-  analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.8;
+  // ✅ Your init() has no params
+  await engine.init();
 
-  dataFreq = new Uint8Array(analyser.frequencyBinCount);
-  dataTime = new Uint8Array(analyser.fftSize);
+  // ✅ Use your helper (connects analyser to master internally)
+  const viz = engine.getVisualizerData();
+  analyser = viz.analyser;
+  dataFreq = viz.dataFreq;
+  dataTime = viz.dataTime;
 
+  // local routing nodes
   inputGain = engine.ctx.createGain();
   inputGain.gain.value = 1;
 
   monitorGain = engine.ctx.createGain();
   monitorGain.gain.value = 1; // demo/file audible by default
 
+  // route: input → analyser + monitor → master
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
   monitorGain.connect(engine.master);
+
+  if (!renderer) initThree();
 
   overlay.style.display = 'none';
   setStatus('✅ Engine ready (Demo / File / Mic)');
@@ -400,7 +473,7 @@ async function initEngine() {
 }
 overlay.onclick = initEngine;
 
-/* ================= CLEAN STOP ================= */
+/* ================= STOP ================= */
 
 async function stopAll({ suspend = true } = {}) {
   if (bufferSrc) {
@@ -409,12 +482,10 @@ async function stopAll({ suspend = true } = {}) {
     try { bufferSrc.disconnect(); } catch {}
     bufferSrc = null;
   }
-
   if (micSourceNode) {
     try { micSourceNode.disconnect(); } catch {}
     micSourceNode = null;
   }
-
   if (micStream) {
     try { micStream.getTracks().forEach(t => t.stop()); } catch {}
     micStream = null;
@@ -429,19 +500,19 @@ async function stopAll({ suspend = true } = {}) {
 
   if (monitorGain) monitorGain.gain.value = 0;
 
-  if (suspend) {
+  // optional suspend
+  if (suspend && engine.ctx) {
     try { await engine.ctx.suspend(); } catch {}
   }
 }
 
-/* ================= DEMO (play once) ================= */
+/* ================= DEMO / FILE / MIC ================= */
 
 async function playDemo(path) {
   await initEngine();
   await stopAll({ suspend: false });
 
   setStatus('⏳ Loading demo…');
-
   const buf = await fetch(path).then(r => r.arrayBuffer());
   const audio = await engine.ctx.decodeAudioData(buf);
 
@@ -449,8 +520,6 @@ async function playDemo(path) {
   currentMode = 'demo';
 
   if (monitorGain) monitorGain.gain.value = 1;
-  feedbackMuted = false;
-  feedbackWarnEl.style.display = 'none';
 
   bufferSrc = engine.ctx.createBufferSource();
   bufferSrc.buffer = audio;
@@ -466,8 +535,6 @@ async function playDemo(path) {
   setStatus('🎧 Demo playing (once)');
 }
 demoBtn?.addEventListener('click', () => playDemo('media/kasubo hoerprobe.mp3'));
-
-/* ================= FILE INPUT (play once) ================= */
 
 fileBtn?.addEventListener('click', async () => {
   await initEngine();
@@ -490,8 +557,6 @@ fileInput?.addEventListener('change', async (e) => {
     currentMode = 'file';
 
     if (monitorGain) monitorGain.gain.value = 1;
-    feedbackMuted = false;
-    feedbackWarnEl.style.display = 'none';
 
     bufferSrc = engine.ctx.createBufferSource();
     bufferSrc.buffer = audio;
@@ -512,8 +577,6 @@ fileInput?.addEventListener('change', async (e) => {
     if (fileInput) fileInput.value = '';
   }
 });
-
-/* ================= MIC INPUT (toggle) ================= */
 
 micBtn?.addEventListener('click', async () => {
   await initEngine();
@@ -553,7 +616,7 @@ micBtn?.addEventListener('click', async () => {
   }
 });
 
-/* ================= KEYBOARD SHORTCUTS ================= */
+/* ================= KEYBOARD ================= */
 
 window.addEventListener('keydown', async (e) => {
   const key = e.key.toLowerCase();
@@ -571,11 +634,10 @@ window.addEventListener('keydown', async (e) => {
   if (key === 'm') micBtn?.click();
   if (key === 'f') fileBtn?.click();
   if (key === 'd') demoBtn?.click();
-
   if (key === 'escape') setEngineOpen(false);
 });
 
-/* ================= RECORDING (canvas + master audio) ================= */
+/* ================= RECORDING ================= */
 
 let mediaRecorder = null;
 let recordedChunks = [];
@@ -585,23 +647,19 @@ recBtn.addEventListener('click', async () => {
 
   if (!mediaRecorder || mediaRecorder.state === 'inactive') {
     recordedChunks = [];
-    autoCloseEngineForRecording();
+    if (engineOpen) setEngineOpen(false);
     await engine.resume();
 
     const stream = canvas.captureStream(60);
 
+    // capture audio from master (additional connection is OK)
     const recDest = engine.ctx.createMediaStreamDestination();
     engine.master.connect(recDest);
 
     const audioTrack = recDest.stream.getAudioTracks()[0];
     if (audioTrack) stream.addTrack(audioTrack);
 
-    const mimeCandidates = [
-      'video/webm; codecs=vp9',
-      'video/webm; codecs=vp8',
-      'video/webm',
-    ];
-
+    const mimeCandidates = ['video/webm; codecs=vp9','video/webm; codecs=vp8','video/webm'];
     let chosen = '';
     for (const m of mimeCandidates) {
       if (MediaRecorder.isTypeSupported(m)) { chosen = m; break; }
@@ -620,7 +678,7 @@ recBtn.addEventListener('click', async () => {
       const blob = new Blob(recordedChunks, { type: 'video/webm' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'Sonic_Inclusion_Cinematic.webm';
+      a.download = 'Sonic_Inclusion_RitualField.webm';
       a.click();
 
       setStatus('✅ Recording saved');
@@ -648,28 +706,9 @@ recBtn.addEventListener('click', async () => {
   }
 });
 
-/* ================= VISUAL HELPERS ================= */
+/* ================= VISUAL LOOP HELPERS ================= */
 
-class Particle {
-  constructor(x, y, hue) {
-    this.x = x; this.y = y;
-    this.vx = (Math.random() - 0.5) * 10;
-    this.vy = (Math.random() - 0.5) * 10;
-    this.life = 1;
-    this.hue = hue;
-  }
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    this.life -= 0.03;
-  }
-  draw() {
-    c.fillStyle = `hsla(${this.hue},100%,60%,${this.life})`;
-    c.beginPath();
-    c.arc(this.x, this.y, 2, 0, Math.PI * 2);
-    c.fill();
-  }
-}
+function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
 function rmsFromTimeDomain(arr) {
   let sum = 0;
@@ -680,119 +719,164 @@ function rmsFromTimeDomain(arr) {
   return Math.sqrt(sum / arr.length);
 }
 
-function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+function bandEnergy(freq, startHz, endHz) {
+  if (!engine?.ctx || !analyser) return 0;
+  const nyquist = engine.ctx.sampleRate / 2;
+  const binCount = analyser.frequencyBinCount;
 
-/* ================= LOOP ================= */
+  const i0 = Math.floor((startHz / nyquist) * binCount);
+  const i1 = Math.floor((endHz / nyquist) * binCount);
+  const a = clamp(i0, 0, binCount - 1);
+  const b = clamp(i1, 0, binCount - 1);
+
+  let s = 0, n = 0;
+  for (let i = a; i <= b; i++) { s += freq[i]; n++; }
+  return n ? (s / n) / 255 : 0;
+}
+
+function estimatePitchHue(freq) {
+  let num = 0, den = 0;
+  for (let i = 0; i < freq.length; i++) {
+    const v = freq[i] / 255;
+    num += i * v;
+    den += v;
+  }
+  const centroid = den ? num / den : 0;
+  return (centroid / freq.length) * 300;
+}
+
+function feedbackGuard(rms) {
+  const now = performance.now();
+  if (currentMode !== 'mic') return;
+
+  if (micMonitor && !feedbackMuted && rms > 0.35) {
+    feedbackMuted = true;
+    feedbackHoldUntil = now + 900;
+    feedbackWarnEl.style.display = 'block';
+    applyMicMonitorGain();
+  }
+  if (feedbackMuted && now > feedbackHoldUntil) {
+    feedbackMuted = false;
+    feedbackWarnEl.style.display = 'none';
+    applyMicMonitorGain();
+  }
+}
+
+/* ================= MAIN LOOP ================= */
+
+let a11yTick = 0;
 
 function loop() {
-  if (!analyser) {
-    raf = requestAnimationFrame(loop);
-    return;
-  }
-
-  // keep stage-fit stable
-  fitCanvasToStage();
-
-  analyser.getByteFrequencyData(dataFreq);
-  analyser.getByteTimeDomainData(dataTime);
-
-  // feedback guard (mic mode only)
-  const now = performance.now();
-  const micRms = rmsFromTimeDomain(dataTime);
-
-  const LOUD = 0.22;
-  const QUIET = 0.10;
-  const HOLD_MS = 2500;
-
-  if (currentMode === 'mic' && micMonitor) {
-    if (!feedbackMuted && micRms > LOUD) {
-      feedbackMuted = true;
-      feedbackHoldUntil = now + HOLD_MS;
-      applyMicMonitorGain();
-      feedbackWarnEl.style.display = 'block';
-      setStatus('🔇 Feedback risk — mic monitor muted');
-    }
-
-    if (feedbackMuted && now > feedbackHoldUntil && micRms < QUIET) {
-      feedbackMuted = false;
-      applyMicMonitorGain();
-      feedbackWarnEl.style.display = 'none';
-      setStatus('✅ Mic monitor safe again');
-    }
-  }
-
-  const w = canvas.width / (window.devicePixelRatio || 1);
-  const h = canvas.height / (window.devicePixelRatio || 1);
-
-  const low = (dataFreq[2] + dataFreq[4]) / 2;
-
-  const pAmount = parseInt(partEl.value, 10);
-  const zoomSens = parseInt(zoomEl.value, 10) / 1000;
-
-  // sensitivity influences zoom/impact
-  const sensVal = sens ? parseFloat(sens.value) : 1;
-  const zoom = reducedMotion ? 1 : 1 + (low * zoomSens * (0.7 + sensVal * 0.6));
-
-  const mode = palette?.value || 'hue';
-  const hueBase = parseInt(hueEl.value, 10);
-
-  let hue = hueBase;
-
-  if (mode === 'energy') {
-    hue = (hueBase + low * 0.7) % 360;
-  } else if (mode === 'grayscale') {
-    hue = 0; // will be ignored by grayscale drawing
-  } else {
-    // "hue by pitch" lightweight approximation: use spectral centroid-ish
-    let num = 0, den = 0;
-    for (let i = 1; i < 80; i++) {
-      const v = dataFreq[i];
-      num += i * v;
-      den += v;
-    }
-    const centroid = den > 0 ? (num / den) : 0; // ~0..80
-    hue = (hueBase + centroid * 4.2) % 360;
-  }
-
-  // fade
-  c.fillStyle = 'rgba(5,5,5,0.28)';
-  c.fillRect(0, 0, w, h);
-
-  // SAFE FRAMING: always draw around true center of stage
-  const cx = w / 2;
-  const cy = h / 2;
-
-  c.save();
-  c.translate(cx, cy);
-  c.scale(zoom, zoom);
-  c.translate(-cx, -cy);
-
-  if (!reducedMotion) rotation += 0.002;
-
-  if (mode === 'grayscale') {
-    const g = clamp(40 + low * 0.9, 60, 210);
-    c.strokeStyle = `rgba(${g},${g},${g},0.20)`;
-  } else {
-    c.strokeStyle = `hsla(${hue},100%,50%,0.22)`;
-  }
-
-  for (let i = 0; i < 60; i++) {
-    const v = dataFreq[i];
-    c.beginPath();
-    c.arc(cx, cy, 0.18 * Math.min(w, h) + v, 0, Math.PI * 2);
-    c.stroke();
-  }
-
-  if (!reducedMotion && low > 200) {
-    for (let i = 0; i < pAmount; i++) {
-      particles.push(new Particle(cx, cy, hue));
-    }
-  }
-
-  particles = reducedMotion ? [] : particles.filter(p => p.life > 0);
-  particles.forEach(p => { p.update(); p.draw(); });
-
-  c.restore();
-
   raf = requestAnimationFrame(loop);
+  if (!renderer || !scene || !camera) return;
+
+  let rms = 0, bass = 0, mid = 0, treble = 0;
+
+  if (analyser && dataFreq && dataTime) {
+    analyser.getByteFrequencyData(dataFreq);
+    analyser.getByteTimeDomainData(dataTime);
+
+    rms = rmsFromTimeDomain(dataTime);
+    bass = bandEnergy(dataFreq, 20, 140);
+    mid = bandEnergy(dataFreq, 140, 1400);
+    treble = bandEnergy(dataFreq, 1400, 8000);
+
+    feedbackGuard(rms);
+  }
+
+  const sens = clamp(Number(sensEl?.value ?? 1), 0.2, 3);
+  const palette = paletteEl?.value ?? 'hue';
+
+  let hue = hueShiftDeg;
+  if (palette === 'hue' && dataFreq) hue = (estimatePitchHue(dataFreq) + hueShiftDeg) % 360;
+  if (palette === 'energy') hue = (hueShiftDeg + (bass * 120) + (mid * 80)) % 360;
+
+  if (palette === 'grayscale') {
+    particleMat.color.setRGB(0.92, 0.92, 0.97);
+    sigil.material.color.setRGB(0.95, 0.95, 0.98);
+    sigilWire.material.color.setRGB(0.65, 0.65, 0.75);
+  } else {
+    particleMat.color.setHSL(hue / 360, 1.0, 0.62);
+    sigil.material.color.setHSL(((hue + 70) % 360) / 360, 1.0, 0.58);
+    sigilWire.material.color.setHSL(((hue + 160) % 360) / 360, 1.0, 0.55);
+  }
+
+  const energy = clamp((rms * 2.2 + bass * 1.6) * sens, 0, 2.0);
+  const pulse = (bass * 1.8 + mid * 0.6) * sens;
+
+  const drift = reducedMotion ? 0.35 : 1.0;
+  const zoom = 1 + (bassZoom * 0.9) + (bass * 0.65);
+  const active = clamp(partAmount / 30, 0, 1);
+
+  const posAttr = particleGeom.getAttribute('position');
+
+  for (let i = 0; i < particleCount; i++) {
+    const ix = i * 3;
+
+    const bx = basePos[ix + 0];
+    const by = basePos[ix + 1];
+    const bz = basePos[ix + 2];
+
+    const toCenter = -0.0008 * energy;
+    vel[ix + 0] += bx * toCenter;
+    vel[ix + 1] += by * toCenter;
+    vel[ix + 2] += bz * toCenter;
+
+    const swirl = 0.0007 * (0.2 + treble) * drift;
+    vel[ix + 0] += -bz * swirl;
+    vel[ix + 2] += bx * swirl;
+
+    const jitter = (0.0009 * energy + 0.00012) * active * drift;
+    vel[ix + 0] += (Math.random() - 0.5) * jitter;
+    vel[ix + 1] += (Math.random() - 0.5) * jitter;
+    vel[ix + 2] += (Math.random() - 0.5) * jitter;
+
+    vel[ix + 0] *= 0.985;
+    vel[ix + 1] *= 0.985;
+    vel[ix + 2] *= 0.985;
+
+    pos[ix + 0] += vel[ix + 0];
+    pos[ix + 1] += vel[ix + 1];
+    pos[ix + 2] += vel[ix + 2];
+
+    const tx = bx * zoom;
+    const ty = by * zoom;
+    const tz = bz * zoom;
+
+    pos[ix + 0] += (tx - pos[ix + 0]) * 0.0025;
+    pos[ix + 1] += (ty - pos[ix + 1]) * 0.0025;
+    pos[ix + 2] += (tz - pos[ix + 2]) * 0.0025;
+  }
+
+  posAttr.needsUpdate = true;
+
+  const t = performance.now() * 0.001;
+  const s = 1 + pulse * 0.35;
+  sigil.rotation.x = t * 0.35 + treble * 0.6;
+  sigil.rotation.y = t * 0.55 + mid * 0.4;
+  sigil.scale.setScalar(s);
+
+  sigilWire.rotation.y = -t * 0.25;
+  sigilWire.rotation.x = t * 0.12;
+  sigilWire.position.y = Math.sin(t * 0.7) * 0.05;
+
+  camera.position.x = Math.sin(t * 0.25) * (reducedMotion ? 0.05 : 0.25);
+  camera.position.y = 0.2 + Math.cos(t * 0.22) * (reducedMotion ? 0.05 : 0.18);
+  camera.lookAt(0, 0, 0);
+
+  a11yTick++;
+  if (a11yTick % 30 === 0) {
+    const mood =
+      energy < 0.12 ? 'Calm field, slow orbit.' :
+      energy < 0.35 ? 'Breathing pulse, moderate motion.' :
+      'High energy, dense motion and strong pulse.';
+    const mode =
+      currentMode === 'mic' ? 'Microphone active.' :
+      currentMode === 'file' ? 'File playback.' :
+      currentMode === 'demo' ? 'Demo playback.' :
+      'Idle.';
+    setStatus(`${mode} ${mood}`);
+  }
+
+  renderer.render(scene, camera);
 }
