@@ -48,7 +48,7 @@ main{
   max-width: 980px;
   margin: 0 auto;
   padding: 16px;
-  padding-bottom: calc(120px + env(safe-area-inset-bottom)); /* space for HUD */
+  padding-bottom: calc(120px + env(safe-area-inset-bottom));
 }
 
 /* ================= CONTROLS CARD ================= */
@@ -62,6 +62,7 @@ main{
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
 }
+
 .controls button{
   appearance:none;
   -webkit-appearance:none;
@@ -78,6 +79,7 @@ main{
 }
 .controls button:active{ transform: translateY(1px) scale(.99); }
 .controls button:hover{ border-color: rgba(255,255,255,.22); }
+
 .controls button.primary{
   background: linear-gradient(135deg, rgba(124,77,255,.92), rgba(124,77,255,.62));
   border-color: rgba(124,77,255,.55);
@@ -111,7 +113,8 @@ main{
   padding: 12px 12px 10px;
   box-shadow: 0 12px 30px rgba(0,0,0,.18);
 }
-.sliders label > input,.sliders label > select{
+.sliders label > input,
+.sliders label > select{
   font-size: 16px; /* prevents iOS zoom */
 }
 
