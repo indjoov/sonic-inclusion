@@ -1,24 +1,24 @@
-import * as THREE from 'three';
-import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
-import { AudioEngine } from './audio/AudioEngine.js';
+import * as THREE from "three";
+import { AudioEngine } from "./audio/AudioEngine.js";
 
 /* ================= BASIC SETUP ================= */
 
-const canvas = document.getElementById('viz');
-const stageEl = canvas.closest('.stage');
+const canvas = document.getElementById("viz");
+const stageEl = canvas.closest(".stage");
 
-const srText = document.getElementById('srText');
-const sensEl = document.getElementById('sens');
-const paletteEl = document.getElementById('palette');
+const srText = document.getElementById("srText");
+const sens = document.getElementById("sens");
+const palette = document.getElementById("palette");
 
-const micBtn = document.getElementById('micBtn');
-const fileBtn = document.getElementById('fileBtn');
-const demoBtn = document.getElementById('demoBtn');
-const fileInput = document.getElementById('fileInput');
+const micBtn = document.getElementById("micBtn");
+const fileBtn = document.getElementById("fileBtn");
+const demoBtn = document.getElementById("demoBtn");
+const fileInput = document.getElementById("fileInput");
 
+// a11y live region
 if (srText) {
-  srText.setAttribute('aria-live', 'polite');
-  srText.setAttribute('role', 'status');
+  srText.setAttribute("aria-live", "polite");
+  srText.setAttribute("role", "status");
 }
 function setStatus(msg) {
   if (srText) srText.textContent = msg;
@@ -26,8 +26,8 @@ function setStatus(msg) {
 
 /* ================= OVERLAY (autoplay-safe init) ================= */
 
-const overlay = document.createElement('div');
-overlay.id = 'intro-overlay';
+const overlay = document.createElement("div");
+overlay.id = "intro-overlay";
 overlay.style.cssText = `
   position:fixed; inset:0; z-index:3000;
   display:flex; align-items:center; justify-content:center;
@@ -64,78 +64,66 @@ overlay.innerHTML = `
 `;
 document.body.appendChild(overlay);
 
-/* ================= ENGINE (Audio) ================= */
+/* ================= ENGINE (AUDIO) ================= */
 
 const engine = new AudioEngine();
 let raf = null;
 
+// analyser routing (mic/file/demo all feed this)
 let analyser = null;
 let dataFreq = null;
 let dataTime = null;
 
+// routing nodes
 let inputGain = null;
 let monitorGain = null;
 
-let currentMode = 'idle';
+// input nodes
+let currentMode = "idle";
 let bufferSrc = null;
 let micStream = null;
 let micSourceNode = null;
 
-/* ================= MODES (A + B) ================= */
+/* ================= THREE STATE ================= */
 
-let inclusionMode = false;  // B
-let flashSafe = true;
-let flashLimit = 0.65;
+let renderer = null;
+let scene = null;
+let camera = null;
 
-let partAmount = 14;    // A
-let bassZoom = 0.10;
-let hueShiftDeg = 280;
-let reducedMotion = false;
-
-/* ================= THREE ================= */
-
-let renderer, scene, camera;
-
-// particles
-let particlePoints, particleGeom, particleMat;
-const particleCount = 12000;
-let basePos, pos, vel;
-
-// sigil group
+let starPoints = null;
+let sphere = null;
 let sigilGroup = null;
-let sigilFill = null;
-let sigilLines = null;
 
-// cage
-let cageWire = null;
+/* ================= A11Y / REDUCED MOTION ================= */
+
+let reducedMotion = false;
 
 /* ================= MIC MONITOR + FEEDBACK GUARD ================= */
 
 let micMonitor = false;
 let micMonitorVol = 0.35;
 let feedbackMuted = false;
-let feedbackHoldUntil = 0;
 
 function applyMicMonitorGain() {
   if (!monitorGain) return;
-  const want = (currentMode === 'mic' && micMonitor && !feedbackMuted) ? micMonitorVol : 0;
+  const want = currentMode === "mic" && micMonitor && !feedbackMuted ? micMonitorVol : 0;
   monitorGain.gain.value = want;
 }
 
 /* ================= CLEAN LEGACY UI ================= */
 
 function removeLegacyUI() {
-  document.getElementById('si-hud')?.remove();
-  document.getElementById('si-enginePanel')?.remove();
-  document.getElementById('engine-controls')?.remove();
-  document.getElementById('engine-controls-toggle')?.remove();
+  document.getElementById("si-hud")?.remove();
+  document.getElementById("si-enginePanel")?.remove();
+  document.getElementById("engine-controls")?.remove();
+  document.getElementById("engine-controls-toggle")?.remove();
 }
 removeLegacyUI();
 
 /* ================= MODERN HUD (ENGINE + RECORD) ================= */
 
-const hud = document.createElement('div');
-hud.id = 'si-hud';
+const hud = document.createElement("div");
+hud.id = "si-hud";
 hud.style.cssText = `
   position: fixed;
   left: 16px;
@@ -150,11 +138,11 @@ hud.style.cssText = `
 `;
 
 // RECORD
-const recBtn = document.createElement('button');
-recBtn.id = 'si-recBtn';
-recBtn.type = 'button';
-recBtn.textContent = '⏺ RECORD';
-recBtn.setAttribute('aria-pressed', 'false');
+const recBtn = document.createElement("button");
+recBtn.id = "si-recBtn";
+recBtn.type = "button";
+recBtn.textContent = "⏺ RECORD";
+recBtn.setAttribute("aria-pressed", "false");
 recBtn.style.cssText = `
   pointer-events: auto;
   background: #ff2b5a;
@@ -171,12 +159,12 @@ recBtn.style.cssText = `
 `;
 
 // ENGINE toggle
-const engineToggle = document.createElement('button');
-engineToggle.id = 'si-engineToggle';
-engineToggle.type = 'button';
-engineToggle.textContent = '⚙️ ENGINE';
-engineToggle.setAttribute('aria-expanded', 'false');
-engineToggle.setAttribute('aria-controls', 'si-enginePanel');
+const engineToggle = document.createElement("button");
+engineToggle.id = "si-engineToggle";
+engineToggle.type = "button";
+engineToggle.textContent = "⚙️ ENGINE";
+engineToggle.setAttribute("aria-expanded", "false");
+engineToggle.setAttribute("aria-controls", "si-enginePanel");
 engineToggle.style.cssText = `
   pointer-events: auto;
   flex: 0 0 auto;
@@ -195,11 +183,11 @@ hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
 // ENGINE PANEL
-const enginePanel = document.createElement('div');
-enginePanel.id = 'si-enginePanel';
-enginePanel.setAttribute('role', 'dialog');
-enginePanel.setAttribute('aria-label', 'Engine controls');
-enginePanel.setAttribute('aria-hidden', 'true');
+const enginePanel = document.createElement("div");
+enginePanel.id = "si-enginePanel";
+enginePanel.setAttribute("role", "dialog");
+enginePanel.setAttribute("aria-label", "Engine controls");
+enginePanel.setAttribute("aria-hidden", "true");
 enginePanel.style.cssText = `
   position: fixed;
   left: 16px;
@@ -240,13 +228,13 @@ enginePanel.innerHTML = `
 
   <div style="display:grid; gap:10px;">
     <label style="font-size:12px; opacity:0.8;">
-      PARTICLES (energy)
-      <input id="partAmount" type="range" min="0" max="30" value="14" style="width:100%; margin-top:6px;">
+      PARTICLES (stars intensity)
+      <input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;">
     </label>
 
     <label style="font-size:12px; opacity:0.8;">
       BASS ZOOM
-      <input id="zoomInt" type="range" min="0" max="100" value="10" style="width:100%; margin-top:6px;">
+      <input id="zoomInt" type="range" min="0" max="100" value="0" style="width:100%; margin-top:6px;">
     </label>
 
     <label style="font-size:12px; opacity:0.8;">
@@ -263,16 +251,6 @@ enginePanel.innerHTML = `
     <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
       <input id="reducedMotion" type="checkbox">
       Reduced Motion
-    </label>
-
-    <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
-      <input id="inclusionMode" type="checkbox">
-      Inclusion Mode (High-Contrast + Stable)
-    </label>
-
-    <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
-      <input id="flashSafe" type="checkbox" checked>
-      Flash-safe limiter
     </label>
 
     <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.12);">
@@ -298,19 +276,19 @@ document.body.appendChild(enginePanel);
 let engineOpen = false;
 function setEngineOpen(open) {
   engineOpen = open;
-  enginePanel.style.display = open ? 'block' : 'none';
-  enginePanel.setAttribute('aria-hidden', open ? 'false' : 'true');
-  engineToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  enginePanel.style.display = open ? "block" : "none";
+  enginePanel.setAttribute("aria-hidden", open ? "false" : "true");
+  engineToggle.setAttribute("aria-expanded", open ? "true" : "false");
 }
-engineToggle.addEventListener('click', () => setEngineOpen(!engineOpen));
-enginePanel.querySelector('#si-engineClose').addEventListener('click', () => setEngineOpen(false));
+engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
+enginePanel.querySelector("#si-engineClose").addEventListener("click", () => setEngineOpen(false));
 
 // Swipe-down close (mobile)
 let touchStartY = null;
-enginePanel.addEventListener('touchstart', (e) => {
+enginePanel.addEventListener("touchstart", (e) => {
   touchStartY = e.touches?.[0]?.clientY ?? null;
 }, { passive: true });
-enginePanel.addEventListener('touchmove', (e) => {
+enginePanel.addEventListener("touchmove", (e) => {
   if (touchStartY == null) return;
   const y = e.touches?.[0]?.clientY ?? touchStartY;
   const dy = y - touchStartY;
@@ -320,237 +298,248 @@ enginePanel.addEventListener('touchmove', (e) => {
   }
 }, { passive: true });
 
+function autoCloseEngineForRecording() {
+  if (engineOpen) setEngineOpen(false);
+}
+
 /* ================= ENGINE PANEL CONTROL HOOKS ================= */
 
-const partEl = enginePanel.querySelector('#partAmount');
-const zoomEl = enginePanel.querySelector('#zoomInt');
-const hueEl  = enginePanel.querySelector('#hueShift');
-
-const reducedEl = enginePanel.querySelector('#reducedMotion');
-const inclusionEl = enginePanel.querySelector('#inclusionMode');
-const flashSafeEl = enginePanel.querySelector('#flashSafe');
-
-const micMonitorEl = enginePanel.querySelector('#micMonitor');
-const micMonitorVolEl = enginePanel.querySelector('#micMonitorVol');
-const feedbackWarnEl = enginePanel.querySelector('#feedbackWarn');
+const partEl = enginePanel.querySelector("#partAmount");
+const zoomEl = enginePanel.querySelector("#zoomInt");
+const hueEl  = enginePanel.querySelector("#hueShift");
 
 function preset(p, z, h) {
-  partAmount = p; bassZoom = z / 100; hueShiftDeg = h;
   partEl.value = String(p);
   zoomEl.value = String(z);
   hueEl.value  = String(h);
 }
-enginePanel.querySelector('#presetCalm').addEventListener('click', () => preset(10, 6, 210));
-enginePanel.querySelector('#presetBass').addEventListener('click', () => preset(20, 14, 340));
-enginePanel.querySelector('#presetCine').addEventListener('click', () => preset(14, 10, 280));
+enginePanel.querySelector("#presetCalm").addEventListener("click", () => preset(6, 0, 210));
+enginePanel.querySelector("#presetBass").addEventListener("click", () => preset(18, 12, 340));
+enginePanel.querySelector("#presetCine").addEventListener("click", () => preset(12, 6, 280));
 
-partEl.addEventListener('input', (e) => { partAmount = Number(e.target.value); });
-zoomEl.addEventListener('input', (e) => { bassZoom = Number(e.target.value) / 100; });
-hueEl.addEventListener('input', (e) => { hueShiftDeg = Number(e.target.value); });
-
-reducedEl.addEventListener('change', (e) => {
+enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => {
   reducedMotion = !!e.target.checked;
-  setStatus(reducedMotion ? '🫧 Reduced motion enabled' : '✨ Reduced motion disabled');
 });
 
-inclusionEl.addEventListener('change', (e) => {
-  inclusionMode = !!e.target.checked;
-  if (inclusionMode) {
-    reducedMotion = true;
-    reducedEl.checked = true;
-    preset(10, 6, 210);
-    setStatus('🫶 Inclusion Mode ON (stable + high-contrast)');
-  } else {
-    setStatus('🕯️ Ritual Mode ON');
-  }
-});
-
-flashSafeEl.addEventListener('change', (e) => {
-  flashSafe = !!e.target.checked;
-  setStatus(flashSafe ? '🛡️ Flash-safe ON' : '⚠️ Flash-safe OFF');
-});
+const micMonitorEl = enginePanel.querySelector("#micMonitor");
+const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol");
+const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
 
 micMonitorEl.checked = micMonitor;
 micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
-micMonitorEl.addEventListener('change', (e) => {
+
+micMonitorEl.addEventListener("change", (e) => {
   micMonitor = !!e.target.checked;
   feedbackMuted = false;
-  feedbackWarnEl.style.display = 'none';
+  feedbackWarnEl.style.display = "none";
   applyMicMonitorGain();
-  setStatus(micMonitor ? '🎙️ Mic monitor ON' : '🎙️ Mic monitor OFF');
+  setStatus(micMonitor ? "🎙️ Mic monitor ON" : "🎙️ Mic monitor OFF");
 });
-micMonitorVolEl.addEventListener('input', (e) => {
+
+micMonitorVolEl.addEventListener("input", (e) => {
   micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100));
   applyMicMonitorGain();
 });
 
-/* ================= SAFE FRAMING + HI-DPI ================= */
+/* ================= CANVAS/RENDER SIZE (HiDPI-safe) ================= */
 
-function fitCanvasToStage() {
-  const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+function fitRendererToStage() {
+  if (!renderer || !camera) return;
+
+  const dpr = Math.max(1, Math.min(2.0, window.devicePixelRatio || 1));
   const rect = (stageEl || canvas).getBoundingClientRect();
-  const cssW = Math.max(1, Math.floor(rect.width));
-  const cssH = Math.max(1, Math.floor(rect.height));
 
-  if (renderer) {
-    renderer.setPixelRatio(dpr);
-    renderer.setSize(cssW, cssH, false);
-  }
-  if (camera) {
-    camera.aspect = cssW / cssH;
-    camera.updateProjectionMatrix();
-  }
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
 }
-const ro = new ResizeObserver(() => fitCanvasToStage());
+
+const ro = new ResizeObserver(() => fitRendererToStage());
 if (stageEl) ro.observe(stageEl);
-window.addEventListener('resize', fitCanvasToStage);
+window.addEventListener("resize", fitRendererToStage);
 
 /* ================= THREE INIT ================= */
 
 function initThree() {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  if (renderer) return;
+
+  renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: true,
+    powerPreference: "high-performance"
+  });
   renderer.setClearColor(0x000000, 1);
 
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x000000, 0.08);
 
-  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 250);
-  camera.position.set(0, 0.2, 18);
+  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+  camera.position.set(0, 0, 16);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  // subtle ambient (we mainly use BasicMaterials)
+  const amb = new THREE.AmbientLight(0xffffff, 0.7);
+  scene.add(amb);
 
-  // particles
-  particleGeom = new THREE.BufferGeometry();
-  basePos = new Float32Array(particleCount * 3);
-  pos = new Float32Array(particleCount * 3);
-  vel = new Float32Array(particleCount * 3);
+  // Stars
+  starPoints = makeStars(1400, 80);
+  scene.add(starPoints);
 
-  for (let i = 0; i < particleCount; i++) {
-    const r = 6.5 + Math.random() * 5.0;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+  // Wireframe sphere
+  const geo = new THREE.IcosahedronGeometry(5.1, 2);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x00d4ff,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.16
+  });
+  sphere = new THREE.Mesh(geo, mat);
+  scene.add(sphere);
 
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.cos(phi) * 0.85;
-    const z = r * Math.sin(phi) * Math.sin(theta);
+  // Load sigil plane (transparent background + reactive)
+  loadSigilPlane("media/indjoov-sigil.svg");
 
-    basePos[i * 3 + 0] = x; basePos[i * 3 + 1] = y; basePos[i * 3 + 2] = z;
-    pos[i * 3 + 0] = x;     pos[i * 3 + 1] = y;     pos[i * 3 + 2] = z;
+  fitRendererToStage();
+}
 
-    vel[i * 3 + 0] = (Math.random() - 0.5) * 0.02;
-    vel[i * 3 + 1] = (Math.random() - 0.5) * 0.02;
-    vel[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
+function makeStars(count, spread) {
+  const geom = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    const ix = i * 3;
+    positions[ix + 0] = (Math.random() - 0.5) * spread;
+    positions[ix + 1] = (Math.random() - 0.5) * spread;
+    positions[ix + 2] = (Math.random() - 0.5) * spread;
+  }
+  geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.06,
+    transparent: true,
+    opacity: 0.35
+  });
+  return new THREE.Points(geom, mat);
+}
+
+/* ================= SIGIL (SVG -> Canvas -> transparent) ================= */
+
+function loadSigilPlane(url) {
+  // remove old
+  if (sigilGroup) {
+    scene.remove(sigilGroup);
+    sigilGroup.traverse(o => {
+      if (o.geometry) o.geometry.dispose?.();
+      if (o.material) {
+        if (o.material.map) o.material.map.dispose?.();
+        o.material.dispose?.();
+      }
+    });
+    sigilGroup = null;
   }
 
-  particleGeom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  particleGeom.computeBoundingSphere();
+  fetch(url)
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.text();
+    })
+    .then(svgText => {
+      const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
 
-  particleMat = new THREE.PointsMaterial({
-    size: 0.04,
-    color: 0x8feaff,
-    transparent: true,
-    opacity: 0.95,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const size = 1024;
+        const cvs = document.createElement("canvas");
+        cvs.width = size;
+        cvs.height = size;
+        const ctx2d = cvs.getContext("2d");
 
-  particlePoints = new THREE.Points(particleGeom, particleMat);
-  scene.add(particlePoints);
+        // normalize background
+        ctx2d.fillStyle = "#ffffff";
+        ctx2d.fillRect(0, 0, size, size);
 
-  // cage
-  const wire = new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(2.6, 2));
-  cageWire = new THREE.LineSegments(
-    wire,
-    new THREE.LineBasicMaterial({ color: 0x00d4ff, transparent: true, opacity: 0.25 })
-  );
-  scene.add(cageWire);
+        // fit + center
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        const x = (size - w) / 2;
+        const y = (size - h) / 2;
+        ctx2d.drawImage(img, x, y, w, h);
 
-  // sigil (SVG -> 3D)
-  loadSigilSVG('media/indjoov-sigil.svg');
-
-  fitCanvasToStage();
-}
-
-/* SVG -> Sigil */
-function loadSigilSVG(url) {
-  const loader = new SVGLoader();
-
-  loader.load(
-    url,
-    (data) => {
-      if (sigilGroup) {
-        scene.remove(sigilGroup);
-        sigilGroup.traverse(o => o.geometry?.dispose?.());
-        sigilGroup = null;
-      }
-
-      sigilGroup = new THREE.Group();
-
-      const fillMat = new THREE.MeshBasicMaterial({ color: 0x7c4dff, transparent: true, opacity: 0.78, depthWrite: false });
-      const lineMat = new THREE.LineBasicMaterial({ color: 0x00d4ff, transparent: true, opacity: 0.55 });
-
-      const shapes = [];
-      const lines = [];
-
-      for (const p of data.paths) {
-        const s = SVGLoader.createShapes(p);
-        for (const shape of s) shapes.push(shape);
-
-        const points = p.subPaths?.flatMap(sp => sp.getPoints(220)) ?? [];
-        if (points.length > 2) {
-          const g = new THREE.BufferGeometry().setFromPoints(points.map(pt => new THREE.Vector3(pt.x, -pt.y, 0)));
-          const l = new THREE.Line(g, lineMat);
-          lines.push(l);
+        // make near-white transparent
+        const imgData = ctx2d.getImageData(0, 0, size, size);
+        const d = imgData.data;
+        const thr = 245;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (r >= thr && g >= thr && b >= thr) d[i + 3] = 0;
         }
-      }
+        ctx2d.putImageData(imgData, 0, 0);
 
-      if (shapes.length) {
-        const geom = new THREE.ShapeGeometry(shapes);
-        sigilFill = new THREE.Mesh(geom, fillMat);
-        sigilGroup.add(sigilFill);
-      }
+        const tex = new THREE.CanvasTexture(cvs);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.needsUpdate = true;
 
-      sigilLines = new THREE.Group();
-      for (const l of lines) sigilLines.add(l);
-      sigilGroup.add(sigilLines);
+        const mat = new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          depthTest: false,             // always visible
+          blending: THREE.AdditiveBlending
+        });
 
-      // center + scale
-      const box = new THREE.Box3().setFromObject(sigilGroup);
-      const size = new THREE.Vector3();
-      const center = new THREE.Vector3();
-      box.getSize(size);
-      box.getCenter(center);
+        const geom = new THREE.PlaneGeometry(6.8, 6.8);
+        const mesh = new THREE.Mesh(geom, mat);
 
-      sigilGroup.position.sub(center); // center to origin
+        sigilGroup = new THREE.Group();
+        sigilGroup.add(mesh);
 
-      const maxDim = Math.max(size.x, size.y) || 1;
-      const scale = 4.4 / maxDim; // target size
-      sigilGroup.scale.setScalar(scale);
+        sigilGroup.position.set(0, 0, 0.2); // slightly in front
+        sigilGroup.rotation.x = -0.18;
+        sigilGroup.rotation.y = 0.22;
 
-      sigilGroup.rotation.x = -0.15;
-      sigilGroup.rotation.y = 0.25;
+        scene.add(sigilGroup);
+        setStatus("✅ Sigil loaded (transparent + reactive)");
+      };
 
-      scene.add(sigilGroup);
-      setStatus('✅ Sigil loaded (SVG → 3D)');
-    },
-    undefined,
-    () => setStatus('⚠️ Sigil SVG not found — check /media/indjoov-sigil.svg')
-  );
+      img.onerror = () => setStatus("⚠️ Sigil image decode failed");
+      img.src = dataUrl;
+    })
+    .catch(err => {
+      console.error(err);
+      setStatus("⚠️ Sigil SVG fetch failed (path/case?)");
+    });
 }
 
-/* ================= INIT / ROUTING ================= */
+/* ================= INIT AUDIO ENGINE ================= */
 
 async function initEngine() {
-  if (engine.state !== 'idle') return;
+  if (engine.state !== "idle" && engine.state !== "ready" && engine.state !== "running") return;
 
-  setStatus('⏳ Initializing engine…');
-  await engine.init();
+  initThree();
 
-  const viz = engine.getVisualizerData();
-  analyser = viz.analyser;
-  dataFreq = viz.dataFreq;
-  dataTime = viz.dataTime;
+  setStatus("⏳ Initializing engine…");
+  try {
+    await engine.init();
+  } catch (e) {
+    console.error(e);
+  }
 
+  // analyser
+  analyser = engine.ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.85;
+
+  dataFreq = new Uint8Array(analyser.frequencyBinCount);
+  dataTime = new Uint8Array(analyser.fftSize);
+
+  // routing
   inputGain = engine.ctx.createGain();
   inputGain.gain.value = 1;
 
@@ -559,14 +548,16 @@ async function initEngine() {
 
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
+
+  // engine.master exists in your AudioEngine and is connected to destination already
   monitorGain.connect(engine.master);
 
-  if (!renderer) initThree();
+  overlay.style.display = "none";
+  setStatus("✅ Engine ready (Demo / File / Mic)");
 
-  overlay.style.display = 'none';
-  setStatus('✅ Engine ready (Demo / File / Mic)');
   if (!raf) loop();
 }
+
 overlay.onclick = initEngine;
 
 /* ================= CLEAN STOP ================= */
@@ -578,41 +569,43 @@ async function stopAll({ suspend = true } = {}) {
     try { bufferSrc.disconnect(); } catch {}
     bufferSrc = null;
   }
+
   if (micSourceNode) {
     try { micSourceNode.disconnect(); } catch {}
     micSourceNode = null;
   }
+
   if (micStream) {
     try { micStream.getTracks().forEach(t => t.stop()); } catch {}
     micStream = null;
   }
 
-  currentMode = 'idle';
-  if (micBtn) micBtn.textContent = '🎙️ Use Microphone';
+  currentMode = "idle";
+  if (micBtn) micBtn.textContent = "🎙️ Use Microphone";
 
   feedbackMuted = false;
-  feedbackHoldUntil = 0;
-  feedbackWarnEl.style.display = 'none';
+  feedbackWarnEl.style.display = "none";
 
   if (monitorGain) monitorGain.gain.value = 0;
 
-  if (suspend && engine.ctx) {
+  if (suspend) {
     try { await engine.ctx.suspend(); } catch {}
   }
 }
 
-/* ================= DEMO / FILE / MIC ================= */
+/* ================= DEMO (play once) ================= */
 
 async function playDemo(path) {
   await initEngine();
   await stopAll({ suspend: false });
 
-  setStatus('⏳ Loading demo…');
+  setStatus("⏳ Loading demo…");
+
   const buf = await fetch(path).then(r => r.arrayBuffer());
   const audio = await engine.ctx.decodeAudioData(buf);
 
   await engine.resume();
-  currentMode = 'demo';
+  currentMode = "demo";
 
   if (monitorGain) monitorGain.gain.value = 1;
 
@@ -623,33 +616,35 @@ async function playDemo(path) {
 
   bufferSrc.onended = async () => {
     await stopAll({ suspend: true });
-    setStatus('✅ Demo finished (played once)');
+    setStatus("✅ Demo finished (played once)");
   };
 
   bufferSrc.start(0);
-  setStatus('🎧 Demo playing (once)');
+  setStatus("🎧 Demo playing (once)");
 }
-demoBtn?.addEventListener('click', () => playDemo('media/kasubo hoerprobe.mp3'));
+demoBtn?.addEventListener("click", () => playDemo("media/kasubo hoerprobe.mp3"));
 
-fileBtn?.addEventListener('click', async () => {
+/* ================= FILE INPUT (play once) ================= */
+
+fileBtn?.addEventListener("click", async () => {
   await initEngine();
   fileInput?.click();
 });
 
-fileInput?.addEventListener('change', async (e) => {
+fileInput?.addEventListener("change", async (e) => {
   try {
     await initEngine();
     const file = e.target.files?.[0];
     if (!file) return;
 
     await stopAll({ suspend: false });
-    setStatus('⏳ Decoding file…');
+    setStatus("⏳ Decoding file…");
 
     const arrayBuf = await file.arrayBuffer();
     const audio = await engine.ctx.decodeAudioData(arrayBuf);
 
     await engine.resume();
-    currentMode = 'file';
+    currentMode = "file";
 
     if (monitorGain) monitorGain.gain.value = 1;
 
@@ -660,71 +655,78 @@ fileInput?.addEventListener('change', async (e) => {
 
     bufferSrc.onended = async () => {
       await stopAll({ suspend: true });
-      setStatus('✅ File playback finished');
+      setStatus("✅ File playback finished");
     };
 
     bufferSrc.start(0);
     setStatus(`🎵 Playing file: ${file.name}`);
   } catch (err) {
     console.error(err);
-    setStatus('❌ File playback error');
+    setStatus("❌ File playback error");
   } finally {
-    if (fileInput) fileInput.value = '';
+    if (fileInput) fileInput.value = "";
   }
 });
 
-micBtn?.addEventListener('click', async () => {
+/* ================= MIC INPUT (toggle) ================= */
+
+micBtn?.addEventListener("click", async () => {
   await initEngine();
 
-  if (currentMode === 'mic') {
+  if (currentMode === "mic") {
     await stopAll({ suspend: true });
-    setStatus('⏹ Mic stopped');
+    setStatus("⏹ Mic stopped");
     return;
   }
 
   try {
     await stopAll({ suspend: false });
-    setStatus('⏳ Requesting microphone…');
+    setStatus("⏳ Requesting microphone…");
 
     micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
     });
 
     await engine.resume();
-    currentMode = 'mic';
+    currentMode = "mic";
 
     applyMicMonitorGain();
 
     micSourceNode = engine.ctx.createMediaStreamSource(micStream);
     micSourceNode.connect(inputGain);
 
-    if (micBtn) micBtn.textContent = '⏹ Stop Microphone';
-    setStatus(micMonitor ? '🎙️ Microphone active (monitor ON)' : '🎙️ Microphone active (monitor OFF)');
+    if (micBtn) micBtn.textContent = "⏹ Stop Microphone";
+    setStatus(micMonitor ? "🎙️ Microphone active (monitor ON)" : "🎙️ Microphone active (monitor OFF)");
   } catch (err) {
     console.error(err);
     await stopAll({ suspend: true });
-    setStatus('❌ Microphone permission / error');
+    setStatus("❌ Microphone permission / error");
   }
 });
 
 /* ================= KEYBOARD SHORTCUTS ================= */
 
-window.addEventListener('keydown', async (e) => {
+window.addEventListener("keydown", async (e) => {
   const key = e.key.toLowerCase();
 
-  if (key === ' ') {
+  if (key === " ") {
     e.preventDefault();
-    if (currentMode !== 'idle') {
+    if (currentMode !== "idle") {
       await stopAll({ suspend: true });
-      setStatus('⏹ Stopped');
+      setStatus("⏹ Stopped");
     } else {
-      await playDemo('media/kasubo hoerprobe.mp3');
+      await playDemo("media/kasubo hoerprobe.mp3");
     }
   }
-  if (key === 'm') micBtn?.click();
-  if (key === 'f') fileBtn?.click();
-  if (key === 'd') demoBtn?.click();
-  if (key === 'escape') setEngineOpen(false);
+
+  if (key === "m") micBtn?.click();
+  if (key === "f") fileBtn?.click();
+  if (key === "d") demoBtn?.click();
+  if (key === "escape") setEngineOpen(false);
 });
 
 /* ================= RECORDING (canvas + master audio) ================= */
@@ -732,24 +734,31 @@ window.addEventListener('keydown', async (e) => {
 let mediaRecorder = null;
 let recordedChunks = [];
 
-recBtn.addEventListener('click', async () => {
+recBtn.addEventListener("click", async () => {
   await initEngine();
 
-  if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+  if (!mediaRecorder || mediaRecorder.state === "inactive") {
     recordedChunks = [];
-    if (engineOpen) setEngineOpen(false);
+    autoCloseEngineForRecording();
     await engine.resume();
 
+    // capture THREE canvas
     const stream = canvas.captureStream(60);
 
+    // add audio
     const recDest = engine.ctx.createMediaStreamDestination();
     engine.master.connect(recDest);
 
     const audioTrack = recDest.stream.getAudioTracks()[0];
     if (audioTrack) stream.addTrack(audioTrack);
 
-    const mimeCandidates = ['video/webm; codecs=vp9','video/webm; codecs=vp8','video/webm'];
-    let chosen = '';
+    const mimeCandidates = [
+      "video/webm; codecs=vp9",
+      "video/webm; codecs=vp8",
+      "video/webm"
+    ];
+
+    let chosen = "";
     for (const m of mimeCandidates) {
       if (MediaRecorder.isTypeSupported(m)) { chosen = m; break; }
     }
@@ -764,40 +773,38 @@ recBtn.addEventListener('click', async () => {
       try { engine.master.disconnect(recDest); } catch {}
       try { audioTrack?.stop(); } catch {}
 
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const a = document.createElement('a');
+      const blob = new Blob(recordedChunks, { type: "video/webm" });
+      const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = 'Sonic_Inclusion_Sigil.webm';
+      a.download = "Sonic_Inclusion_Cinematic.webm";
       a.click();
 
-      setStatus('✅ Recording saved');
+      setStatus("✅ Recording saved");
     };
 
     mediaRecorder.start();
 
-    recBtn.textContent = '⏹ STOP';
-    recBtn.setAttribute('aria-pressed', 'true');
-    recBtn.style.background = '#111';
-    recBtn.style.color = '#ff2b5a';
-    recBtn.style.borderColor = 'rgba(255,43,90,0.75)';
+    recBtn.textContent = "⏹ STOP";
+    recBtn.setAttribute("aria-pressed", "true");
+    recBtn.style.background = "#111";
+    recBtn.style.color = "#ff2b5a";
+    recBtn.style.borderColor = "rgba(255,43,90,0.75)";
 
-    setStatus('⏺ Recording…');
+    setStatus("⏺ Recording…");
   } else {
     mediaRecorder.stop();
 
-    recBtn.textContent = '⏺ RECORD';
-    recBtn.setAttribute('aria-pressed', 'false');
-    recBtn.style.background = '#ff2b5a';
-    recBtn.style.color = '#111';
-    recBtn.style.borderColor = 'rgba(255,255,255,0.15)';
+    recBtn.textContent = "⏺ RECORD";
+    recBtn.setAttribute("aria-pressed", "false");
+    recBtn.style.background = "#ff2b5a";
+    recBtn.style.color = "#111";
+    recBtn.style.borderColor = "rgba(255,255,255,0.15)";
 
-    setStatus('⏹ Stopping recording…');
+    setStatus("⏹ Stopping recording…");
   }
 });
 
-/* ================= VISUAL HELPERS ================= */
-
-function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+/* ================= AUDIO HELPERS ================= */
 
 function rmsFromTimeDomain(arr) {
   let sum = 0;
@@ -808,191 +815,119 @@ function rmsFromTimeDomain(arr) {
   return Math.sqrt(sum / arr.length);
 }
 
-function bandEnergy(freq, startHz, endHz) {
-  if (!engine?.ctx || !analyser) return 0;
-  const nyquist = engine.ctx.sampleRate / 2;
-  const binCount = analyser.frequencyBinCount;
-
-  const i0 = Math.floor((startHz / nyquist) * binCount);
-  const i1 = Math.floor((endHz / nyquist) * binCount);
-  const a = clamp(i0, 0, binCount - 1);
-  const b = clamp(i1, 0, binCount - 1);
-
-  let s = 0, n = 0;
-  for (let i = a; i <= b; i++) { s += freq[i]; n++; }
-  return n ? (s / n) / 255 : 0;
+function bandEnergy(freqArr, fromHz, toHz, sampleRate, fftSize) {
+  // freq bin width = sampleRate/fftSize
+  const binHz = sampleRate / fftSize;
+  const fromBin = Math.max(0, Math.floor(fromHz / binHz));
+  const toBin = Math.min(freqArr.length - 1, Math.floor(toHz / binHz));
+  let sum = 0;
+  let n = 0;
+  for (let i = fromBin; i <= toBin; i++) { sum += freqArr[i]; n++; }
+  return n ? sum / n / 255 : 0;
 }
 
-function estimatePitchHue(freq) {
-  let num = 0, den = 0;
-  for (let i = 0; i < freq.length; i++) {
-    const v = freq[i] / 255;
-    num += i * v;
-    den += v;
-  }
-  const centroid = den ? num / den : 0;
-  return (centroid / freq.length) * 300;
-}
+function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
-function feedbackGuard(rms) {
-  const now = performance.now();
-  if (currentMode !== 'mic') return;
+/* ================= MAIN LOOP ================= */
 
-  if (micMonitor && !feedbackMuted && rms > 0.35) {
-    feedbackMuted = true;
-    feedbackHoldUntil = now + 900;
-    feedbackWarnEl.style.display = 'block';
-    applyMicMonitorGain();
-  }
-  if (feedbackMuted && now > feedbackHoldUntil) {
-    feedbackMuted = false;
-    feedbackWarnEl.style.display = 'none';
-    applyMicMonitorGain();
-  }
-}
-
-/* ================= LOOP ================= */
-
-let a11yTick = 0;
+let t0 = performance.now();
 
 function loop() {
   raf = requestAnimationFrame(loop);
+
   if (!renderer || !scene || !camera) return;
 
-  let rms = 0, bass = 0, mid = 0, treble = 0;
+  // if audio running, update analyser
+  let energy = 0;
+  let bass = 0;
+  let treble = 0;
 
-  if (analyser && dataFreq && dataTime) {
+  if (analyser && dataFreq && dataTime && engine?.ctx) {
     analyser.getByteFrequencyData(dataFreq);
     analyser.getByteTimeDomainData(dataTime);
 
-    rms = rmsFromTimeDomain(dataTime);
-    bass = bandEnergy(dataFreq, 20, 140);
-    mid = bandEnergy(dataFreq, 140, 1400);
-    treble = bandEnergy(dataFreq, 1400, 8000);
+    const s = parseFloat(sens?.value || "1");
+    energy = clamp(rmsFromTimeDomain(dataTime) * 2.2 * s, 0, 1);
 
-    feedbackGuard(rms);
+    bass = clamp(bandEnergy(dataFreq, 30, 180, engine.ctx.sampleRate, analyser.fftSize) * (1.2 + s), 0, 1);
+    treble = clamp(bandEnergy(dataFreq, 2200, 9000, engine.ctx.sampleRate, analyser.fftSize) * (1.2 + s), 0, 1);
   }
 
-  const sens = clamp(Number(sensEl?.value ?? 1), 0.2, 3);
-  const palette = paletteEl?.value ?? 'hue';
+  const now = performance.now();
+  const dt = (now - t0) / 1000;
+  t0 = now;
 
-  let hue = hueShiftDeg;
-  if (palette === 'hue' && dataFreq) hue = (estimatePitchHue(dataFreq) + hueShiftDeg) % 360;
-  if (palette === 'energy') hue = (hueShiftDeg + (bass * 120) + (mid * 80)) % 360;
+  const hueShift = parseFloat(hueEl?.value || "280");
+  const zoom = parseFloat(zoomEl?.value || "0") / 100;
 
-  const energyRaw = clamp((rms * 2.2 + bass * 1.6) * sens, 0, 2.0);
-  const pulseRaw  = (bass * 1.8 + mid * 0.6) * sens;
-
-  let energy = energyRaw;
-  let pulse = pulseRaw;
-  if (flashSafe) {
-    energy = Math.min(energy, 1.0);
-    pulse = Math.min(pulse, 1.0);
-  }
-
-  const forceHighContrast = inclusionMode || (palette === 'grayscale');
-
-  if (forceHighContrast) {
-    particleMat.color.setRGB(0.95, 0.95, 0.98);
-    particleMat.opacity = 0.55;
-
-    if (sigilFill?.material) { sigilFill.material.color.setRGB(0.98,0.98,0.99); sigilFill.material.opacity = 0.35; }
-    if (sigilLines) sigilLines.traverse(o => { if (o.material) { o.material.color.setRGB(0.85,0.85,0.90); o.material.opacity = 0.55; } });
-    if (cageWire?.material) { cageWire.material.color.setRGB(0.75,0.75,0.80); cageWire.material.opacity = 0.18; }
+  // palette logic (simple)
+  let color = new THREE.Color();
+  const mode = palette?.value || "hue";
+  if (mode === "grayscale") {
+    const g = clamp(0.1 + energy * 0.9, 0, 1);
+    color.setRGB(g, g, g);
+  } else if (mode === "energy") {
+    const h = (hueShift + energy * 160) % 360;
+    color.setHSL(h / 360, 1.0, 0.6);
   } else {
-    particleMat.color.setHSL(hue / 360, 1.0, 0.62);
-    particleMat.opacity = 0.95;
-
-    if (sigilFill?.material) { sigilFill.material.color.setHSL(((hue + 70) % 360) / 360, 1.0, 0.58); sigilFill.material.opacity = 0.78; }
-    if (sigilLines) sigilLines.traverse(o => { if (o.material) { o.material.color.setHSL(((hue + 160) % 360) / 360, 1.0, 0.55); o.material.opacity = 0.55; } });
-    if (cageWire?.material) { cageWire.material.color.setHSL(((hue + 140) % 360) / 360, 1.0, 0.5); cageWire.material.opacity = 0.22; }
+    // "hue" — treble influences hue more
+    const h = (hueShift + treble * 220) % 360;
+    color.setHSL(h / 360, 1.0, 0.6);
   }
 
-  if (flashSafe) {
-    particleMat.opacity = Math.min(particleMat.opacity, 0.35 + flashLimit);
-    if (sigilFill?.material) sigilFill.material.opacity = Math.min(sigilFill.material.opacity, 0.25 + flashLimit * 0.7);
-    if (cageWire?.material) cageWire.material.opacity = Math.min(cageWire.material.opacity, 0.14 + flashLimit * 0.35);
+  // stars drift
+  if (starPoints && !reducedMotion) {
+    starPoints.rotation.y += dt * 0.03;
+    starPoints.rotation.x += dt * 0.01;
+
+    const starOpacity = clamp(0.12 + (parseFloat(partEl?.value || "10") / 30) * 0.45 + energy * 0.25, 0.08, 0.95);
+    starPoints.material.opacity = starOpacity;
   }
 
-  const drift = (reducedMotion || inclusionMode) ? 0.35 : 1.0;
-  const zoom = 1 + (bassZoom * 0.9) + (bass * 0.65);
-  const active = clamp(partAmount / 30, 0, 1);
+  // sphere reacts
+  if (sphere) {
+    sphere.material.color.copy(color);
+    sphere.material.opacity = clamp(0.08 + energy * 0.22, 0.06, 0.42);
 
-  // particles move
-  const posAttr = particleGeom.getAttribute('position');
-  for (let i = 0; i < particleCount; i++) {
-    const ix = i * 3;
+    if (!reducedMotion) {
+      sphere.rotation.y += dt * (0.18 + treble * 0.9);
+      sphere.rotation.x += dt * (0.10 + bass * 0.6);
+    }
 
-    const bx = basePos[ix + 0];
-    const by = basePos[ix + 1];
-    const bz = basePos[ix + 2];
-
-    const toCenter = -0.0008 * energy;
-    vel[ix + 0] += bx * toCenter;
-    vel[ix + 1] += by * toCenter;
-    vel[ix + 2] += bz * toCenter;
-
-    const swirl = 0.0007 * (0.2 + treble) * drift;
-    vel[ix + 0] += -bz * swirl;
-    vel[ix + 2] += bx * swirl;
-
-    const jitter = (0.0009 * energy + 0.00012) * active * drift;
-    vel[ix + 0] += (Math.random() - 0.5) * jitter;
-    vel[ix + 1] += (Math.random() - 0.5) * jitter;
-    vel[ix + 2] += (Math.random() - 0.5) * jitter;
-
-    vel[ix + 0] *= 0.985;
-    vel[ix + 1] *= 0.985;
-    vel[ix + 2] *= 0.985;
-
-    pos[ix + 0] += vel[ix + 0];
-    pos[ix + 1] += vel[ix + 1];
-    pos[ix + 2] += vel[ix + 2];
-
-    const tx = bx * zoom;
-    const ty = by * zoom;
-    const tz = bz * zoom;
-
-    pos[ix + 0] += (tx - pos[ix + 0]) * 0.0025;
-    pos[ix + 1] += (ty - pos[ix + 1]) * 0.0025;
-    pos[ix + 2] += (tz - pos[ix + 2]) * 0.0025;
+    const s = 1 + bass * (0.22 + zoom * 0.9);
+    sphere.scale.setScalar(s);
   }
-  posAttr.needsUpdate = true;
 
-  // ritual motion (sigil + cage + camera)
-  const t = performance.now() * 0.001;
-
+  // sigil reacts (always visible, depthTest false)
   if (sigilGroup) {
-    const s = 1 + pulse * 0.42;
-    sigilGroup.rotation.z = t * 0.25 + treble * 0.35;
-    sigilGroup.rotation.y = 0.25 + Math.sin(t * 0.45) * 0.12 + mid * 0.12;
-    sigilGroup.rotation.x = -0.15 + Math.cos(t * 0.35) * 0.08 + bass * 0.08;
-    sigilGroup.scale.setScalar(s);
+    const mesh = sigilGroup.children[0];
+    const pulse = energy;
+
+    // stronger response
+    const ss = 1 + pulse * 1.15;
+    sigilGroup.scale.setScalar(ss);
+
+    if (!reducedMotion) {
+      sigilGroup.rotation.z += dt * (0.25 + treble * 1.1);
+    }
+
+    // glow / opacity
+    if (mesh?.material) {
+      mesh.material.opacity = clamp(0.25 + pulse * 0.95, 0.20, 1.0);
+      // subtle color tint by hueShift
+      // (Additive blending means this looks like neon)
+    }
+
+    // gentle “breathing” in/out
+    sigilGroup.position.z = 0.2 + bass * 0.4;
   }
 
-  if (cageWire) {
-    cageWire.rotation.y = -t * 0.22;
-    cageWire.rotation.x = t * 0.10;
-  }
-
-  camera.position.x = Math.sin(t * 0.22) * ((reducedMotion || inclusionMode) ? 0.05 : 0.28);
-  camera.position.y = 0.2 + Math.cos(t * 0.20) * ((reducedMotion || inclusionMode) ? 0.05 : 0.18);
-  camera.lookAt(0, 0, 0);
-
-  // a11y text
-  a11yTick++;
-  if (a11yTick % 30 === 0) {
-    const mood =
-      energy < 0.12 ? 'Calm field, slow orbit.' :
-      energy < 0.35 ? 'Breathing pulse, moderate motion.' :
-      'High energy, dense motion and strong pulse.';
-    const mode =
-      currentMode === 'mic' ? 'Microphone active.' :
-      currentMode === 'file' ? 'File playback.' :
-      currentMode === 'demo' ? 'Demo playback.' :
-      'Idle.';
-    setStatus(`${mode} ${mood}`);
-  }
+  // camera bass zoom
+  camera.position.z = 16 - bass * (2.2 + zoom * 6.0);
 
   renderer.render(scene, camera);
 }
+
+/* ================= START BUTTONS ================= */
+
+setStatus("Visualization idle. Click to initialize.");
