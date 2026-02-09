@@ -3,14 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Sonic Inclusion – Ritual Sigil</title>
+  <title>Sonic Inclusion – Audio → Color & Shape</title>
   <link rel="stylesheet" href="style.css" />
+
+  <!-- Importmap for Three.js (no bundler needed, works on GitHub Pages) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
 </head>
 
 <body>
   <header class="site-header">
     <h1>Audio → Color &amp; Shape</h1>
-    <p class="tagline">Sound into ritual sigil, particles & accessible modes</p>
+    <p class="tagline">Sound into ritual sigil, particles &amp; accessible modes</p>
   </header>
 
   <main>
@@ -50,6 +59,7 @@
 
     <!-- ================= VISUAL STAGE ================= -->
     <section class="stage" aria-label="Visualization stage">
+      <!-- canvas for THREE -->
       <canvas id="viz"></canvas>
     </section>
 
@@ -62,16 +72,6 @@
   <footer class="site-footer">
     <small>© 2025 Indjoov Arts · Sonic Inclusion Prototype</small>
   </footer>
-
-  <!-- ✅ Import map (works on GitHub Pages) -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
 
   <script type="module" src="script.js"></script>
 </body>
