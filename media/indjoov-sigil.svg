@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- simple rune-like sigil placeholder (replace anytime) -->
+  <path d="M256 40
+           C180 40 140 90 140 150
+           C140 210 190 245 240 260
+           C290 275 340 300 340 360
+           C340 430 290 472 220 472
+           C160 472 120 430 120 380"
+        fill="none" stroke="#000" stroke-width="28" stroke-linecap="round"/>
+  <path d="M320 80
+           C360 120 380 170 380 220
+           C380 310 310 350 250 360
+           C190 370 160 410 160 452"
+        fill="none" stroke="#000" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#000" stroke-width="10" opacity="0.35"/>
+</svg>
