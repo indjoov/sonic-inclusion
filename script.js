@@ -327,7 +327,7 @@ function initThree() {
   starPoints = makeStars(1900, 120);
   scene.add(starPoints);
 
-  makeSingleMorphingCage();
+  makeResponsiveMorphingCage();
 
   initRings();
   initGhosts();
@@ -399,12 +399,12 @@ function updateStars(delta) {
   starGeo.attributes.position.needsUpdate = true;
 }
 
-/* ================= SINGLE SHAPE MORPHING (SMOOTH WAVES) ================= */
+/* ================= HIGHLY RESPONSIVE MORPHING CAGE ================= */
 
-function makeSingleMorphingCage() {
+function makeResponsiveMorphingCage() {
   if (morphMesh) { world.remove(morphMesh); morphMesh.geometry.dispose(); }
 
-  // High detail base sphere to allow fluid wave morphs
+  // High detail base sphere 
   const baseGeo = new THREE.IcosahedronGeometry(5.0, 10); 
   const posAttribute = baseGeo.attributes.position;
   
@@ -424,14 +424,15 @@ function makeSingleMorphingCage() {
     cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
 
     // --- Target 1: WAVE/ORGANIC (Mids/Vocals) ---
-    // Mathematically distorting the sphere using continuous sine waves based on coords
-    const waveScale = 1.0 + 0.15 * (Math.sin(vec.x * 2.0) + Math.cos(vec.y * 2.0) + Math.sin(vec.z * 2.0));
+    // INCREASING AMPLITUDE: Multiplier from 0.15 to 0.45 for dramatic waves
+    const waveScale = 1.0 + 0.45 * (Math.sin(vec.x * 3.0) + Math.cos(vec.y * 3.0) + Math.sin(vec.z * 3.0));
     const waveVec = vec.clone().multiplyScalar(waveScale);
     wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
 
     // --- Target 2: SPIKES (Snare/Highs) ---
-    const noise = Math.sin(vec.x * 6.0) * Math.cos(vec.y * 6.0) * Math.sin(vec.z * 6.0);
-    const spikeScale = 1.0 + Math.max(0, noise) * 1.2; 
+    // INCREASING AMPLITUDE: Multiplier from 1.2 to 2.5 for explosive spikes
+    const noise = Math.sin(vec.x * 8.0) * Math.cos(vec.y * 8.0) * Math.sin(vec.z * 8.0);
+    const spikeScale = 1.0 + Math.max(0, noise) * 2.5; 
     const spikeVec = vec.clone().multiplyScalar(spikeScale);
     spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
   }
@@ -442,15 +443,14 @@ function makeSingleMorphingCage() {
     new THREE.Float32BufferAttribute(spikePositions, 3)  // Index 2: Spikes
   ];
 
-  // ONLY ONE WIREFRAME MATERIAL
   const mat = new THREE.MeshBasicMaterial({
     color: 0x00d4ff,
     wireframe: true, 
     transparent: true,
-    opacity: 0.8, // Brighter since it's only one line
+    opacity: 0.8, 
     morphTargets: true, 
     blending: THREE.AdditiveBlending,
-    depthWrite: false, // Ensures perfectly clean transparency
+    depthWrite: false, 
     side: THREE.DoubleSide
   });
 
@@ -735,22 +735,27 @@ function loop() {
     world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
   }
 
-  // 4. FLUID SHAPE MORPHING (One Line)
+  // 4. HYPER-RESPONSIVE SHAPE MORPHING
   if (morphMesh) {
-    // We use a very low lerp factor (0.05) to make the transition incredibly smooth and fluid like water/waves
-    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassSm * 1.5, 0.05); // Cube
-    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.0, 0.05);  // Smooth Waves
-    morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], snareSm * 1.5, 0.1); // Spikes
+    // INCREASED INTERPOLATION SPEEDS: 0.15, 0.12, 0.25 for snappy, instantaneous reaction
+    // EXPONENTIAL BASS: Math.pow ensures only deep, heavy hits morph into the cube
+    const bassPunch = Math.pow(bassSm, 1.5) * 2.0;
+    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.15); // Cube
+    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.12); // Waves
+    
+    // Snare hits trigger an immediate, sharp spike combined with the raw snapFlash
+    const spikePunch = (snareSm * 2.0) + (snapFlash * 1.5);
+    morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.25); // Spikes
 
     const drift = reducedMotion ? 0 : 0.001;
-    morphMesh.rotation.y += drift + midSm * 0.005; // Spin faster on vocals smoothly
+    morphMesh.rotation.y += drift + midSm * 0.015; // Aggressive spin on vocals
     morphMesh.rotation.x += drift;
-    morphMesh.rotation.z += Math.sin(time * 0.5) * 0.002; // Extra wave-like rocking
+    morphMesh.rotation.z += Math.sin(time * 0.5) * 0.005;
 
-    // Smooth Scale Zoom
+    // SNAPPY SCALE ZOOM: Base scale pulses exponentially with the bass
     const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
-    const targetScale = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
-    morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, targetScale, 0.1));
+    const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
+    morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, targetScale, 0.2));
 
     // Colors
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
@@ -762,7 +767,6 @@ function loop() {
       const energyHue = (hue + bassSm * 0.2 + midSm * 0.1) % 1;
       morphMesh.material.color.setHSL(energyHue, 0.85, 0.5 + snareSm * 0.4);
     } else {
-      // Flowing color shift
       const flowingHue = (hue + Math.sin(time * 0.2) * 0.1) % 1;
       morphMesh.material.color.setHSL(flowingHue, 0.75, 0.55);
     }
