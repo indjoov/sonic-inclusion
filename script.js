@@ -31,7 +31,7 @@ function setStatus(msg) {
   if (srText) srText.textContent = msg;
 }
 
-/* ================= OVERLAY (autoplay-safe init) ================= */
+/* ================= OVERLAY ================= */
 
 const overlay = document.createElement("div");
 overlay.id = "intro-overlay";
@@ -101,9 +101,11 @@ let world = null;       // cage/sigil/rings live here
 let starPoints = null;  // star field in scene space
 let cageGroup = null;
 
-// Morphing Cage Parts
-let cageShapeA = null; // Calm (Icosahedron)
-let cageShapeB = null; // Chaos (Torus Knot)
+// === MORPHING SHAPES ===
+let shapeCore = null;   // Icosahedron (Rest)
+let shapeMid = null;    // Octahedron (Vocals/Mids)
+let shapeBass = null;   // Torus Knot (Bass)
+let shapeHigh = null;   // Tetrahedron (Snare/Highs)
 
 // Sigil layers
 let sigilGroup = null;
@@ -517,35 +519,45 @@ function updateStars(delta) {
   starGeo.attributes.position.needsUpdate = true;
 }
 
-/* ================= MORPHING CAGE ================= */
+/* ================= 4-LAYER MORPHING CAGE ================= */
+
+function createCageLayer(geometry, color, opacity, blend = THREE.AdditiveBlending) {
+  const wire = new THREE.WireframeGeometry(geometry);
+  const mat = new THREE.LineBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: opacity,
+    blending: blend
+  });
+  return new THREE.LineSegments(wire, mat);
+}
 
 function makeCage() {
   const group = new THREE.Group();
 
-  // --- SHAPE A: Geometric / Divine (Low Energy) ---
-  const geoA = new THREE.IcosahedronGeometry(5.2, 2);
-  const wireA = new THREE.WireframeGeometry(geoA);
-  const matA = new THREE.LineBasicMaterial({
-    color: 0x00d4ff,
-    transparent: true,
-    opacity: 0.3,
-    blending: THREE.AdditiveBlending
-  });
-  cageShapeA = new THREE.LineSegments(wireA, matA);
-  group.add(cageShapeA);
+  // 1. CORE (Icosahedron) - The "Resting State"
+  // Fades out when music gets loud.
+  const geo1 = new THREE.IcosahedronGeometry(5.2, 1);
+  shapeCore = createCageLayer(geo1, 0x00d4ff, 0.35);
+  group.add(shapeCore);
 
-  // --- SHAPE B: Organic / Chaos (High Energy) ---
-  // Torus Knot: radius, tube, radialSegs, tubSegs, p, q
-  const geoB = new THREE.TorusKnotGeometry(3.5, 1.2, 120, 16, 2, 3);
-  const wireB = new THREE.WireframeGeometry(geoB);
-  const matB = new THREE.LineBasicMaterial({
-    color: 0xff2b5a, // Red/Pink for high energy
-    transparent: true,
-    opacity: 0.0,    // Invisible initially
-    blending: THREE.AdditiveBlending
-  });
-  cageShapeB = new THREE.LineSegments(wireB, matB);
-  group.add(cageShapeB);
+  // 2. MID/VOCAL (Octahedron) - The "Diamond"
+  // Responds to Mid frequencies (Vocals/Synths). Sharp angles.
+  const geo2 = new THREE.OctahedronGeometry(6.0, 0);
+  shapeMid = createCageLayer(geo2, 0x8feaff, 0.0);
+  group.add(shapeMid);
+
+  // 3. BASS (Torus Knot) - The "Beast"
+  // Responds to Bass. Complex, organic, heavy.
+  const geo3 = new THREE.TorusKnotGeometry(3.5, 1.2, 100, 16, 2, 3);
+  shapeBass = createCageLayer(geo3, 0xff2b5a, 0.0);
+  group.add(shapeBass);
+
+  // 4. HIGH/SNARE (Tetrahedron) - The "Spark"
+  // Responds to sharp noises (Snares/Hi-hats). Large spikes.
+  const geo4 = new THREE.TetrahedronGeometry(7.5, 0);
+  shapeHigh = createCageLayer(geo4, 0xffffff, 0.0);
+  group.add(shapeHigh);
 
   return group;
 }
@@ -920,45 +932,66 @@ function loop() {
     world.position.y = Math.cos(t * 0.9) * 0.35;
   }
 
-  // 3. CAGE MORPHING (Art Performance)
-  if (cageGroup && cageShapeA && cageShapeB) {
-    // Energy determines transformation state (0 = calm, 1 = chaos)
-    const energy = Math.min(1, bassSm * 0.8 + snareSm * 0.5);
+  // 3. 4-LAYER CAGE MORPHING
+  if (cageGroup && shapeCore) {
+    // Basic Opacity mapping
+    // - Core: Always there, but fades when Bass is huge (to make room for the "Beast")
+    // - Mid: Maps directly to Mid frequencies (Vocals/Melody)
+    // - Bass: Maps directly to Bass
+    // - High: Maps to Snare/Highs
     
-    // Smooth transition
-    // Shape A (Icosahedron) fades OUT
-    cageShapeA.material.opacity = THREE.MathUtils.lerp(cageShapeA.material.opacity, P.cageOpacityBase * (1 - energy * 0.8), 0.1);
-    
-    // Shape B (Torus Knot) fades IN
-    cageShapeB.material.opacity = THREE.MathUtils.lerp(cageShapeB.material.opacity, energy * 0.8, 0.05);
+    // Smooth interpolations
+    const tCore = Math.max(0.1, P.cageOpacityBase - bassSm * 0.5);
+    const tMid  = midSm * 1.2;
+    const tBass = bassSm * 0.9;
+    const tHigh = snareSm * 1.2;
 
-    // Color logic
+    shapeCore.material.opacity = THREE.MathUtils.lerp(shapeCore.material.opacity, tCore, 0.1);
+    shapeMid.material.opacity  = THREE.MathUtils.lerp(shapeMid.material.opacity,  tMid,  0.1);
+    shapeBass.material.opacity = THREE.MathUtils.lerp(shapeBass.material.opacity, tBass, 0.1);
+    shapeHigh.material.opacity = THREE.MathUtils.lerp(shapeHigh.material.opacity, tHigh, 0.2); // Snap faster
+
+    // Colors
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
     const hue = ((hueShift % 360) / 360);
     const mode = palette?.value || "hue";
 
     if (mode === "grayscale") {
-      cageShapeA.material.color.setHex(0xe6e6e6);
-      cageShapeB.material.color.setHex(0xffffff);
+      shapeCore.material.color.setHex(0xaaaaaa);
+      shapeMid.material.color.setHex(0xffffff);
+      shapeBass.material.color.setHex(0x666666);
+      shapeHigh.material.color.setHex(0xffffff);
     } else if (mode === "energy") {
-      cageShapeA.material.color.setHSL(hue, 0.85, 0.35 + energy * 0.35);
-      cageShapeB.material.color.setHSL(hue, 0.95, 0.5 + energy * 0.2); // Bright pink/red
+      shapeCore.material.color.setHSL(hue, 0.6, 0.5);
+      shapeMid.material.color.setHSL(hue, 0.8, 0.7); // Bright
+      shapeBass.material.color.setHSL(0, 0.9, 0.5); // Red
+      shapeHigh.material.color.setHSL(0.16, 0.9, 0.8); // Yellow/White
     } else {
-      cageShapeA.material.color.setHSL(hue, 0.75, 0.55);
-      cageShapeB.material.color.setHSL((hue + 0.5) % 1, 0.85, 0.6); // Complementary color
+      // Harmonic Hue Shift
+      shapeCore.material.color.setHSL(hue, 0.75, 0.5);
+      shapeMid.material.color.setHSL((hue + 0.1) % 1, 0.9, 0.6);
+      shapeBass.material.color.setHSL((hue + 0.5) % 1, 0.8, 0.6); // Complementary
+      shapeHigh.material.color.setHSL((hue + 0.05) % 1, 1.0, 0.9); // Highlight
     }
 
-    // Add flash to opacity
-    cageShapeA.material.opacity += snapFlash * 0.07;
-    cageShapeB.material.opacity += snapFlash * 0.15;
+    // Flash
+    shapeCore.material.opacity += snapFlash * 0.1;
+    shapeHigh.material.opacity += snapFlash * 0.3;
 
-    // Independent rotations
+    // Independent Rotations (The "Performance" feel)
     const drift = reducedMotion ? 0 : 0.002;
-    cageShapeA.rotation.y += drift;
-    cageShapeB.rotation.y -= drift * 1.5;
-    cageShapeB.rotation.z += drift;
     
-    // Pulse
+    shapeCore.rotation.y += drift;           // Slow spin
+    shapeMid.rotation.y  -= drift * 3.0;     // Fast counter-spin
+    shapeMid.rotation.x  += drift;
+    
+    shapeBass.rotation.z += drift * 0.5;     // Heavy roll
+    shapeBass.rotation.y += drift * 0.5;
+    
+    shapeHigh.rotation.x += drift * 8.0;     // Jitter spin
+    shapeHigh.rotation.y += drift * 4.0;
+
+    // Pulse Scale
     const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
     const scale = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
     cageGroup.scale.set(scale, scale, scale);
@@ -983,7 +1016,6 @@ function loop() {
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
     sigilGroup.rotation.y = 0.22 + Math.sin(performance.now() * 0.0012) * 0.02 + (Math.random() - 0.5) * jitter;
     sigilGroup.rotation.x = -0.18 + Math.sin(performance.now() * 0.0010) * 0.015 + (Math.random() - 0.5) * jitter;
-    // Object zoom is handled on cageGroup now, sigil stays relative
   }
 
   // Rings & Ghosts Animation
