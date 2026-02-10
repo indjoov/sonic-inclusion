@@ -522,40 +522,79 @@ function updateStars(delta) {
 /* ================= 4-LAYER MORPHING CAGE ================= */
 
 function createCageLayer(geometry, color, opacity, blend = THREE.AdditiveBlending) {
-  const wire = new THREE.WireframeGeometry(geometry);
-  const mat = new THREE.LineBasicMaterial({
+  // STORE ORIGINAL POSITIONS FOR DEFORMATION
+  const posAttribute = geometry.attributes.position;
+  const originalPos = new Float32Array(posAttribute.array.length);
+  originalPos.set(posAttribute.array);
+  geometry.userData = { originalPos: originalPos };
+
+  // Use wireframe: true instead of WireframeGeometry so we can deform vertices
+  const mat = new THREE.MeshBasicMaterial({
     color: color,
     transparent: true,
     opacity: opacity,
-    blending: blend
+    blending: blend,
+    wireframe: true,
+    side: THREE.DoubleSide
   });
-  return new THREE.LineSegments(wire, mat);
+
+  return new THREE.Mesh(geometry, mat);
+}
+
+function deformMesh(mesh, intensity, time) {
+  if (!mesh || !mesh.geometry.userData.originalPos) return;
+
+  const geom = mesh.geometry;
+  const pos = geom.attributes.position;
+  const arr = pos.array;
+  const orig = geom.userData.originalPos;
+
+  // Simple wave deformation
+  for (let i = 0; i < arr.length; i += 3) {
+    const x = orig[i];
+    const y = orig[i + 1];
+    const z = orig[i + 2];
+    
+    // Normalize direction to push outward (preserve general shape)
+    const len = Math.sqrt(x*x + y*y + z*z);
+    const nx = x / len;
+    const ny = y / len;
+    const nz = z / len;
+
+    // Noise-like wave
+    const wave = Math.sin(x * 0.5 + time) + Math.cos(y * 0.5 + time) + Math.sin(z * 0.5 + time);
+    
+    // Push vertices out based on music intensity
+    const dist = len + (wave * intensity * 0.8);
+
+    arr[i] = nx * dist;
+    arr[i + 1] = ny * dist;
+    arr[i + 2] = nz * dist;
+  }
+  
+  pos.needsUpdate = true;
 }
 
 function makeCage() {
   const group = new THREE.Group();
 
-  // 1. CORE (Icosahedron) - The "Resting State"
-  // Fades out when music gets loud.
-  const geo1 = new THREE.IcosahedronGeometry(5.2, 1);
+  // 1. CORE (Icosahedron)
+  const geo1 = new THREE.IcosahedronGeometry(5.2, 2);
   shapeCore = createCageLayer(geo1, 0x00d4ff, 0.35);
   group.add(shapeCore);
 
-  // 2. MID/VOCAL (Octahedron) - The "Diamond"
-  // Responds to Mid frequencies (Vocals/Synths). Sharp angles.
-  const geo2 = new THREE.OctahedronGeometry(6.0, 0);
+  // 2. MID/VOCAL (Octahedron)
+  const geo2 = new THREE.OctahedronGeometry(6.0, 1);
   shapeMid = createCageLayer(geo2, 0x8feaff, 0.0);
   group.add(shapeMid);
 
-  // 3. BASS (Torus Knot) - The "Beast"
-  // Responds to Bass. Complex, organic, heavy.
+  // 3. BASS (Torus Knot)
   const geo3 = new THREE.TorusKnotGeometry(3.5, 1.2, 100, 16, 2, 3);
   shapeBass = createCageLayer(geo3, 0xff2b5a, 0.0);
   group.add(shapeBass);
 
-  // 4. HIGH/SNARE (Tetrahedron) - The "Spark"
-  // Responds to sharp noises (Snares/Hi-hats). Large spikes.
-  const geo4 = new THREE.TetrahedronGeometry(7.5, 0);
+  // 4. HIGH/SNARE (Tetrahedron)
+  const geo4 = new THREE.TetrahedronGeometry(7.5, 1);
   shapeHigh = createCageLayer(geo4, 0xffffff, 0.0);
   group.add(shapeHigh);
 
@@ -932,15 +971,19 @@ function loop() {
     world.position.y = Math.cos(t * 0.9) * 0.35;
   }
 
-  // 3. 4-LAYER CAGE MORPHING
+  // 3. 4-LAYER CAGE MORPHING & DEFORMATION
   if (cageGroup && shapeCore) {
+    const tTime = performance.now() * 0.002;
+
+    // Apply deformations!
+    if (!reducedMotion) {
+      deformMesh(shapeCore, bassSm * 0.2, tTime * 0.5);
+      deformMesh(shapeMid,  midSm  * 0.4, tTime * 1.5);
+      deformMesh(shapeBass, bassSm * 0.8, tTime * 2.0); // Heavy deformation on bass
+      deformMesh(shapeHigh, snareSm* 1.0, tTime * 4.0); // Fast vibration on high
+    }
+
     // Basic Opacity mapping
-    // - Core: Always there, but fades when Bass is huge (to make room for the "Beast")
-    // - Mid: Maps directly to Mid frequencies (Vocals/Melody)
-    // - Bass: Maps directly to Bass
-    // - High: Maps to Snare/Highs
-    
-    // Smooth interpolations
     const tCore = Math.max(0.1, P.cageOpacityBase - bassSm * 0.5);
     const tMid  = midSm * 1.2;
     const tBass = bassSm * 0.9;
@@ -949,7 +992,7 @@ function loop() {
     shapeCore.material.opacity = THREE.MathUtils.lerp(shapeCore.material.opacity, tCore, 0.1);
     shapeMid.material.opacity  = THREE.MathUtils.lerp(shapeMid.material.opacity,  tMid,  0.1);
     shapeBass.material.opacity = THREE.MathUtils.lerp(shapeBass.material.opacity, tBass, 0.1);
-    shapeHigh.material.opacity = THREE.MathUtils.lerp(shapeHigh.material.opacity, tHigh, 0.2); // Snap faster
+    shapeHigh.material.opacity = THREE.MathUtils.lerp(shapeHigh.material.opacity, tHigh, 0.2);
 
     // Colors
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
@@ -963,32 +1006,28 @@ function loop() {
       shapeHigh.material.color.setHex(0xffffff);
     } else if (mode === "energy") {
       shapeCore.material.color.setHSL(hue, 0.6, 0.5);
-      shapeMid.material.color.setHSL(hue, 0.8, 0.7); // Bright
-      shapeBass.material.color.setHSL(0, 0.9, 0.5); // Red
-      shapeHigh.material.color.setHSL(0.16, 0.9, 0.8); // Yellow/White
+      shapeMid.material.color.setHSL(hue, 0.8, 0.7); 
+      shapeBass.material.color.setHSL(0, 0.9, 0.5); 
+      shapeHigh.material.color.setHSL(0.16, 0.9, 0.8);
     } else {
-      // Harmonic Hue Shift
       shapeCore.material.color.setHSL(hue, 0.75, 0.5);
       shapeMid.material.color.setHSL((hue + 0.1) % 1, 0.9, 0.6);
-      shapeBass.material.color.setHSL((hue + 0.5) % 1, 0.8, 0.6); // Complementary
-      shapeHigh.material.color.setHSL((hue + 0.05) % 1, 1.0, 0.9); // Highlight
+      shapeBass.material.color.setHSL((hue + 0.5) % 1, 0.8, 0.6); 
+      shapeHigh.material.color.setHSL((hue + 0.05) % 1, 1.0, 0.9); 
     }
 
     // Flash
     shapeCore.material.opacity += snapFlash * 0.1;
     shapeHigh.material.opacity += snapFlash * 0.3;
 
-    // Independent Rotations (The "Performance" feel)
+    // Independent Rotations
     const drift = reducedMotion ? 0 : 0.002;
-    
-    shapeCore.rotation.y += drift;           // Slow spin
-    shapeMid.rotation.y  -= drift * 3.0;     // Fast counter-spin
+    shapeCore.rotation.y += drift;           
+    shapeMid.rotation.y  -= drift * 3.0;     
     shapeMid.rotation.x  += drift;
-    
-    shapeBass.rotation.z += drift * 0.5;     // Heavy roll
+    shapeBass.rotation.z += drift * 0.5;     
     shapeBass.rotation.y += drift * 0.5;
-    
-    shapeHigh.rotation.x += drift * 8.0;     // Jitter spin
+    shapeHigh.rotation.x += drift * 8.0;     
     shapeHigh.rotation.y += drift * 4.0;
 
     // Pulse Scale
@@ -1068,7 +1107,11 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function startRecording() {
-  await initEngine();
+  // FIX: Do NOT call initEngine() if we are already running
+  if (currentMode === "idle") {
+    await initEngine();
+  }
+
   const fps = 60;
   const canvasStream = canvas.captureStream(fps);
   const out = audioRecordDest?.stream;
