@@ -4,7 +4,7 @@ import { AudioEngine } from "./audio/AudioEngine.js";
 /* ================= BASIC SETUP ================= */
 
 const canvas = document.getElementById("viz");
-const stageEl = canvas.closest(".stage");
+const stageEl = canvas?.closest?.(".stage") || canvas;
 
 const srText = document.getElementById("srText");
 const sens = document.getElementById("sens");
@@ -15,13 +15,33 @@ const fileBtn = document.getElementById("fileBtn");
 const demoBtn = document.getElementById("demoBtn");
 const fileInput = document.getElementById("fileInput");
 
-// a11y live region
 if (srText) {
   srText.setAttribute("aria-live", "polite");
   srText.setAttribute("role", "status");
 }
 function setStatus(msg) {
   if (srText) srText.textContent = msg;
+}
+
+/* ================= UTIL ================= */
+
+function clamp01(x) {
+  return Math.max(0, Math.min(1, x));
+}
+
+// average energy in a frequency band (Hz)
+function bandEnergyHz(freqData, sampleRate, fftSize, hzLo, hzHi) {
+  const nyquist = sampleRate / 2;
+  const binCount = freqData.length;
+  const lo = Math.max(0, Math.floor((hzLo / nyquist) * binCount));
+  const hi = Math.min(binCount - 1, Math.ceil((hzHi / nyquist) * binCount));
+  let sum = 0;
+  let n = 0;
+  for (let i = lo; i <= hi; i++) {
+    sum += freqData[i];
+    n++;
+  }
+  return n ? (sum / n) / 255 : 0; // normalized 0..1
 }
 
 /* ================= OVERLAY (autoplay-safe init) ================= */
@@ -72,7 +92,6 @@ let raf = null;
 // analyser routing (mic/file/demo all feed this)
 let analyser = null;
 let dataFreq = null;
-let dataTime = null;
 
 // routing nodes
 let inputGain = null;
@@ -92,20 +111,27 @@ let camera = null;
 
 let starPoints = null;
 let sphere = null;
-
-// sigil layers
 let sigilGroup = null;
+
 let sigilBaseMesh = null;
 let sigilGlowMesh = null;
 
-/* ================= REDUCED MOTION ================= */
+// audio envelopes (ritual feel)
+let bassEnv = 0;      // slow breath
+let snapEnv = 0;      // fast flash (snare)
+let snapPrev = 0;     // for transient detect
+
+// star drift time
+let t0 = performance.now();
+
+/* ================= A11Y / REDUCED MOTION ================= */
 
 let reducedMotion = false;
 
-/* ================= MIC MONITOR (optional) ================= */
+/* ================= MIC MONITOR + FEEDBACK GUARD ================= */
 
 let micMonitor = false;
-let micMonitorVol = 0.25;
+let micMonitorVol = 0.35;
 let feedbackMuted = false;
 
 function applyMicMonitorGain() {
@@ -114,7 +140,7 @@ function applyMicMonitorGain() {
   monitorGain.gain.value = want;
 }
 
-/* ================= UI: small HUD (ENGINE/RECORD optional) ================= */
+/* ================= CLEAN LEGACY UI ================= */
 
 function removeLegacyUI() {
   document.getElementById("si-hud")?.remove();
@@ -124,7 +150,8 @@ function removeLegacyUI() {
 }
 removeLegacyUI();
 
-// HUD container
+/* ================= MODERN HUD (ENGINE + RECORD) ================= */
+
 const hud = document.createElement("div");
 hud.id = "si-hud";
 hud.style.cssText = `
@@ -140,7 +167,7 @@ hud.style.cssText = `
   pointer-events: none;
 `;
 
-// dummy record button (optional, safe)
+// RECORD
 const recBtn = document.createElement("button");
 recBtn.id = "si-recBtn";
 recBtn.type = "button";
@@ -156,11 +183,10 @@ recBtn.style.cssText = `
   font-weight: 900;
   letter-spacing: 0.5px;
   box-shadow: 0 12px 30px rgba(255,43,90,0.25);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 `;
-recBtn.addEventListener("click", () => {
-  // optional later: MediaRecorder integration
-  setStatus("ℹ️ Recording not enabled yet (UI placeholder).");
-});
 
 // ENGINE toggle
 const engineToggle = document.createElement("button");
@@ -171,6 +197,7 @@ engineToggle.setAttribute("aria-expanded", "false");
 engineToggle.setAttribute("aria-controls", "si-enginePanel");
 engineToggle.style.cssText = `
   pointer-events: auto;
+  flex: 0 0 auto;
   background: rgba(10,10,10,0.85);
   color: #8feaff;
   border: 1px solid rgba(0,212,255,0.65);
@@ -231,34 +258,24 @@ enginePanel.innerHTML = `
 
   <div style="display:grid; gap:10px;">
     <label style="font-size:12px; opacity:0.8;">
-      PARTICLES (stars)
+      PARTICLES (stars intensity)
       <input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;">
     </label>
 
     <label style="font-size:12px; opacity:0.8;">
       BASS ZOOM
-      <input id="zoomInt" type="range" min="0" max="100" value="35" style="width:100%; margin-top:6px;">
+      <input id="zoomInt" type="range" min="0" max="100" value="25" style="width:100%; margin-top:6px;">
     </label>
 
     <label style="font-size:12px; opacity:0.8;">
-      HUE (cyan/purple)
-      <input id="hueShift" type="range" min="0" max="360" value="285" style="width:100%; margin-top:6px;">
-    </label>
-
-    <label style="font-size:12px; opacity:0.8;">
-      GLOW
-      <input id="glowAmt" type="range" min="0" max="100" value="75" style="width:100%; margin-top:6px;">
-    </label>
-
-    <label style="font-size:12px; opacity:0.8;">
-      PUNCH (bass+snap)
-      <input id="punchAmt" type="range" min="0" max="100" value="85" style="width:100%; margin-top:6px;">
+      HUE
+      <input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; margin-top:6px;">
     </label>
 
     <div style="display:flex; gap:8px;">
       <button id="presetCalm" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">CALM</button>
-      <button id="presetRitual" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">RITUAL</button>
-      <button id="presetHard" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">HARD</button>
+      <button id="presetBass" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">BASS</button>
+      <button id="presetCine" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">CINE</button>
     </div>
 
     <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
@@ -274,7 +291,7 @@ enginePanel.innerHTML = `
 
       <label style="font-size:12px; opacity:0.8; display:block; margin-top:10px;">
         Monitor Volume
-        <input id="micMonitorVol" type="range" min="0" max="100" value="25" style="width:100%; margin-top:6px;">
+        <input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; margin-top:6px;">
       </label>
 
       <div id="feedbackWarn" style="display:none; margin-top:10px; font-size:12px; color:#ff2b5a; font-weight:900;">
@@ -285,6 +302,7 @@ enginePanel.innerHTML = `
 `;
 document.body.appendChild(enginePanel);
 
+// Panel open/close
 let engineOpen = false;
 function setEngineOpen(open) {
   engineOpen = open;
@@ -297,52 +315,37 @@ enginePanel.querySelector("#si-engineClose").addEventListener("click", () => set
 
 // Swipe-down close (mobile)
 let touchStartY = null;
-enginePanel.addEventListener(
-  "touchstart",
-  (e) => {
-    touchStartY = e.touches?.[0]?.clientY ?? null;
-  },
-  { passive: true }
-);
-enginePanel.addEventListener(
-  "touchmove",
-  (e) => {
-    if (touchStartY == null) return;
-    const y = e.touches?.[0]?.clientY ?? touchStartY;
-    const dy = y - touchStartY;
-    if (dy > 50) {
-      setEngineOpen(false);
-      touchStartY = null;
-    }
-  },
-  { passive: true }
-);
+enginePanel.addEventListener("touchstart", (e) => {
+  touchStartY = e.touches?.[0]?.clientY ?? null;
+}, { passive: true });
+enginePanel.addEventListener("touchmove", (e) => {
+  if (touchStartY == null) return;
+  const y = e.touches?.[0]?.clientY ?? touchStartY;
+  const dy = y - touchStartY;
+  if (dy > 50) {
+    setEngineOpen(false);
+    touchStartY = null;
+  }
+}, { passive: true });
 
-/* ================= PANEL HOOKS ================= */
+function autoCloseEngineForRecording() {
+  if (engineOpen) setEngineOpen(false);
+}
+
+/* ================= ENGINE PANEL CONTROL HOOKS ================= */
 
 const partEl = enginePanel.querySelector("#partAmount");
 const zoomEl = enginePanel.querySelector("#zoomInt");
-const hueEl = enginePanel.querySelector("#hueShift");
-const glowEl = enginePanel.querySelector("#glowAmt");
-const punchEl = enginePanel.querySelector("#punchAmt");
+const hueEl  = enginePanel.querySelector("#hueShift");
 
-function preset({ parts, zoom, hue, glow, punch }) {
-  partEl.value = String(parts);
-  zoomEl.value = String(zoom);
-  hueEl.value = String(hue);
-  glowEl.value = String(glow);
-  punchEl.value = String(punch);
+function preset(p, z, h) {
+  partEl.value = String(p);
+  zoomEl.value = String(z);
+  hueEl.value  = String(h);
 }
-
-enginePanel.querySelector("#presetCalm").addEventListener("click", () =>
-  preset({ parts: 6, zoom: 15, hue: 230, glow: 45, punch: 45 })
-);
-enginePanel.querySelector("#presetRitual").addEventListener("click", () =>
-  preset({ parts: 12, zoom: 35, hue: 285, glow: 75, punch: 85 })
-);
-enginePanel.querySelector("#presetHard").addEventListener("click", () =>
-  preset({ parts: 18, zoom: 60, hue: 315, glow: 95, punch: 100 })
-);
+enginePanel.querySelector("#presetCalm").addEventListener("click", () => preset(6, 15, 210));
+enginePanel.querySelector("#presetBass").addEventListener("click", () => preset(14, 55, 320));
+enginePanel.querySelector("#presetCine").addEventListener("click", () => preset(10, 30, 280));
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => {
   reducedMotion = !!e.target.checked;
@@ -399,7 +402,7 @@ function initThree() {
     canvas,
     antialias: true,
     alpha: true,
-    powerPreference: "high-performance",
+    powerPreference: "high-performance"
   });
   renderer.setClearColor(0x000000, 1);
 
@@ -408,12 +411,15 @@ function initThree() {
   camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
   camera.position.set(0, 0, 16);
 
-  // subtle ambient
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  // subtle ambient (we mainly use BasicMaterials)
+  const amb = new THREE.AmbientLight(0xffffff, 0.7);
+  scene.add(amb);
 
   // Stars
   starPoints = makeStars(1400, 80);
   scene.add(starPoints);
+  // slow cosmic drift baseline (not audio-driven)
+  starPoints.rotation.set(Math.random() * 0.6, Math.random() * 0.6, 0);
 
   // Wireframe sphere
   const geo = new THREE.IcosahedronGeometry(5.1, 2);
@@ -421,12 +427,12 @@ function initThree() {
     color: 0x00d4ff,
     wireframe: true,
     transparent: true,
-    opacity: 0.16,
+    opacity: 0.16
   });
   sphere = new THREE.Mesh(geo, mat);
   scene.add(sphere);
 
-  // Sigil plane
+  // Sigil plane (transparent background + ritual glow)
   loadSigilPlane("media/indjoov-sigil.svg");
 
   fitRendererToStage();
@@ -447,17 +453,17 @@ function makeStars(count, spread) {
     color: 0xffffff,
     size: 0.06,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.22
   });
   return new THREE.Points(geom, mat);
 }
 
-/* ================= SIGIL (SVG -> CanvasTexture, transparent bg) ================= */
+/* ================= SIGIL (SVG -> Canvas -> transparent) ================= */
 
 function disposeSigil() {
   if (!sigilGroup) return;
   scene.remove(sigilGroup);
-  sigilGroup.traverse((o) => {
+  sigilGroup.traverse(o => {
     if (o.geometry) o.geometry.dispose?.();
     if (o.material) {
       if (o.material.map) o.material.map.dispose?.();
@@ -473,15 +479,15 @@ function loadSigilPlane(url) {
   disposeSigil();
 
   fetch(url)
-    .then((r) => {
+    .then(r => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.text();
     })
-    .then((svgText) => {
+    .then(svgText => {
       const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
+
       const img = new Image();
       img.crossOrigin = "anonymous";
-
       img.onload = () => {
         const size = 1024;
         const cvs = document.createElement("canvas");
@@ -489,7 +495,7 @@ function loadSigilPlane(url) {
         cvs.height = size;
         const ctx2d = cvs.getContext("2d", { willReadFrequently: true });
 
-        // paint white background first (then remove it)
+        // normalize background to white
         ctx2d.fillStyle = "#ffffff";
         ctx2d.fillRect(0, 0, size, size);
 
@@ -506,9 +512,7 @@ function loadSigilPlane(url) {
         const d = imgData.data;
         const thr = 245;
         for (let i = 0; i < d.length; i += 4) {
-          const r = d[i],
-            g = d[i + 1],
-            b = d[i + 2];
+          const r = d[i], g = d[i + 1], b = d[i + 2];
           if (r >= thr && g >= thr && b >= thr) d[i + 3] = 0;
         }
         ctx2d.putImageData(imgData, 0, 0);
@@ -517,10 +521,9 @@ function loadSigilPlane(url) {
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.needsUpdate = true;
 
-        // Group
-        sigilGroup = new THREE.Group();
+        const geom = new THREE.PlaneGeometry(6.8, 6.8);
 
-        // BASE (always visible)
+        // BASE: neutral, readable (prevents “double sigil” look)
         const baseMat = new THREE.MeshBasicMaterial({
           map: tex,
           transparent: true,
@@ -528,41 +531,40 @@ function loadSigilPlane(url) {
           depthWrite: false,
           depthTest: false,
           blending: THREE.NormalBlending,
+          color: new THREE.Color(0xf2f2f7)
         });
-
-        const geom = new THREE.PlaneGeometry(6.8, 6.8);
         sigilBaseMesh = new THREE.Mesh(geom, baseMat);
 
-        // GLOW (additive, bigger)
+        // GLOW: aura only (bigger, softer, additive)
         const glowMat = new THREE.MeshBasicMaterial({
           map: tex,
           transparent: true,
-          opacity: 0.65,
+          opacity: 0.45,
           depthWrite: false,
           depthTest: false,
           blending: THREE.AdditiveBlending,
-          color: new THREE.Color(0x00d4ff),
+          color: new THREE.Color(0x00d4ff)
         });
-
         sigilGlowMesh = new THREE.Mesh(geom.clone(), glowMat);
-        sigilGlowMesh.scale.set(1.12, 1.12, 1);
+        sigilGlowMesh.scale.set(1.22, 1.22, 1);
         sigilGlowMesh.position.z = 0.01;
 
+        sigilGroup = new THREE.Group();
         sigilGroup.add(sigilBaseMesh);
         sigilGroup.add(sigilGlowMesh);
 
-        sigilGroup.position.set(0, 0, 0.2);
+        sigilGroup.position.set(0, 0, 0.2); // slightly in front
         sigilGroup.rotation.x = -0.18;
         sigilGroup.rotation.y = 0.22;
 
         scene.add(sigilGroup);
-        setStatus("✅ Sigil loaded (always visible + glow)");
+        setStatus("✅ Sigil loaded (ink + glow)");
       };
 
       img.onerror = () => setStatus("⚠️ Sigil image decode failed");
       img.src = dataUrl;
     })
-    .catch((err) => {
+    .catch(err => {
       console.error(err);
       setStatus("⚠️ Sigil SVG fetch failed (path/case?)");
     });
@@ -570,6 +572,7 @@ function loadSigilPlane(url) {
 
 /* ================= INIT AUDIO ENGINE ================= */
 
+let recordDest = null; // MediaStreamDestination
 async function initEngine() {
   initThree();
 
@@ -578,17 +581,16 @@ async function initEngine() {
     await engine.init();
   } catch (e) {
     console.error(e);
-    setStatus("❌ AudioEngine init failed");
-    return;
   }
 
+  // analyser
   analyser = engine.ctx.createAnalyser();
   analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.82;
+  analyser.smoothingTimeConstant = 0.85;
 
   dataFreq = new Uint8Array(analyser.frequencyBinCount);
-  dataTime = new Uint8Array(analyser.fftSize);
 
+  // routing
   inputGain = engine.ctx.createGain();
   inputGain.gain.value = 1;
 
@@ -598,43 +600,45 @@ async function initEngine() {
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
 
-  // your AudioEngine connects master to destination
+  // engine.master exists in your AudioEngine and is connected to destination already
   monitorGain.connect(engine.master);
+
+  // recording tap (audio)
+  recordDest = engine.ctx.createMediaStreamDestination();
+  try {
+    engine.master.connect(recordDest);
+  } catch (e) {
+    // if master already connected or not connectable, ignore
+  }
 
   overlay.style.display = "none";
   setStatus("✅ Engine ready (Demo / File / Mic)");
+
   if (!raf) loop();
 }
 
-overlay.onclick = initEngine;
+overlay.onclick = async () => {
+  await initEngine();
+  try { await engine.resume(); } catch {}
+};
 
 /* ================= CLEAN STOP ================= */
 
 async function stopAll({ suspend = true } = {}) {
   if (bufferSrc) {
-    try {
-      bufferSrc.onended = null;
-    } catch {}
-    try {
-      bufferSrc.stop(0);
-    } catch {}
-    try {
-      bufferSrc.disconnect();
-    } catch {}
+    try { bufferSrc.onended = null; } catch {}
+    try { bufferSrc.stop(0); } catch {}
+    try { bufferSrc.disconnect(); } catch {}
     bufferSrc = null;
   }
 
   if (micSourceNode) {
-    try {
-      micSourceNode.disconnect();
-    } catch {}
+    try { micSourceNode.disconnect(); } catch {}
     micSourceNode = null;
   }
 
   if (micStream) {
-    try {
-      micStream.getTracks().forEach((t) => t.stop());
-    } catch {}
+    try { micStream.getTracks().forEach(t => t.stop()); } catch {}
     micStream = null;
   }
 
@@ -646,10 +650,8 @@ async function stopAll({ suspend = true } = {}) {
 
   if (monitorGain) monitorGain.gain.value = 0;
 
-  if (suspend && engine?.ctx?.state === "running") {
-    try {
-      await engine.ctx.suspend();
-    } catch {}
+  if (suspend) {
+    try { await engine.ctx.suspend(); } catch {}
   }
 }
 
@@ -661,7 +663,7 @@ async function playDemo(path) {
 
   setStatus("⏳ Loading demo…");
 
-  const buf = await fetch(path).then((r) => r.arrayBuffer());
+  const buf = await fetch(path).then(r => r.arrayBuffer());
   const audio = await engine.ctx.decodeAudioData(buf);
 
   await engine.resume();
@@ -743,210 +745,268 @@ micBtn?.addEventListener("click", async () => {
     await stopAll({ suspend: false });
 
     await engine.resume();
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: false,
-      },
-    });
-
-    micStream = stream;
-    micSourceNode = engine.ctx.createMediaStreamSource(stream);
-    micSourceNode.connect(inputGain);
-
     currentMode = "mic";
     micBtn.textContent = "⏹ Stop Microphone";
 
+    setStatus("🎙️ Requesting mic…");
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+
+    micSourceNode = engine.ctx.createMediaStreamSource(micStream);
+    micSourceNode.connect(inputGain);
+
+    // feedback guard: if mic monitor ON, keep it low and allow user to toggle
     feedbackMuted = false;
     feedbackWarnEl.style.display = "none";
-
     applyMicMonitorGain();
+
     setStatus("🎙️ Mic running");
   } catch (err) {
     console.error(err);
-    setStatus("❌ Mic permission / start failed");
+    setStatus("❌ Mic error / permission denied");
+    await stopAll({ suspend: true });
   }
+});
+
+/* ================= RECORDING (Canvas + Audio) ================= */
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+
+function pickMimeType() {
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm"
+  ];
+  for (const m of candidates) {
+    if (MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return "";
+}
+
+async function startRecording() {
+  await initEngine();
+  autoCloseEngineForRecording();
+
+  const fps = 60;
+  const canvasStream = canvas.captureStream?.(fps);
+  if (!canvasStream) {
+    setStatus("❌ Recording not supported (no canvas captureStream)");
+    return;
+  }
+
+  const tracks = [...canvasStream.getVideoTracks()];
+  if (recordDest?.stream) {
+    const audioTracks = recordDest.stream.getAudioTracks();
+    tracks.push(...audioTracks);
+  }
+
+  const mixed = new MediaStream(tracks);
+  recordedChunks = [];
+
+  const mimeType = pickMimeType();
+  try {
+    mediaRecorder = new MediaRecorder(mixed, mimeType ? { mimeType } : undefined);
+  } catch (e) {
+    console.error(e);
+    setStatus("❌ MediaRecorder failed");
+    return;
+  }
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sonic-inclusion-${Date.now()}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setStatus("✅ Recording saved (.webm)");
+  };
+
+  mediaRecorder.start(250);
+  isRecording = true;
+
+  recBtn.setAttribute("aria-pressed", "true");
+  recBtn.textContent = "⏹ STOP";
+  setStatus("⏺ Recording…");
+}
+
+function stopRecording() {
+  if (!mediaRecorder || !isRecording) return;
+  try { mediaRecorder.stop(); } catch {}
+  isRecording = false;
+
+  recBtn.setAttribute("aria-pressed", "false");
+  recBtn.textContent = "⏺ RECORD";
+}
+
+recBtn.addEventListener("click", async () => {
+  if (!isRecording) await startRecording();
+  else stopRecording();
 });
 
 /* ================= KEYBOARD SHORTCUTS ================= */
 
-window.addEventListener("keydown", (e) => {
-  if (e.key === " " || e.code === "Space") {
+window.addEventListener("keydown", async (e) => {
+  if (e.key === "Escape") setEngineOpen(false);
+
+  if (e.code === "Space") {
     e.preventDefault();
-    if (engine?.ctx?.state !== "running") {
-      initEngine().then(() => engine.resume());
-      setStatus("▶️ Engine resumed");
+    // toggle pause/resume for file/demo (mic stays running)
+    if (!engine?.ctx) return;
+    if (engine.ctx.state === "running") {
+      await engine.ctx.suspend();
+      setStatus("⏸ Paused");
     } else {
-      stopAll({ suspend: true });
-      setStatus("⏸️ Engine suspended");
+      await engine.resume();
+      setStatus("▶️ Playing");
     }
   }
+
   if (e.key.toLowerCase() === "m") micBtn?.click();
   if (e.key.toLowerCase() === "f") fileBtn?.click();
   if (e.key.toLowerCase() === "d") demoBtn?.click();
-  if (e.key === "Escape") setEngineOpen(false);
 });
 
-/* ================= HELPERS: PALETTE MODE ================= */
-
-function getPaletteMode() {
-  // matches your HTML select values: hue / energy / grayscale
-  return palette?.value || "hue";
-}
-
-function clamp01(x) {
-  return Math.max(0, Math.min(1, x));
-}
-
-/* ================= AUDIO FEATURE EXTRACTION ================= */
-
-// Frequency bin helper
-function freqToIndex(freqHz) {
-  const nyquist = engine.ctx.sampleRate / 2;
-  const idx = Math.round((freqHz / nyquist) * (dataFreq.length - 1));
-  return Math.max(0, Math.min(dataFreq.length - 1, idx));
-}
-
-function avgRange(fromHz, toHz) {
-  const a = freqToIndex(fromHz);
-  const b = freqToIndex(toHz);
-  let sum = 0;
-  let n = 0;
-  for (let i = a; i <= b; i++) {
-    sum += dataFreq[i];
-    n++;
-  }
-  return n ? sum / (n * 255) : 0;
-}
-
-// Envelope for punch (attack/release)
-let env = 0;
-function punchEnvelope(target, dt) {
-  const attack = 0.020;
-  const release = 0.160;
-  const k = target > env ? 1 - Math.exp(-dt / attack) : 1 - Math.exp(-dt / release);
-  env = env + (target - env) * k;
-  return env;
-}
-
-/* ================= RENDER LOOP ================= */
-
-let lastT = performance.now();
+/* ================= MAIN LOOP ================= */
 
 function loop() {
   raf = requestAnimationFrame(loop);
-  if (!renderer || !scene || !camera || !analyser) return;
 
-  // Update analyser
-  analyser.getByteFrequencyData(dataFreq);
-  analyser.getByteTimeDomainData(dataTime);
+  if (!renderer || !scene || !camera) return;
 
-  const t = performance.now();
-  const dt = Math.min(0.05, (t - lastT) / 1000);
-  lastT = t;
+  // if audio not ready, still render slowly
+  if (analyser && dataFreq) {
+    analyser.getByteFrequencyData(dataFreq);
 
-  // sensitivity
-  const S = clamp01(((parseFloat(sens?.value || "1") - 0.2) / (3 - 0.2)) * 1.4 + 0.2);
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - t0) / 1000);
+    t0 = now;
 
-  // audio bands
-  const bass = avgRange(35, 140);       // kick/body
-  const lowMid = avgRange(140, 380);
-  const snap = avgRange(1500, 4200);    // snare snap / presence
-  const air = avgRange(6000, 12000);
+    const s = parseFloat(sens?.value || "1"); // sensitivity slider
 
-  // punch target: bass + snap
-  const punchK = (parseFloat(punchEl?.value || "85") / 100);
-  const hitTarget = clamp01((bass * 1.3 + snap * 1.6) * (0.9 + 1.2 * punchK) * (0.75 + 0.55 * S));
-  const hit = punchEnvelope(hitTarget, dt);
+    // bands: bass + snare snap
+    const bass = bandEnergyHz(dataFreq, engine.ctx.sampleRate, analyser.fftSize, 35, 140);
+    const snap = bandEnergyHz(dataFreq, engine.ctx.sampleRate, analyser.fftSize, 1800, 5200);
 
-  // star intensity
-  const part = parseFloat(partEl?.value || "10");
-  if (starPoints?.material) {
-    const m = starPoints.material;
-    m.opacity = 0.12 + clamp01(part / 30) * 0.40 + hit * 0.25;
-    m.size = 0.05 + hit * 0.05;
-  }
+    // envelope: bass slow breath
+    const bassTarget = clamp01(bass * (0.9 + 0.6 * s));
+    bassEnv += (bassTarget - bassEnv) * (1 - Math.pow(0.001, dt));
 
-  // sphere motion
-  if (sphere) {
-    const zoomK = parseFloat(zoomEl?.value || "35") / 100;
-    const z = 16 - bass * (2.2 + 4.5 * zoomK);
-    camera.position.z = reducedMotion ? 16 : z;
+    // transient: snap difference
+    const snapDiff = Math.max(0, (snap - snapPrev) * (1.8 + 1.2 * s));
+    snapPrev = snap * 0.6 + snapPrev * 0.4;
 
-    sphere.rotation.y += reducedMotion ? 0 : (0.08 + hit * 0.12) * dt;
-    sphere.rotation.x += reducedMotion ? 0 : (0.05 + hit * 0.10) * dt;
+    // fast attack/decay
+    const snapAttack = 1 - Math.pow(0.000001, dt);
+    const snapDecay  = 1 - Math.pow(0.04, dt);
 
-    // sphere glow slight
-    sphere.material.opacity = 0.12 + hit * 0.10;
-  }
+    snapEnv = Math.max(snapEnv * (1 - snapDecay), snapDiff);
+    snapEnv += (snapEnv < snapDiff ? (snapDiff - snapEnv) * snapAttack : 0);
 
-  // SIGIL: ALWAYS visible + glow stronger
-  if (sigilGroup && sigilBaseMesh && sigilGlowMesh) {
-    const glowK = parseFloat(glowEl?.value || "75") / 100;
+    bassEnv = clamp01(bassEnv);
+    snapEnv = clamp01(snapEnv);
 
-    // base opacity stable (never disappears)
-    sigilBaseMesh.material.opacity = 0.72 + hit * 0.20;
+    // palette mode hook (optional)
+    const pal = palette?.value || "hue";
 
-    // scale pulse (ritual punch)
-    const baseScale = 1.0 + hit * (0.08 + 0.12 * punchK);
-    sigilGroup.scale.set(baseScale, baseScale, 1);
+    // STARS: subtle drift + tiny twinkle (NOT audio)
+    if (starPoints) {
+      starPoints.rotation.y += dt * 0.03;
+      starPoints.rotation.x += dt * 0.012;
 
-    // slight wobble
-    if (!reducedMotion) {
-      sigilGroup.rotation.z = Math.sin(t * 0.0012) * 0.08 + hit * 0.10;
+      const m = starPoints.material;
+      const tw = 0.02 * Math.sin(now * 0.0012);
+      const partAmt = parseFloat(partEl?.value || "10"); // 0..30
+      m.opacity = (0.16 + tw) * (0.6 + partAmt / 30);
+      m.size = 0.055;
     }
 
-    // hue / palette
-    const hueBase = (parseFloat(hueEl?.value || "285") % 360) / 360;
-    const mode = getPaletteMode();
+    // SPHERE: breath by bass
+    if (sphere) {
+      const zoom = parseFloat(zoomEl?.value || "25") / 100;
+      const b = bassEnv;
 
-    let hue = hueBase;
-    if (mode === "energy") {
-      const e = clamp01((bass * 0.8 + lowMid * 0.6 + air * 0.4) / 1.8);
-      hue = (hueBase + e * 0.25) % 1;
-    } else if (mode === "grayscale") {
-      // grayscale: keep glow cool-white, base white-ish
-      sigilGlowMesh.material.color.setRGB(1, 1, 1);
-      sigilBaseMesh.material.color?.setRGB?.(1, 1, 1);
-    } else {
-      // hue mode
-      // push towards cyan/purple with snap energy
-      hue = (hueBase + snap * 0.18) % 1;
+      sphere.rotation.y += dt * (reducedMotion ? 0.06 : 0.18);
+      sphere.rotation.x += dt * (reducedMotion ? 0.03 : 0.10);
+
+      const targetOpacity = 0.10 + b * (0.18 + 0.22 * zoom);
+      sphere.material.opacity += (targetOpacity - sphere.material.opacity) * 0.12;
+
+      const scale = 1 + b * (0.05 + 0.12 * zoom);
+      sphere.scale.setScalar(scale);
+
+      // color shift a little with hue
+      const hueBase = (parseFloat(hueEl?.value || "280") % 360) / 360;
+      const c = new THREE.Color().setHSL(hueBase, 0.85, 0.55);
+      sphere.material.color.copy(c);
     }
 
-    if (mode !== "grayscale") {
-      // cyan/purple glow coloring
-      const c = new THREE.Color().setHSL(hue, 0.95, 0.55);
-      sigilGlowMesh.material.color.copy(c);
-      // slightly tint base too (subtle, keeps visibility)
-      const baseC = new THREE.Color().setHSL(hue, 0.55, 0.65);
-      sigilBaseMesh.material.color.copy(baseC);
-    }
+    // SIGIL: base stable + glow flash on snap + breath on bass
+    if (sigilGroup && sigilGlowMesh && sigilBaseMesh) {
+      const flash = snapEnv;
+      const breath = bassEnv;
 
-    // glow intensity (additive)
-    sigilGlowMesh.material.opacity = 0.35 + glowK * 0.65 + hit * (0.55 + glowK * 0.45);
-    sigilGlowMesh.scale.set(1.10 + hit * (0.08 + glowK * 0.10), 1.10 + hit * (0.08 + glowK * 0.10), 1);
+      // base stays neutral
+      sigilBaseMesh.material.opacity = 0.90;
+      sigilBaseMesh.material.color.set(0xf2f2f7);
 
-    // feedback guard (if mic monitor ON and energy high, mute)
-    if (currentMode === "mic" && micMonitor) {
-      const total = clamp01((bass + lowMid + snap) / 2.4);
-      if (total > 0.85 && !feedbackMuted) {
-        feedbackMuted = true;
-        feedbackWarnEl.style.display = "block";
-        applyMicMonitorGain();
+      // hue: cyan/purple blend
+      const hueBase = (parseFloat(hueEl?.value || "280") % 360) / 360;
+      const hue = (hueBase + flash * 0.08) % 1;
+
+      let glowColor = new THREE.Color().setHSL(hue, 0.95, 0.58);
+
+      // allow "grayscale" mode
+      if (pal === "grayscale") {
+        glowColor = new THREE.Color(0xffffff);
       }
-      if (feedbackMuted && total < 0.55) {
-        feedbackMuted = false;
-        feedbackWarnEl.style.display = "none";
-        applyMicMonitorGain();
-      }
+
+      sigilGlowMesh.material.color.copy(glowColor);
+
+      // more punch + more glow
+      sigilGlowMesh.material.opacity = 0.14 + breath * 0.38 + flash * 0.85;
+
+      const pulse = 1.22 + breath * 0.10 + flash * 0.14;
+      sigilGlowMesh.scale.set(pulse, pulse, 1);
+
+      // group hit
+      const hitScale = 1 + flash * 0.035 + breath * 0.012;
+      sigilGroup.scale.set(hitScale, hitScale, 1);
+
+      sigilGroup.rotation.z += dt * (reducedMotion ? 0.02 : (0.04 + flash * 0.10));
     }
+  } else {
+    // fallback drift
+    if (starPoints) {
+      starPoints.rotation.y += 0.002;
+      starPoints.rotation.x += 0.0008;
+    }
+    if (sphere) sphere.rotation.y += 0.003;
   }
 
   renderer.render(scene, camera);
 }
 
-/* ================= START STATUS ================= */
+/* ================= START STATE ================= */
+
 setStatus("Visualization idle. Click to initialize.");
+applyMicMonitorGain();
