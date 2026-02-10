@@ -7,8 +7,6 @@ import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postpro
 import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { ShaderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js";
 import { FXAAShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/FXAAShader.js";
-
-// Performance Art Postprocessing
 import { GlitchPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/GlitchPass.js";
 import { RGBShiftShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/RGBShiftShader.js";
 
@@ -16,7 +14,6 @@ import { RGBShiftShader } from "https://unpkg.com/three@0.160.0/examples/jsm/sha
 
 const canvas = document.getElementById("viz");
 const stageEl = canvas.closest(".stage");
-
 const srText = document.getElementById("srText");
 const sens = document.getElementById("sens");
 const palette = document.getElementById("palette");
@@ -26,7 +23,6 @@ const fileBtn = document.getElementById("fileBtn");
 const demoBtn = document.getElementById("demoBtn");
 const fileInput = document.getElementById("fileInput");
 
-// Custom Sigil Input (Created dynamically)
 const sigilInput = document.createElement("input");
 sigilInput.type = "file";
 sigilInput.accept = "image/png, image/jpeg, image/svg+xml";
@@ -49,33 +45,12 @@ overlay.style.cssText = `
   position:fixed; inset:0; z-index:3000;
   display:flex; align-items:center; justify-content:center;
   padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
-  background: rgba(0,0,0,0.92);
-  cursor:pointer;
+  background: rgba(0,0,0,0.92); cursor:pointer;
 `;
 overlay.innerHTML = `
-  <div style="
-    width: min(92vw, 560px);
-    text-align:center;
-    color:white;
-    font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-    background: rgba(5,5,5,0.94);
-    padding: clamp(22px, 6vw, 56px);
-    border-radius: 22px;
-    border: 1px solid rgba(0,212,255,0.55);
-    box-shadow: 0 0 70px rgba(0,212,255,.22);
-  ">
-    <h1 style="
-      margin:0 0 12px;
-      letter-spacing: clamp(6px, 2.6vw, 14px);
-      font-size: clamp(22px, 6.5vw, 44px);
-      line-height: 1.05;
-    ">SONIC<br/>INCLUSION</h1>
-    <p style="
-      margin:0;
-      opacity:.65;
-      letter-spacing: clamp(2px, 1.2vw, 6px);
-      font-size: clamp(11px, 3.2vw, 14px);
-    ">CLICK TO INITIALIZE</p>
+  <div style="width: min(92vw, 560px); text-align:center; color:white; font-family:system-ui, -apple-system, sans-serif; background: rgba(5,5,5,0.94); padding: clamp(22px, 6vw, 56px); border-radius: 22px; border: 1px solid rgba(0,212,255,0.55); box-shadow: 0 0 70px rgba(0,212,255,.22);">
+    <h1 style="margin:0 0 12px; letter-spacing: clamp(6px, 2.6vw, 14px); font-size: clamp(22px, 6.5vw, 44px); line-height: 1.05;">SONIC<br/>INCLUSION</h1>
+    <p style="margin:0; opacity:.65; letter-spacing: clamp(2px, 1.2vw, 6px); font-size: clamp(11px, 3.2vw, 14px);">CLICK TO INITIALIZE</p>
   </div>
 `;
 document.body.appendChild(overlay);
@@ -83,134 +58,75 @@ document.body.appendChild(overlay);
 /* ================= ENGINE (AUDIO) ================= */
 
 const engine = new AudioEngine();
-let raf = null;
-let analyser = null;
-let dataFreq = null;
-let inputGain = null;
-let monitorGain = null;
-let currentMode = "idle";
-let bufferSrc = null;
-let micStream = null;
-let micSourceNode = null;
+let raf = null; let analyser = null; let dataFreq = null;
+let inputGain = null; let monitorGain = null;
+let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
 
 /* ================= THREE STATE ================= */
 
-let renderer = null;
-let scene = null;
-let camera = null;
-let composer = null;
-let bloomPass = null;
-let fxaaPass = null;
+let renderer = null; let scene = null; let camera = null; let composer = null;
+let bloomPass = null; let fxaaPass = null; let world = null; let starPoints = null;  
+let morphMesh = null; let coreLight = null; let rgbShiftPass = null; let glitchPass = null;      
+let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 
-let world = null;       
-let starPoints = null;  
-let morphMesh = null;
+let sigilGroup = null; let sigilBase = null; let sigilGlow = null;
+let sigilBaseBack = null; let sigilGlowBack = null; 
+let sigilBaseTex = null; let sigilGlowTex = null;
 
-let coreLight = null;       
-let rgbShiftPass = null;    
-let glitchPass = null;      
-let sparkPool = [];         
-let sparkCursor = 0;
-let baseFov = 55;           
+let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
-let sigilGroup = null;
-let sigilBase = null;
-let sigilGlow = null;
-let sigilBaseTex = null;
-let sigilGlowTex = null;
+let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
-let ringPool = [];
-let ringCursor = 0;
-let ghostPool = [];
-let ghostCursor = 0;
+// --- NEW STATE: VJ Director & Fluid Nebula ---
+let currentCameraMode = 0; // 0: Front, 1: Inside, 2: Top Orbit, 3: Close-up
+const camTargetPos = new THREE.Vector3();
+const camTargetLook = new THREE.Vector3();
 
-let reducedMotion = false;
-let micMonitor = false;
-let micMonitorVol = 0.35;
-let feedbackMuted = false;
+let nebulaMaterial = null;
 
 function applyMicMonitorGain() {
   if (!monitorGain) return;
-  const want = currentMode === "mic" && micMonitor && !feedbackMuted ? micMonitorVol : 0;
-  monitorGain.gain.value = want;
+  monitorGain.gain.value = currentMode === "mic" && micMonitor && !feedbackMuted ? micMonitorVol : 0;
 }
 
 /* ================= HUD & ENGINE PANEL ================= */
 
-function removeLegacyUI() {
-  document.getElementById("si-hud")?.remove();
-  document.getElementById("si-enginePanel")?.remove();
-}
+function removeLegacyUI() { document.getElementById("si-hud")?.remove(); document.getElementById("si-enginePanel")?.remove(); }
 removeLegacyUI();
 
 const hud = document.createElement("div");
 hud.id = "si-hud";
-hud.style.cssText = `
-  position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
-  z-index: 2000; display: flex; gap: 12px; align-items: center; justify-content: space-between;
-  box-sizing: border-box; max-width: 980px; margin: 0 auto;
-`;
+hud.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 2000; display: flex; gap: 12px; align-items: center; justify-content: space-between; pointer-events: none; box-sizing: border-box; max-width: 980px; margin: 0 auto;`;
 
 const recBtn = document.createElement("button");
-recBtn.id = "si-recBtn";
-recBtn.type = "button";
-recBtn.textContent = "⏺ RECORD";
-recBtn.style.cssText = `
-  background: #ff2b5a; color: #111; border: 1px solid rgba(255,255,255,0.15);
-  padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 0.5px;
-  box-shadow: 0 12px 30px rgba(255,43,90,0.25); cursor: pointer;
-`;
+recBtn.id = "si-recBtn"; recBtn.type = "button"; recBtn.textContent = "⏺ RECORD";
+recBtn.style.cssText = `pointer-events: auto; background: #ff2b5a; color: #111; border: 1px solid rgba(255,255,255,0.15); padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 0.5px; box-shadow: 0 12px 30px rgba(255,43,90,0.25); display: inline-flex; align-items: center; gap: 10px; cursor: pointer;`;
 
 const hudRightControls = document.createElement("div");
-hudRightControls.style.cssText = "display: flex; gap: 10px;";
+hudRightControls.style.cssText = "display: flex; gap: 10px; pointer-events: auto;";
 
 const fsBtn = document.createElement("button");
-fsBtn.type = "button";
-fsBtn.textContent = "📺 PROJECTION";
-fsBtn.style.cssText = `
-  background: rgba(10,10,10,0.85); color: #fff; border: 1px solid rgba(255,255,255,0.3);
-  padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 1px; cursor: pointer;
-`;
+fsBtn.type = "button"; fsBtn.textContent = "📺 PROJECTION";
+fsBtn.style.cssText = `background: rgba(10,10,10,0.85); color: #fff; border: 1px solid rgba(255,255,255,0.3); padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 1px; cursor: pointer;`;
 
 const engineToggle = document.createElement("button");
-engineToggle.id = "si-engineToggle";
-engineToggle.type = "button";
-engineToggle.textContent = "⚙️ ENGINE";
-engineToggle.style.cssText = `
-  background: rgba(10,10,10,0.85); color: #8feaff; border: 1px solid rgba(0,212,255,0.65);
-  padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 2px;
-  box-shadow: 0 0 0 1px rgba(0,212,255,0.15), 0 16px 40px rgba(0,212,255,0.12); cursor: pointer;
-`;
+engineToggle.id = "si-engineToggle"; engineToggle.type = "button"; engineToggle.textContent = "⚙️ ENGINE";
+engineToggle.style.cssText = `background: rgba(10,10,10,0.85); color: #8feaff; border: 1px solid rgba(0,212,255,0.65); padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 2px; box-shadow: 0 0 0 1px rgba(0,212,255,0.15), 0 16px 40px rgba(0,212,255,0.12); cursor: pointer;`;
 
-hudRightControls.appendChild(fsBtn);
-hudRightControls.appendChild(engineToggle);
-hud.appendChild(recBtn);
-hud.appendChild(hudRightControls);
-document.body.appendChild(hud);
+hudRightControls.appendChild(fsBtn); hudRightControls.appendChild(engineToggle);
+hud.appendChild(recBtn); hud.appendChild(hudRightControls); document.body.appendChild(hud);
 
 const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
-enginePanel.style.cssText = `
-  position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom));
-  z-index: 2001; max-width: 980px; margin: 0 auto; background: rgba(10,10,10,0.92);
-  border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px 14px 12px; color: #fff;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box;
-`;
+enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: 980px; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box;`;
 
 enginePanel.innerHTML = `
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
     <div style="display:flex; align-items:center; gap:10px;">
-      <div style="width:36px; height:36px; border-radius:12px; border:1px solid rgba(0,212,255,0.5);
-                  display:flex; align-items:center; justify-content:center; color:#8feaff;">⚙️</div>
-      <div>
-        <div style="font-weight:900; letter-spacing:3px; color:#8feaff;">ENGINE</div>
-        <div style="font-size:12px; opacity:0.65;">Swipe down to close</div>
-      </div>
+      <div style="width:36px; height:36px; border-radius:12px; border:1px solid rgba(0,212,255,0.5); display:flex; align-items:center; justify-content:center; color:#8feaff;">⚙️</div>
+      <div><div style="font-weight:900; letter-spacing:3px; color:#8feaff;">ENGINE</div><div style="font-size:12px; opacity:0.65;">Swipe down to close</div></div>
     </div>
-    <button id="si-engineClose" type="button" style="
-      background: transparent; border: 1px solid rgba(255,255,255,0.18); color: #fff; border-radius: 12px; padding: 8px 10px; cursor: pointer; font-weight: 900;
-    ">✕</button>
+    <button id="si-engineClose" type="button" style="background: transparent; border: 1px solid rgba(255,255,255,0.18); color: #fff; border-radius: 12px; padding: 8px 10px; cursor: pointer; font-weight: 900;">✕</button>
   </div>
   <div style="display:grid; gap:10px;">
     <div style="display:grid; gap:8px; padding:10px; border:1px solid rgba(255,255,255,0.10); border-radius:14px;">
@@ -221,345 +137,293 @@ enginePanel.innerHTML = `
         <button id="chapAsc" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">ASCENSION</button>
       </div>
     </div>
-    <button id="customSigilBtn" type="button" style="background: rgba(124,77,255,0.2); border: 1px solid rgba(124,77,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">Upload Custom Sigil</button>
+    <div style="display:flex; gap:10px;">
+        <button id="customSigilBtn" type="button" style="flex:1; background: rgba(124,77,255,0.2); border: 1px solid rgba(124,77,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">Upload Sigil</button>
+        <div style="flex:1; font-size:11px; color:#aaa; text-align:center; display:flex; flex-direction:column; justify-content:center; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;">
+            <b>PRESETS</b> Save: Shift+1..4 | Load: 1..4
+        </div>
+    </div>
     <label style="font-size:12px; opacity:0.8;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;"></label>
     <label style="font-size:12px; opacity:0.8;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; margin-top:6px;"></label>
     <label style="font-size:12px; opacity:0.8;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; margin-top:6px;"></label>
+    <label style="font-size:12px; display:flex; align-items:center; gap:10px;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
+    <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.12);">
+      <label style="font-size:12px; display:flex; align-items:center; gap:10px;"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
+      <label style="font-size:12px; opacity:0.8; display:block; margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; margin-top:6px;"></label>
+      <div id="feedbackWarn" style="display:none; margin-top:10px; font-size:12px; color:#ff2b5a; font-weight:900;">🔇 Feedback risk detected — mic monitor muted</div>
+    </div>
     <div id="midiStatus" style="font-size:11px; color:#8feaff; text-align:center; padding: 4px; border-top: 1px solid rgba(255,255,255,0.1);">🎹 MIDI: Waiting for connection...</div>
   </div>
 `;
 document.body.appendChild(enginePanel);
 
 let engineOpen = false;
-function setEngineOpen(open) {
-  engineOpen = open;
-  enginePanel.style.display = open ? "block" : "none";
-}
+function setEngineOpen(open) { engineOpen = open; enginePanel.style.display = open ? "block" : "none"; }
 engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
 enginePanel.querySelector("#si-engineClose").addEventListener("click", () => setEngineOpen(false));
 
-const partEl = enginePanel.querySelector("#partAmount");
-const zoomEl = enginePanel.querySelector("#zoomInt");
-const hueEl  = enginePanel.querySelector("#hueShift");
+const partEl = enginePanel.querySelector("#partAmount"); const zoomEl = enginePanel.querySelector("#zoomInt"); const hueEl  = enginePanel.querySelector("#hueShift");
 const midiStatusEl = enginePanel.querySelector("#midiStatus");
 
+enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
+const micMonitorEl = enginePanel.querySelector("#micMonitor"); const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol"); const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
+micMonitorEl.checked = micMonitor; micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
+micMonitorEl.addEventListener("change", (e) => { micMonitor = !!e.target.checked; feedbackMuted = false; feedbackWarnEl.style.display = "none"; applyMicMonitorGain(); setStatus(micMonitor ? "🎙️ Mic monitor ON" : "🎙️ Mic monitor OFF"); });
+micMonitorVolEl.addEventListener("input", (e) => { micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100)); applyMicMonitorGain(); });
+
 /* ================= FULLSCREEN & UI TOGGLE ================= */
-
 let isFullscreen = false;
-
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(err => {
-      console.warn(`Error attempting to enable fullscreen: ${err.message}`);
-    });
-    // Hide all UI panels for clean projection
-    document.querySelector('.controls').style.display = 'none';
-    document.querySelector('.site-header').style.display = 'none';
-    document.querySelector('.site-footer').style.display = 'none';
-    hud.style.display = 'none';
-    enginePanel.style.display = 'none';
-    canvas.closest(".stage").style.height = "100vh";
-    canvas.closest(".stage").style.border = "none";
-    canvas.closest(".stage").style.borderRadius = "0";
-    document.body.style.overflow = "hidden";
-    isFullscreen = true;
-    setStatus("📺 Entered projection mode");
-  } else {
-    document.exitFullscreen();
-    resetUI();
-  }
+    document.documentElement.requestFullscreen().catch(err => { console.warn(`Error: ${err.message}`); });
+    document.querySelector('.controls').style.display = 'none'; document.querySelector('.site-header').style.display = 'none'; document.querySelector('.site-footer').style.display = 'none';
+    hud.style.display = 'none'; enginePanel.style.display = 'none';
+    canvas.closest(".stage").style.height = "100vh"; canvas.closest(".stage").style.border = "none"; canvas.closest(".stage").style.borderRadius = "0";
+    document.body.style.overflow = "hidden"; isFullscreen = true; setStatus("📺 Entered projection mode");
+  } else { document.exitFullscreen(); resetUI(); }
 }
-
 function resetUI() {
-  document.querySelector('.controls').style.display = 'grid';
-  document.querySelector('.site-header').style.display = 'block';
-  document.querySelector('.site-footer').style.display = 'block';
-  hud.style.display = 'flex';
-  canvas.closest(".stage").style.height = "min(62vh, 720px)";
-  canvas.closest(".stage").style.border = "1px solid rgba(255,255,255,.08)";
-  canvas.closest(".stage").style.borderRadius = "22px";
-  document.body.style.overflow = "auto";
-  isFullscreen = false;
-  fitRendererToStage();
+  document.querySelector('.controls').style.display = 'grid'; document.querySelector('.site-header').style.display = 'block'; document.querySelector('.site-footer').style.display = 'block';
+  hud.style.display = 'flex'; canvas.closest(".stage").style.height = "min(62vh, 720px)"; canvas.closest(".stage").style.border = "1px solid rgba(255,255,255,.08)"; canvas.closest(".stage").style.borderRadius = "22px";
+  document.body.style.overflow = "auto"; isFullscreen = false; fitRendererToStage();
 }
-
 fsBtn.addEventListener("click", toggleFullscreen);
-document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement) resetUI();
-  setTimeout(fitRendererToStage, 100); // Recalculate aspect ratio
-});
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) resetUI(); setTimeout(fitRendererToStage, 100); });
 
 /* ================= CUSTOM SIGIL UPLOAD ================= */
-
 enginePanel.querySelector("#customSigilBtn").addEventListener("click", () => sigilInput.click());
-
 sigilInput.addEventListener("change", (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const url = URL.createObjectURL(file);
-  loadSigilLayers(url, true);
-  setStatus("✅ Custom sigil loaded");
+  const file = e.target.files?.[0]; if (!file) return;
+  const url = URL.createObjectURL(file); loadSigilLayers(url, true); setStatus("✅ Custom sigil loaded");
 });
 
-/* ================= MIDI INTEGRATION ================= */
-
-function initMIDI() {
-  if (navigator.requestMIDIAccess) {
-    navigator.requestMIDIAccess().then(onMIDISuccess, onMIDIFailure);
-  } else {
-    midiStatusEl.textContent = "🎹 MIDI: Not supported by browser.";
-  }
-}
-
-function onMIDISuccess(midiAccess) {
-  midiStatusEl.textContent = "🎹 MIDI: Connected & Active";
-  for (let input of midiAccess.inputs.values()) {
-    input.onmidimessage = getMIDIMessage;
-  }
-  midiAccess.onstatechange = (e) => {
-    if (e.port.state === 'connected') {
-        midiStatusEl.textContent = `🎹 MIDI: Connected (${e.port.name})`;
-        e.port.onmidimessage = getMIDIMessage;
-    }
-  };
-}
-
-function onMIDIFailure() {
-  midiStatusEl.textContent = "🎹 MIDI: Access Denied or Failed.";
-}
-
-function getMIDIMessage(message) {
-  const command = message.data[0];
-  const note = message.data[1];
-  const velocity = (message.data.length > 2) ? message.data[2] : 0; // 0-127
-
-  // Log to console so the artist knows what signals their controller sends
-  console.log(`MIDI Command: ${command}, Note/CC: ${note}, Value: ${velocity}`);
-
-  // Example Mapping: CC (Control Change) messages usually start with 176
-  if (command === 176) {
-    // Map CC 1 (Modulation Wheel on many keyboards) to Bass Zoom
-    if (note === 1) {
-      const scaledValue = Math.round((velocity / 127) * 100);
-      if(zoomEl) zoomEl.value = scaledValue;
-    }
-    // Add your own mappings here based on console logs!
-    // if (note === 2) { hueEl.value = ... }
-  }
-  
-  // Example Mapping: Note On (Drum pad or Key pressed)
-  if (command === 144 && velocity > 0) {
-     // You could trigger manual sparks, chapter changes, or glitches here
-     // if(note === 36) triggerRingPulse(1.0); 
-  }
-}
-
 /* ================= CHAPTER SYSTEM ================= */
-
 const CHAPTERS = {
   INVOCATION: { starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
   POSSESSION: { starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
   ASCENSION:  { starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
 };
-
-let chapter = "POSSESSION";
-let P = CHAPTERS[chapter];
-
+let chapter = "POSSESSION"; let P = CHAPTERS[chapter];
 function applyChapter(name) {
-  if (!CHAPTERS[name]) return;
-  chapter = name;
-  P = CHAPTERS[chapter];
-  if (bloomPass) {
-    bloomPass.strength = P.bloomStrength;
-    bloomPass.radius = P.bloomRadius;
-    bloomPass.threshold = P.bloomThreshold;
-  }
+  if (!CHAPTERS[name]) return; chapter = name; P = CHAPTERS[chapter];
+  if (bloomPass) { bloomPass.strength = P.bloomStrength; bloomPass.radius = P.bloomRadius; bloomPass.threshold = P.bloomThreshold; }
   setStatus(`🔮 Chapter: ${chapter}`);
 }
 enginePanel.querySelector("#chapInv").addEventListener("click", () => applyChapter("INVOCATION"));
 enginePanel.querySelector("#chapPos").addEventListener("click", () => applyChapter("POSSESSION"));
 enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapter("ASCENSION"));
 
-/* ================= RESIZE ================= */
+/* ================= PRESET SYSTEM ================= */
+function savePreset(slot) {
+    const data = {
+        sens: sens?.value, hue: hueEl?.value, zoom: zoomInt?.value,
+        stars: partEl?.value, palette: palette?.value, chapter: chapter
+    };
+    localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data));
+    setStatus(`💾 Preset ${slot} Saved`);
+}
+function loadPreset(slot) {
+    const saved = localStorage.getItem(`sonicPreset_${slot}`);
+    if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
+    const data = JSON.parse(saved);
+    if(sens) sens.value = data.sens;
+    if(hueEl) hueEl.value = data.hue;
+    if(zoomEl) zoomEl.value = data.zoom;
+    if(partEl) partEl.value = data.stars;
+    if(palette) palette.value = data.palette;
+    applyChapter(data.chapter);
+    setStatus(`📂 Preset ${slot} Loaded`);
+}
 
+/* ================= KEYBOARD MAPPING ================= */
+window.addEventListener("keydown", async (e) => {
+  if (e.key === "Escape") { setEngineOpen(false); if(isFullscreen) toggleFullscreen(); }
+  if (e.key.toLowerCase() === "p") toggleFullscreen();
+  
+  // VJ Camera Cuts
+  if (e.key.toLowerCase() === "c") {
+      currentCameraMode = (currentCameraMode + 1) % 4;
+      setStatus(`🎥 Camera Mode: ${currentCameraMode + 1}`);
+  }
+
+  // Preset Manager
+  if (["1", "2", "3", "4"].includes(e.key)) {
+      if (e.shiftKey) { savePreset(e.key); } else { loadPreset(e.key); }
+  }
+
+  if (e.key === " ") { e.preventDefault(); if (currentMode !== "idle") { await stopAll({ suspend: true }); setStatus("⏹ Stopped"); } }
+});
+
+/* ================= RESIZE ================= */
 function fitRendererToStage() {
   if (!renderer || !camera) return;
   const rect = (stageEl || canvas).getBoundingClientRect();
-  const w = Math.max(1, Math.floor(rect.width));
-  const h = Math.max(1, Math.floor(rect.height));
+  const w = Math.max(1, Math.floor(rect.width)); const h = Math.max(1, Math.floor(rect.height));
   const dpr = Math.max(1, Math.min(2.6, window.devicePixelRatio || 1));
-  renderer.setPixelRatio(dpr);
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  composer?.setSize(w, h);
+  renderer.setPixelRatio(dpr); renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix(); composer?.setSize(w, h);
   if (fxaaPass) fxaaPass.material.uniforms["resolution"].value.set(1 / (w * dpr), 1 / (h * dpr));
 }
-const ro = new ResizeObserver(() => fitRendererToStage());
-if (stageEl) ro.observe(stageEl);
-window.addEventListener("resize", fitRendererToStage);
+const ro = new ResizeObserver(() => fitRendererToStage()); if (stageEl) ro.observe(stageEl); window.addEventListener("resize", fitRendererToStage);
+
+
+/* ================= GLSL NEBULA (THE LIVING VOID) ================= */
+function initNebulaBackground() {
+    const geo = new THREE.PlaneGeometry(500, 500);
+    
+    // Custom Shader for deep space fluid smoke
+    nebulaMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0 },
+            bass: { value: 0 },
+            color1: { value: new THREE.Color(0x0a001a) }, // Deep purple
+            color2: { value: new THREE.Color(0x002233) }  // Deep blue
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            uniform float bass;
+            uniform vec3 color1;
+            uniform vec3 color2;
+            varying vec2 vUv;
+
+            // Simple noise function
+            float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
+            float noise(vec2 st) {
+                vec2 i = floor(st); vec2 f = fract(st);
+                float a = random(i); float b = random(i + vec2(1.0, 0.0));
+                float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
+                vec2 u = f * f * (3.0 - 2.0 * f);
+                return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+            }
+            float fbm(vec2 st) {
+                float v = 0.0; float a = 0.5;
+                for (int i = 0; i < 4; i++) { v += a * noise(st); st *= 2.0; a *= 0.5; }
+                return v;
+            }
+
+            void main() {
+                vec2 st = vUv * 3.0;
+                vec2 q = vec2(0.);
+                q.x = fbm( st + 0.00 * time);
+                q.y = fbm( st + vec2(1.0));
+                vec2 r = vec2(0.);
+                r.x = fbm( st + 1.0*q + vec2(1.7,9.2)+ 0.15*time );
+                r.y = fbm( st + 1.0*q + vec2(8.3,2.8)+ 0.126*time);
+                float f = fbm(st+r);
+                
+                vec3 finalColor = mix(color1, color2, clamp(f*f*4.0,0.0,1.0));
+                finalColor += (bass * 0.4) * color2 * f; // Brightens on bass
+                gl_FragColor = vec4((f*f*f+.6*f*f+.5*f)*finalColor, 1.0);
+            }
+        `,
+        depthWrite: false
+    });
+
+    const mesh = new THREE.Mesh(geo, nebulaMaterial);
+    mesh.position.z = -100; // Place way back
+    scene.add(mesh);
+}
+
 
 /* ================= THREE INIT ================= */
-
 function initThree() {
   if (renderer) return;
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
-  renderer.setClearColor(0x000000, 1);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x000000, 1); renderer.outputColorSpace = THREE.SRGBColorSpace;
+  scene = new THREE.Scene(); scene.add(new THREE.AmbientLight(0xffffff, 0.4)); 
 
-  scene = new THREE.Scene();
-  scene.add(new THREE.AmbientLight(0xffffff, 0.4)); 
+  camera = new THREE.PerspectiveCamera(baseFov, 1, 0.1, 260); camera.position.set(0, 0, 18);
+  
+  initNebulaBackground(); // Start the living void
 
-  camera = new THREE.PerspectiveCamera(baseFov, 1, 0.1, 260);
-  camera.position.set(0, 0, 18);
-
-  coreLight = new THREE.PointLight(0x00d4ff, 0, 50); 
-  coreLight.position.set(0, 0, 0);
-  scene.add(coreLight);
-
-  world = new THREE.Group();
-  scene.add(world);
-
-  starPoints = makeStars(1900, 120);
-  scene.add(starPoints);
+  coreLight = new THREE.PointLight(0x00d4ff, 0, 50); coreLight.position.set(0, 0, 0); scene.add(coreLight);
+  world = new THREE.Group(); scene.add(world);
+  starPoints = makeStars(1900, 120); scene.add(starPoints);
 
   makeResponsiveMorphingCage();
-
-  initRings();
-  initGhosts();
-  initSparks();
-  loadSigilLayers("media/indjoov-sigil.svg", false);
+  initRings(); initGhosts(); initSparks(); loadSigilLayers("media/indjoov-sigil.svg", false);
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
-  composer = new EffectComposer(renderer, rt);
-  composer.addPass(new RenderPass(scene, camera));
-
+  composer = new EffectComposer(renderer, rt); composer.addPass(new RenderPass(scene, camera));
   const rect = (stageEl || canvas).getBoundingClientRect();
   bloomPass = new UnrealBloomPass(new THREE.Vector2(Math.max(1, rect.width), Math.max(1, rect.height)), 1.0, 0.55, 0.12);
   composer.addPass(bloomPass);
 
-  rgbShiftPass = new ShaderPass(RGBShiftShader);
-  rgbShiftPass.uniforms['amount'].value = 0.0015; 
-  composer.addPass(rgbShiftPass);
+  rgbShiftPass = new ShaderPass(RGBShiftShader); rgbShiftPass.uniforms['amount'].value = 0.0015; composer.addPass(rgbShiftPass);
+  glitchPass = new GlitchPass(); glitchPass.goWild = false; glitchPass.enabled = false; composer.addPass(glitchPass);
+  fxaaPass = new ShaderPass(FXAAShader); composer.addPass(fxaaPass);
 
-  glitchPass = new GlitchPass();
-  glitchPass.goWild = false; 
-  glitchPass.enabled = false; 
-  composer.addPass(glitchPass);
-
-  fxaaPass = new ShaderPass(FXAAShader);
-  composer.addPass(fxaaPass);
-
-  fitRendererToStage();
-  applyChapter(chapter);
-  
-  // Start MIDI listener
-  initMIDI();
+  fitRendererToStage(); applyChapter(chapter); initMIDI();
 }
 
 /* ================= IMPROVED STARS (WARP FIELD) ================= */
-
 let starGeo = null;
 function makeStars(count, spread) {
-  starGeo = new THREE.BufferGeometry();
-  const positions = new Float32Array(count * 3);
-  const velocities = []; 
+  starGeo = new THREE.BufferGeometry(); const positions = new Float32Array(count * 3); const velocities = []; 
   for (let i = 0; i < count; i++) {
-    const ix = i * 3;
-    positions[ix] = (Math.random() - 0.5) * spread * 1.5; 
-    positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
-    positions[ix + 2] = (Math.random() - 0.5) * spread * 2; 
-    velocities.push(0.05 + Math.random() * 0.25);
+    const ix = i * 3; positions[ix] = (Math.random() - 0.5) * spread * 1.5; positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
+    positions[ix + 2] = (Math.random() - 0.5) * spread * 2; velocities.push(0.05 + Math.random() * 0.25);
   }
   starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({
-    color: 0x8feaff, size: 0.08, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending
-  });
-  starGeo.userData = { velocities: velocities, spread: spread };
-  return new THREE.Points(starGeo, mat);
+  const mat = new THREE.PointsMaterial({ color: 0x8feaff, size: 0.08, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending });
+  starGeo.userData = { velocities: velocities, spread: spread }; return new THREE.Points(starGeo, mat);
 }
-
 function updateStars(delta) {
   if (!starPoints || !starGeo) return;
-  const positions = starGeo.attributes.position.array;
-  const vels = starGeo.userData.velocities;
-  const spread = starGeo.userData.spread;
+  const positions = starGeo.attributes.position.array; const vels = starGeo.userData.velocities; const spread = starGeo.userData.spread;
   const warpSpeed = 1 + (bassSm * 8); 
-
   for (let i = 0; i < vels.length; i++) {
-    const ix = i * 3;
-    positions[ix + 2] += vels[i] * warpSpeed * delta * 20;
+    const ix = i * 3; positions[ix + 2] += vels[i] * warpSpeed * delta * 20;
     if (positions[ix + 2] > 20) {
-      positions[ix + 2] = -150; 
-      positions[ix] = (Math.random() - 0.5) * spread * 1.5;
-      positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
+      positions[ix + 2] = -150; positions[ix] = (Math.random() - 0.5) * spread * 1.5; positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
     }
   }
   starGeo.attributes.position.needsUpdate = true;
 }
 
 /* ================= HIGHLY RESPONSIVE MORPHING CAGE ================= */
-
 function makeResponsiveMorphingCage() {
   if (morphMesh) { world.remove(morphMesh); morphMesh.geometry.dispose(); }
-  const baseGeo = new THREE.IcosahedronGeometry(5.0, 10); 
-  const posAttribute = baseGeo.attributes.position;
-  const cubePositions = []; const wavePositions = []; const spikePositions = [];
-  const vec = new THREE.Vector3();
+  const baseGeo = new THREE.IcosahedronGeometry(5.0, 10); const posAttribute = baseGeo.attributes.position;
+  const cubePositions = []; const wavePositions = []; const spikePositions = []; const vec = new THREE.Vector3();
 
   for (let i = 0; i < posAttribute.count; i++) {
     vec.fromBufferAttribute(posAttribute, i);
-    const norm = vec.clone().normalize();
-    const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
-    const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5);
-    cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
-
+    const norm = vec.clone().normalize(); const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
+    const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5); cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
     const waveScale = 1.0 + 0.45 * (Math.sin(vec.x * 3.0) + Math.cos(vec.y * 3.0) + Math.sin(vec.z * 3.0));
-    const waveVec = vec.clone().multiplyScalar(waveScale);
-    wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
-
+    const waveVec = vec.clone().multiplyScalar(waveScale); wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
     const noise = Math.sin(vec.x * 8.0) * Math.cos(vec.y * 8.0) * Math.sin(vec.z * 8.0);
-    const spikeScale = 1.0 + Math.max(0, noise) * 2.5; 
-    const spikeVec = vec.clone().multiplyScalar(spikeScale);
-    spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
+    const spikeScale = 1.0 + Math.max(0, noise) * 2.5; const spikeVec = vec.clone().multiplyScalar(spikeScale); spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
   }
 
-  baseGeo.morphAttributes.position = [
-    new THREE.Float32BufferAttribute(cubePositions, 3), 
-    new THREE.Float32BufferAttribute(wavePositions, 3), 
-    new THREE.Float32BufferAttribute(spikePositions, 3) 
-  ];
-
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, 
-    morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
-  });
+  baseGeo.morphAttributes.position = [ new THREE.Float32BufferAttribute(cubePositions, 3), new THREE.Float32BufferAttribute(wavePositions, 3), new THREE.Float32BufferAttribute(spikePositions, 3) ];
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
 }
 
-/* ================= RITUAL RINGS ================= */
-
+/* ================= RITUAL RINGS & GHOSTS ================= */
 function initRings() {
   ringPool.forEach(r => { world?.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose(); });
   ringPool = []; ringCursor = 0;
   for (let i = 0; i < 8; i++) {
-    const g = new THREE.RingGeometry(2.6, 2.9, 120);
-    const m = new THREE.MeshBasicMaterial({ color: 0x8feaff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
-    const mesh = new THREE.Mesh(g, m);
-    mesh.position.set(0, 0, 0.25); mesh.rotation.set(-0.18, 0.22, 0);
+    const g = new THREE.RingGeometry(2.6, 2.9, 120); const m = new THREE.MeshBasicMaterial({ color: 0x8feaff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
+    const mesh = new THREE.Mesh(g, m); mesh.position.set(0, 0, 0.25); mesh.rotation.set(-0.18, 0.22, 0);
     world?.add(mesh); ringPool.push({ mesh, t: 999, life: 0.55, baseScale: 1.0 });
   }
 }
 function triggerRingPulse(intensity = 1) {
-  if (!ringPool.length) return;
-  const r = ringPool[ringCursor % ringPool.length]; ringCursor++;
-  r.t = 0; r.life = 0.48; r.baseScale = 0.92 + 0.22 * intensity;
-  r.mesh.material.color.setHex((Math.random() < 0.5) ? 0x00d4ff : 0x7c4dff);
-  r.mesh.material.opacity = 0.85 * P.ringStrength;
+  if (!ringPool.length) return; const r = ringPool[ringCursor % ringPool.length]; ringCursor++; r.t = 0; r.life = 0.48; r.baseScale = 0.92 + 0.22 * intensity;
+  r.mesh.material.color.setHex((Math.random() < 0.5) ? 0x00d4ff : 0x7c4dff); r.mesh.material.opacity = 0.85 * P.ringStrength;
 }
-
-/* ================= GHOST TRAILS ================= */
 
 function initGhosts() {
   ghostPool.forEach(g => { world?.remove(g.group); g.group.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); }); });
@@ -569,125 +433,101 @@ function initGhosts() {
     const plane = new THREE.PlaneGeometry(6.9, 6.9);
     const inkMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
     const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
-    const glow = new THREE.Mesh(plane, glowMat); glow.scale.setScalar(1.08);
-    const ink = new THREE.Mesh(plane, inkMat);
-    group.add(glow, ink); world?.add(group);
-    ghostPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
+    const glow = new THREE.Mesh(plane, glowMat); glow.scale.setScalar(1.08); const ink = new THREE.Mesh(plane, inkMat);
+    group.add(glow, ink); world?.add(group); ghostPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
   }
 }
 function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
-  if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex) return;
-  const useCount = Math.max(1, Math.min(6, count));
+  if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex) return; const useCount = Math.max(1, Math.min(6, count));
   for (let k = 0; k < useCount; k++) {
     const g = ghostPool[ghostCursor % ghostPool.length]; ghostCursor++;
-    g.t = 0; g.life = 0.28 + Math.random() * 0.25;
-    g.vx = (Math.random() - 0.5) * (0.22 + intensity * 0.25); g.vy = (Math.random() - 0.5) * (0.18 + intensity * 0.22); g.spin = (Math.random() - 0.5) * (0.12 + intensity * 0.18);
+    g.t = 0; g.life = 0.28 + Math.random() * 0.25; g.vx = (Math.random() - 0.5) * (0.22 + intensity * 0.25); g.vy = (Math.random() - 0.5) * (0.18 + intensity * 0.22); g.spin = (Math.random() - 0.5) * (0.12 + intensity * 0.18);
     g.baseScale = 1.02 + k * 0.04; g.group.visible = true; g.group.position.set(0, 0, 0.21 + 0.01 * k); g.group.rotation.set(-0.18, 0.22, 0);
-    g.ink.material.map = sigilBaseTex; g.glow.material.map = sigilGlowTex;
-    g.glow.material.color.copy(new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, 0.45 + snapFlash * 0.65)));
-    g.ink.material.opacity = 0.22 + 0.20 * intensity; g.glow.material.opacity = 0.40 + 0.55 * snapFlash;
-    g.glow.scale.setScalar(1.12); g.group.scale.setScalar(g.baseScale);
+    g.ink.material.map = sigilBaseTex; g.glow.material.map = sigilGlowTex; g.glow.material.color.copy(new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, 0.45 + snapFlash * 0.65)));
+    g.ink.material.opacity = 0.22 + 0.20 * intensity; g.glow.material.opacity = 0.40 + 0.55 * snapFlash; g.glow.scale.setScalar(1.12); g.group.scale.setScalar(g.baseScale);
   }
 }
 
 /* ================= EMISSIVE SPARKS ================= */
-
 function initSparks() {
-  const sparkGeo = new THREE.TetrahedronGeometry(0.15, 0);
-  const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
+  const sparkGeo = new THREE.TetrahedronGeometry(0.15, 0); const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
   for (let i = 0; i < 60; i++) {
     const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone()); mesh.visible = false; scene.add(mesh);
     sparkPool.push({ mesh: mesh, active: false, life: 0, maxLife: 0, velocity: new THREE.Vector3(), spin: new THREE.Vector3() });
   }
 }
 function fireSparks(intensity) {
-  if (!sparkPool.length) return;
-  const count = Math.floor(intensity * 10); 
+  if (!sparkPool.length) return; const count = Math.floor(intensity * 10); 
   for (let i = 0; i < count; i++) {
     const s = sparkPool[sparkCursor % sparkPool.length]; sparkCursor++;
     s.active = true; s.life = 0; s.maxLife = 0.5 + Math.random() * 0.5; 
     s.mesh.position.set((Math.random()-0.5), (Math.random()-0.5), 0); s.mesh.scale.setScalar(1); s.mesh.visible = true; s.mesh.material.opacity = 1.0;
     s.mesh.material.color.setHex(intensity > 0.8 ? 0xffffff : (Math.random() > 0.5 ? 0xff2b5a : 0x00d4ff));
-    const speed = 5 + intensity * 15;
-    s.velocity.set((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed + 5);
+    const speed = 5 + intensity * 15; s.velocity.set((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed + 5);
     s.spin.set(Math.random(), Math.random(), Math.random()).multiplyScalar(0.2);
   }
 }
 
 /* ================= SIGIL LAYERS ================= */
-
 function loadSigilLayers(url, isCustom = false) {
   if (sigilGroup) { world.remove(sigilGroup); sigilGroup = null; }
-  fetch(url)
-    .then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); })
-    .then(data => {
+  fetch(url).then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); }).then(data => {
       const img = new Image(); img.crossOrigin = "anonymous";
       img.onload = () => {
         const size = 1024; const base = document.createElement("canvas"); base.width = size; base.height = size;
         const ctx = base.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, size, size);
         const scale = Math.min(size / img.width, size / img.height); const w = img.width * scale, h = img.height * scale;
         ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        
         const imgData = ctx.getImageData(0, 0, size, size); const d = imgData.data; const thr = 245;
         for (let i = 0; i < d.length; i += 4) { if (d[i] >= thr && d[i + 1] >= thr && d[i + 2] >= thr) d[i + 3] = 0; }
         ctx.putImageData(imgData, 0, 0);
-
-        const glow = document.createElement("canvas"); glow.width = size; glow.height = size;
-        const gctx = glow.getContext("2d");
-        gctx.filter = "blur(10px)"; gctx.globalAlpha = 1; gctx.drawImage(base, 0, 0);
-        gctx.filter = "blur(22px)"; gctx.globalAlpha = 0.85; gctx.drawImage(base, 0, 0);
-        gctx.filter = "none";
-
-        sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace;
-        sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
-
+        const glow = document.createElement("canvas"); glow.width = size; glow.height = size; const gctx = glow.getContext("2d");
+        gctx.filter = "blur(10px)"; gctx.globalAlpha = 1; gctx.drawImage(base, 0, 0); gctx.filter = "blur(22px)"; gctx.globalAlpha = 0.85; gctx.drawImage(base, 0, 0); gctx.filter = "none";
+        sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-
         sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
-        sigilGroup = new THREE.Group(); sigilGroup.add(sigilGlow, sigilBase);
-        sigilGroup.position.set(0, 0, 0.22); sigilGroup.rotation.set(-0.18, 0.22, 0);
-        world.add(sigilGroup); setStatus("✅ Sigil loaded");
-        if(isCustom) URL.revokeObjectURL(url); // Clean up memory
+        sigilBaseBack = sigilBase.clone(); sigilBaseBack.rotation.y = Math.PI; sigilGlowBack = sigilGlow.clone(); sigilGlowBack.rotation.y = Math.PI; 
+        sigilGroup = new THREE.Group(); sigilGroup.add(sigilGlow, sigilBase, sigilGlowBack, sigilBaseBack);
+        sigilGroup.position.set(0, 0, 0.22); sigilGroup.rotation.set(-0.18, 0.22, 0); world.add(sigilGroup); setStatus("✅ Sigil loaded");
+        if(isCustom) URL.revokeObjectURL(url);
       };
-      if (isCustom) {
-          img.src = URL.createObjectURL(data);
-      } else {
-          img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`;
-      }
+      if (isCustom) { img.src = URL.createObjectURL(data); } else { img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`; }
     }).catch(() => setStatus("⚠️ Sigil fetch failed"));
 }
 
+/* ================= MIDI INTEGRATION ================= */
+function initMIDI() {
+  if (navigator.requestMIDIAccess) { navigator.requestMIDIAccess().then(onMIDISuccess, () => { midiStatusEl.textContent = "🎹 MIDI: Access Denied";}); }
+}
+function onMIDISuccess(midiAccess) {
+  midiStatusEl.textContent = "🎹 MIDI: Active";
+  for (let input of midiAccess.inputs.values()) input.onmidimessage = getMIDIMessage;
+  midiAccess.onstatechange = (e) => { if (e.port.state === 'connected') { midiStatusEl.textContent = `🎹 MIDI: Connected`; e.port.onmidimessage = getMIDIMessage; } };
+}
+function getMIDIMessage(message) {
+  const command = message.data[0]; const note = message.data[1]; const velocity = (message.data.length > 2) ? message.data[2] : 0;
+  console.log(`MIDI Command: ${command}, Note: ${note}, Vel: ${velocity}`);
+  if (command === 176 && note === 1) { if(zoomEl) zoomEl.value = Math.round((velocity / 127) * 100); }
+}
+
 /* ================= AUDIO ENGINE INIT ================= */
-
-let audioRecordDest = null;
 async function initEngine() {
-  initThree();
-  setStatus("⏳ Initializing engine…");
+  initThree(); setStatus("⏳ Initializing engine…");
   try { await engine.init(); } catch (e) { console.error(e); }
-
-  analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
-  dataFreq = new Uint8Array(analyser.frequencyBinCount);
+  analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85; dataFreq = new Uint8Array(analyser.frequencyBinCount);
   inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
   inputGain.connect(analyser); inputGain.connect(monitorGain); monitorGain.connect(engine.master);
-
-  audioRecordDest = engine.ctx.createMediaStreamDestination();
-  try { engine.master.connect(audioRecordDest); } catch {}
-
-  overlay.style.display = "none"; setStatus("✅ Engine ready");
-  if (!raf) loop();
+  audioRecordDest = engine.ctx.createMediaStreamDestination(); try { engine.master.connect(audioRecordDest); } catch {}
+  overlay.style.display = "none"; setStatus("✅ Engine ready"); if (!raf) loop();
 }
 overlay.onclick = initEngine;
-
-/* ================= CLEAN STOP / INPUTS ================= */
-
 async function stopAll({ suspend = true } = {}) {
   if (bufferSrc) { try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {} bufferSrc = null; }
   if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
   if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
-  currentMode = "idle"; if (micBtn) micBtn.textContent = "🎙️ Use Microphone";
-  feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
+  currentMode = "idle"; if (micBtn) micBtn.textContent = "🎙️ Use Microphone"; feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
   if (suspend) try { await engine.ctx.suspend(); } catch {}
 }
 
@@ -696,60 +536,34 @@ async function playDemo(path) {
   const buf = await fetch(path).then(r => r.arrayBuffer()); const audio = await engine.ctx.decodeAudioData(buf);
   await engine.resume(); currentMode = "demo"; if (monitorGain) monitorGain.gain.value = 1;
   bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
-  bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); };
-  bufferSrc.start(0); setStatus("🎧 Demo playing");
+  bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
 }
 demoBtn?.addEventListener("click", () => playDemo("media/kasubo hoerprobe.mp3"));
 
 fileBtn?.addEventListener("click", async () => { await initEngine(); fileInput?.click(); });
 fileInput?.addEventListener("change", async (e) => {
-  try {
-    await initEngine(); const file = e.target.files?.[0]; if (!file) return;
-    await stopAll({ suspend: false }); setStatus("⏳ Decoding file…");
-    const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf);
-    await engine.resume(); currentMode = "file"; if (monitorGain) monitorGain.gain.value = 1;
-    bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
-    bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ File finished"); };
+  try { await initEngine(); const file = e.target.files?.[0]; if (!file) return; await stopAll({ suspend: false }); setStatus("⏳ Decoding file…");
+    const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf); await engine.resume(); currentMode = "file"; if (monitorGain) monitorGain.gain.value = 1;
+    bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain); bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ File finished"); };
     bufferSrc.start(0); setStatus(`🎵 Playing: ${file.name}`);
   } catch { setStatus("❌ File error"); } finally { if (fileInput) fileInput.value = ""; }
 });
 
 micBtn?.addEventListener("click", async () => {
-  await initEngine();
-  if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
-  try {
-    await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
+  await initEngine(); if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
+  try { await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
-    await engine.resume(); currentMode = "mic";
-    micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
+    await engine.resume(); currentMode = "mic"; micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
     micBtn.textContent = "⏹ Stop Microphone"; applyMicMonitorGain(); setStatus("🎙️ Mic active");
   } catch { setStatus("❌ Mic error"); await stopAll({ suspend: true }); }
 });
 
-window.addEventListener("keydown", async (e) => {
-  if (e.key === "Escape") { setEngineOpen(false); if(isFullscreen) toggleFullscreen(); }
-  if (e.key.toLowerCase() === "p") toggleFullscreen();
-  if (e.key === " ") { e.preventDefault(); if (currentMode !== "idle") { await stopAll({ suspend: true }); setStatus("⏹ Stopped"); } }
-});
-
 /* ================= AUDIO ANALYSIS ================= */
-
-function hzToBin(hz) {
-  if (!engine?.ctx || !analyser) return 0;
-  const nyquist = engine.ctx.sampleRate / 2;
-  const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1));
-  return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx));
-}
-function bandEnergy(freqData, hzLo, hzHi) {
-  const a = hzToBin(hzLo), b = hzToBin(hzHi); let sum = 0; const n = Math.max(1, b - a + 1);
-  for (let i = a; i <= b; i++) sum += freqData[i]; return (sum / n) / 255;
-}
-
-let bassSm = 0, midSm = 0, snareSm = 0;
-let snareAvg = 0, snarePrev = 0, lastSnareTrig = 0; let snapFlash = 0;
+function hzToBin(hz) { if (!engine?.ctx || !analyser) return 0; const nyquist = engine.ctx.sampleRate / 2; const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1)); return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx)); }
+function bandEnergy(freqData, hzLo, hzHi) { const a = hzToBin(hzLo), b = hzToBin(hzHi); let sum = 0; const n = Math.max(1, b - a + 1); for (let i = a; i <= b; i++) sum += freqData[i]; return (sum / n) / 255; }
+let bassSm = 0, midSm = 0, snareSm = 0; let snareAvg = 0, snarePrev = 0, lastSnareTrig = 0; let snapFlash = 0;
 
 /* ================= MAIN LOOP ================= */
-
 function loop() {
   raf = requestAnimationFrame(loop);
   if (!renderer || !scene || !camera || !composer) return;
@@ -759,27 +573,50 @@ function loop() {
   if (analyser && dataFreq) {
     analyser.getByteFrequencyData(dataFreq);
     const sensitivity = sens ? parseFloat(sens.value) : 1;
-    const bass = bandEnergy(dataFreq, 30, 140) * sensitivity;
-    const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity;
-    const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
-
+    const bass = bandEnergy(dataFreq, 30, 140) * sensitivity; const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity; const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
     bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
     snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
-    
     if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
-      lastSnareTrig = time; snapFlash = 1.0;
-      triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
+      lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
       if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm));
     }
   } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
   snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
+  // Nebula / Void Background update
+  if (nebulaMaterial) {
+      nebulaMaterial.uniforms.time.value = time * 0.2;
+      nebulaMaterial.uniforms.bass.value = bassSm;
+      const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
+      nebulaMaterial.uniforms.color1.value.setHSL(hue, 0.6, 0.08); // Dark space
+      nebulaMaterial.uniforms.color2.value.setHSL((hue + 0.1)%1, 0.8, 0.2); // Brighter clouds
+  }
+
+  // 1. DYNAMIC VJ CAMERA
   if (!reducedMotion) {
+    if (currentCameraMode === 0) { // Default Wide
+        camTargetPos.set(0, 0, 18 - bassSm * 2);
+        camTargetLook.set(0,0,0);
+    } else if (currentCameraMode === 1) { // Inside Cage looking out
+        camTargetPos.set(0, 0, 0);
+        camTargetLook.set(Math.sin(time)*5, Math.cos(time*0.8)*5, -10);
+    } else if (currentCameraMode === 2) { // Top Down Orbit
+        camTargetPos.set(Math.sin(time*0.5)*15, 15, Math.cos(time*0.5)*15);
+        camTargetLook.set(0,0,0);
+    } else if (currentCameraMode === 3) { // Extreme Close Up
+        camTargetPos.set(Math.sin(time)*3, Math.cos(time)*3, 5);
+        camTargetLook.set(0,0,0);
+    }
+
+    camera.position.lerp(camTargetPos, 0.05);
+    // Smooth LookAt
+    const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
+    currentLook.lerp(camTargetLook, 0.1);
+    camera.lookAt(currentLook);
+
     camera.fov = THREE.MathUtils.lerp(camera.fov, baseFov - (bassSm * 15), 0.1);
-    const shake = snapFlash * 0.3;
-    camera.position.x = (Math.random() - 0.5) * shake; camera.position.y = (Math.random() - 0.5) * shake;
-    camera.position.z = THREE.MathUtils.lerp(camera.position.z, 18 - bassSm * 2, 0.1);
-    camera.rotation.z = Math.sin(time * 0.2) * 0.02; camera.updateProjectionMatrix();
+    const shake = snapFlash * 0.3; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
+    camera.updateProjectionMatrix();
   }
 
   if (coreLight) {
@@ -792,8 +629,7 @@ function loop() {
   if (glitchPass) glitchPass.enabled = (bassSm + midSm + snareSm > 2.2 && Math.random() > 0.8);
 
   if (starPoints) {
-    updateStars(dt); 
-    const slider = partEl ? parseFloat(partEl.value) : 10; 
+    updateStars(dt); const slider = partEl ? parseFloat(partEl.value) : 10; 
     starPoints.material.opacity = Math.max(0, Math.min(0.8, P.starsOpacity + 0.03 * Math.sin(time * 0.7) + Math.max(0, Math.min(0.20, 0.0065 * slider)) + bassSm * 0.2));
   }
 
@@ -803,70 +639,43 @@ function loop() {
   }
 
   if (morphMesh) {
-    const bassPunch = Math.pow(bassSm, 1.5) * 2.0;
-    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.15); 
+    const bassPunch = Math.pow(bassSm, 1.5) * 2.0; morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.15); 
     morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.12); 
-    const spikePunch = (snareSm * 2.0) + (snapFlash * 1.5);
-    morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.25); 
+    const spikePunch = (snareSm * 2.0) + (snapFlash * 1.5); morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.25); 
 
-    const drift = reducedMotion ? 0 : 0.001;
-    morphMesh.rotation.y += drift + midSm * 0.015; 
-    morphMesh.rotation.x += drift;
-    morphMesh.rotation.z += Math.sin(time * 0.5) * 0.005;
-
-    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
-    const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
+    const drift = reducedMotion ? 0 : 0.001; morphMesh.rotation.y += drift + midSm * 0.015; morphMesh.rotation.x += drift; morphMesh.rotation.z += Math.sin(time * 0.5) * 0.005;
+    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
     morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, targetScale, 0.2));
 
-    const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
-    const mode = palette?.value || "hue";
-    
-    if (mode === "grayscale") { morphMesh.material.color.setHex(0xe6e6e6); } 
-    else if (mode === "energy") { morphMesh.material.color.setHSL((hue + bassSm * 0.2 + midSm * 0.1) % 1, 0.85, 0.5 + snareSm * 0.4); } 
-    else { morphMesh.material.color.setHSL((hue + Math.sin(time * 0.2) * 0.1) % 1, 0.75, 0.55); }
-    
+    const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360); const mode = palette?.value || "hue";
+    if (mode === "grayscale") { morphMesh.material.color.setHex(0xe6e6e6); } else if (mode === "energy") { morphMesh.material.color.setHSL((hue + bassSm * 0.2 + midSm * 0.1) % 1, 0.85, 0.5 + snareSm * 0.4); } else { morphMesh.material.color.setHSL((hue + Math.sin(time * 0.2) * 0.1) % 1, 0.75, 0.55); }
     morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
   }
 
   if (sigilGroup && sigilBase && sigilGlow) {
-    const mode = palette?.value || "hue";
-    sigilBase.material.opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
-    
-    let glowColor = new THREE.Color(0x00d4ff);
-    if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
-    sigilGlow.material.color.copy(glowColor);
-    
-    sigilGlow.material.opacity = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
-    
-    const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
-    sigilGroup.rotation.set(-0.18 + Math.sin(time * 1.0) * 0.015 + (Math.random() - 0.5) * jitter, 0.22 + Math.sin(time * 1.2) * 0.02 + (Math.random() - 0.5) * jitter, 0);
-
-    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
-    sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04);
-    sigilGroup.position.y = Math.sin(time * 1.5) * 0.08;
+    const mode = palette?.value || "hue"; const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
+    sigilBase.material.opacity = opacity; if (sigilBaseBack) sigilBaseBack.material.opacity = opacity;
+    let glowColor = new THREE.Color(0x00d4ff); if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
+    sigilGlow.material.color.copy(glowColor); if (sigilGlowBack) sigilGlowBack.material.color.copy(glowColor);
+    const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
+    sigilGlow.material.opacity = glowOp; if (sigilGlowBack) sigilGlowBack.material.opacity = glowOp;
+    const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); sigilGroup.rotation.set(-0.18 + Math.sin(time * 1.0) * 0.015 + (Math.random() - 0.5) * jitter, 0.22 + Math.sin(time * 1.2) * 0.02 + (Math.random() - 0.5) * jitter, 0);
+    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); sigilGroup.position.y = Math.sin(time * 1.5) * 0.08;
   }
 
   for (const r of ringPool) {
-    if (r.t >= 999) continue;
-    r.t += dt; const p = Math.min(1, r.t / r.life); const scale = r.baseScale + (1 - Math.pow(1 - p, 3)) * 1.35; r.mesh.scale.setScalar(scale);
-    r.mesh.material.opacity = (1 - p) * 0.85 * (0.92 + 0.08 * Math.sin(time * 20)) * P.ringStrength;
-    if (p >= 1) { r.t = 999; r.mesh.material.opacity = 0; }
+    if (r.t >= 999) continue; r.t += dt; const p = Math.min(1, r.t / r.life); r.mesh.scale.setScalar(r.baseScale + (1 - Math.pow(1 - p, 3)) * 1.35);
+    r.mesh.material.opacity = (1 - p) * 0.85 * (0.92 + 0.08 * Math.sin(time * 20)) * P.ringStrength; if (p >= 1) { r.t = 999; r.mesh.material.opacity = 0; }
   }
   for (const g of ghostPool) {
-    if (g.t >= 999) continue;
-    g.t += dt; const p = Math.min(1, g.t / g.life);
-    g.group.position.x += g.vx * 0.14; g.group.position.y += g.vy * 0.14; g.group.rotation.y += g.spin * 0.04;
-    g.group.scale.setScalar(g.baseScale + (1 - Math.pow(1 - p, 2)) * 0.28);
-    const fade = (1 - p); g.ink.material.opacity = Math.max(0, g.ink.material.opacity * 0.90) * fade; g.glow.material.opacity = Math.max(0, g.glow.material.opacity * 0.88) * fade;
-    if (p >= 1) { g.t = 999; g.group.visible = false; }
+    if (g.t >= 999) continue; g.t += dt; const p = Math.min(1, g.t / g.life);
+    g.group.position.x += g.vx * 0.14; g.group.position.y += g.vy * 0.14; g.group.rotation.y += g.spin * 0.04; g.group.scale.setScalar(g.baseScale + (1 - Math.pow(1 - p, 2)) * 0.28);
+    const fade = (1 - p); g.ink.material.opacity = Math.max(0, g.ink.material.opacity * 0.90) * fade; g.glow.material.opacity = Math.max(0, g.glow.material.opacity * 0.88) * fade; if (p >= 1) { g.t = 999; g.group.visible = false; }
   }
 
   for (let i = 0; i < sparkPool.length; i++) {
-    const s = sparkPool[i]; if (!s.active) continue;
-    s.life += dt;
-    if (s.life >= s.maxLife) { s.active = false; s.mesh.visible = false; continue; }
-    s.mesh.position.addScaledVector(s.velocity, dt); s.velocity.multiplyScalar(0.95);
-    s.mesh.rotation.set(s.mesh.rotation.x + s.spin.x, s.mesh.rotation.y + s.spin.y, s.mesh.rotation.z + s.spin.z);
+    const s = sparkPool[i]; if (!s.active) continue; s.life += dt; if (s.life >= s.maxLife) { s.active = false; s.mesh.visible = false; continue; }
+    s.mesh.position.addScaledVector(s.velocity, dt); s.velocity.multiplyScalar(0.95); s.mesh.rotation.set(s.mesh.rotation.x + s.spin.x, s.mesh.rotation.y + s.spin.y, s.mesh.rotation.z + s.spin.z);
     const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
   }
 
@@ -875,32 +684,16 @@ function loop() {
 }
 
 /* ================= RECORDING ================= */
-
 let mediaRecorder = null, recordedChunks = [], recording = false;
-function pickMime() {
-  const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
-  for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return "";
-}
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+function pickMime() { const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]; for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ""; }
+function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 async function startRecording() {
   if (currentMode === "idle") await initEngine();
-  const fps = 60; const canvasStream = canvas.captureStream(fps); const out = audioRecordDest?.stream;
-  if (out && out.getAudioTracks().length) canvasStream.addTrack(out.getAudioTracks()[0]);
-  recordedChunks = []; const mimeType = pickMime();
-  mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
+  const fps = 60; const canvasStream = canvas.captureStream(fps); const out = audioRecordDest?.stream; if (out && out.getAudioTracks().length) canvasStream.addTrack(out.getAudioTracks()[0]);
+  recordedChunks = []; const mimeType = pickMime(); mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
   mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
-  mediaRecorder.onstop = () => {
-    downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`);
-    setStatus("✅ Recording saved");
-  };
+  mediaRecorder.onstop = () => { downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); setStatus("✅ Recording saved"); };
   mediaRecorder.start(250); recording = true; recBtn.textContent = "⏹ STOP"; setStatus("⏺ Recording…");
 }
-function stopRecording() {
-  if (!mediaRecorder) return;
-  try { mediaRecorder.stop(); } catch {}
-  recording = false; recBtn.textContent = "⏺ RECORD";
-}
+function stopRecording() { if (!mediaRecorder) return; try { mediaRecorder.stop(); } catch {} recording = false; recBtn.textContent = "⏺ RECORD"; }
 recBtn.addEventListener("click", async () => { if (!recording) await startRecording(); else stopRecording(); });
