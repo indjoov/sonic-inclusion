@@ -70,7 +70,6 @@ let morphMesh = null; let coreLight = null; let rgbShiftPass = null; let glitchP
 let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 
 let sigilGroup = null; let sigilBase = null; let sigilGlow = null;
-let sigilBaseBack = null; let sigilGlowBack = null; 
 let sigilBaseTex = null; let sigilGlowTex = null;
 
 let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
@@ -246,13 +245,11 @@ window.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") { setEngineOpen(false); if(isFullscreen) toggleFullscreen(); }
   if (e.key.toLowerCase() === "p") toggleFullscreen();
   
-  // VJ Camera Cuts
   if (e.key.toLowerCase() === "c") {
       currentCameraMode = (currentCameraMode + 1) % 4;
       setStatus(`🎥 Camera Mode: ${currentCameraMode + 1}`);
   }
 
-  // Preset Manager
   if (["1", "2", "3", "4"].includes(e.key)) {
       if (e.shiftKey) { savePreset(e.key); } else { loadPreset(e.key); }
   }
@@ -273,7 +270,7 @@ function fitRendererToStage() {
 const ro = new ResizeObserver(() => fitRendererToStage()); if (stageEl) ro.observe(stageEl); window.addEventListener("resize", fitRendererToStage);
 
 
-/* ================= GLSL NEBULA (THE LIVING VOID) ================= */
+/* ================= GLSL NEBULA ================= */
 function initNebulaBackground() {
     const geo = new THREE.PlaneGeometry(500, 500);
     nebulaMaterial = new THREE.ShaderMaterial({
@@ -335,7 +332,7 @@ function initThree() {
   fitRendererToStage(); applyChapter(chapter); initMIDI();
 }
 
-/* ================= IMPROVED STARS (WARP FIELD) ================= */
+/* ================= IMPROVED STARS ================= */
 let starGeo = null;
 function makeStars(count, spread) {
   starGeo = new THREE.BufferGeometry(); const positions = new Float32Array(count * 3); const velocities = []; 
@@ -360,7 +357,7 @@ function updateStars(delta) {
   starGeo.attributes.position.needsUpdate = true;
 }
 
-/* ================= HIGHLY RESPONSIVE MORPHING CAGE ================= */
+/* ================= MORPHING CAGE ================= */
 function makeResponsiveMorphingCage() {
   if (morphMesh) { world.remove(morphMesh); morphMesh.geometry.dispose(); }
   const baseGeo = new THREE.IcosahedronGeometry(5.0, 10); const posAttribute = baseGeo.attributes.position;
@@ -439,9 +436,9 @@ function fireSparks(intensity) {
   }
 }
 
-/* ================= SIGIL LAYERS ================= */
+/* ================= SIGIL FIX (CRISP, SINGLE, CAMERA-FACING) ================= */
 function loadSigilLayers(url, isCustom = false) {
-  if (sigilGroup) { world.remove(sigilGroup); sigilGroup = null; }
+  if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; } // Remove from SCENE now, not world
   fetch(url).then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); }).then(data => {
       const img = new Image(); img.crossOrigin = "anonymous";
       img.onload = () => {
@@ -456,12 +453,19 @@ function loadSigilLayers(url, isCustom = false) {
         gctx.filter = "blur(10px)"; gctx.globalAlpha = 1; gctx.drawImage(base, 0, 0); gctx.filter = "blur(22px)"; gctx.globalAlpha = 0.85; gctx.drawImage(base, 0, 0); gctx.filter = "none";
         sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
+        
+        // FIX: Only ONE mesh per layer, DoubleSide enabled.
         const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+        
         sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
-        sigilBaseBack = sigilBase.clone(); sigilBaseBack.rotation.y = Math.PI; sigilGlowBack = sigilGlow.clone(); sigilGlowBack.rotation.y = Math.PI; 
-        sigilGroup = new THREE.Group(); sigilGroup.add(sigilGlow, sigilBase, sigilGlowBack, sigilBaseBack);
-        sigilGroup.position.set(0, 0, 0.22); sigilGroup.rotation.set(-0.18, 0.22, 0); world.add(sigilGroup); setStatus("✅ Sigil loaded");
+        
+        sigilGroup = new THREE.Group(); 
+        sigilGroup.add(sigilGlow, sigilBase); // No more clones!
+        
+        // FIX: Add to SCENE so it never rotates 90-degrees and disappears
+        scene.add(sigilGroup); 
+        setStatus("✅ Sigil loaded");
         if(isCustom) URL.revokeObjectURL(url);
       };
       if (isCustom) { img.src = URL.createObjectURL(data); } else { img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`; }
@@ -483,52 +487,31 @@ function getMIDIMessage(message) {
   if (command === 176 && note === 1) { if(zoomEl) zoomEl.value = Math.round((velocity / 127) * 100); }
 }
 
-/* ================= AUDIO ENGINE INIT (BULLETPROOF FIX) ================= */
-
-let audioRecordDest = null;
+/* ================= AUDIO ENGINE INIT (BULLETPROOF) ================= */
 let engineInitialized = false;
 
 async function initEngine() {
   if (engineInitialized) return;
-
-  // 1. Hide the overlay IMMEDIATELY so you know the click registered
-  overlay.style.display = "none";
+  overlay.style.display = "none"; 
   setStatus("⏳ Initializing engine…");
 
-  // 2. Start the 3D Graphics immediately (so visuals run even if audio is blocked)
   try {
     initThree();
     if (!raf) loop();
-  } catch (err) {
-    console.error("Three.js failed to start:", err);
-  }
+  } catch (err) { console.error("Three.js failed to start:", err); }
 
-  // 3. Safely try to start the Audio Engine
   try {
     await engine.init();
-    if (engine.ctx && engine.ctx.state === 'suspended') {
-      await engine.ctx.resume();
-    }
+    if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
 
-    analyser = engine.ctx.createAnalyser(); 
-    analyser.fftSize = 2048; 
-    analyser.smoothingTimeConstant = 0.85;
+    analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     dataFreq = new Uint8Array(analyser.frequencyBinCount);
 
-    inputGain = engine.ctx.createGain(); 
-    monitorGain = engine.ctx.createGain(); 
-    monitorGain.gain.value = 0;
-
-    inputGain.connect(analyser); 
-    inputGain.connect(monitorGain); 
-    monitorGain.connect(engine.master);
+    inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
+    inputGain.connect(analyser); inputGain.connect(monitorGain); monitorGain.connect(engine.master);
 
     audioRecordDest = engine.ctx.createMediaStreamDestination();
-    try { 
-        engine.master.connect(audioRecordDest); 
-    } catch (e) {
-        // Ignore if browser doesn't support recording routing
-    }
+    try { engine.master.connect(audioRecordDest); } catch (e) {}
 
     engineInitialized = true;
     setStatus("✅ Engine ready");
@@ -539,9 +522,7 @@ async function initEngine() {
 }
 
 overlay.style.cursor = "pointer";
-overlay.addEventListener("click", () => {
-    initEngine();
-});
+overlay.addEventListener("click", () => { initEngine(); });
 
 /* ================= CLEAN STOP / INPUTS ================= */
 async function stopAll({ suspend = true } = {}) {
@@ -638,8 +619,10 @@ function loop() {
     starPoints.material.opacity = Math.max(0, Math.min(0.8, P.starsOpacity + 0.03 * Math.sin(time * 0.7) + Math.max(0, Math.min(0.20, 0.0065 * slider)) + bassSm * 0.2));
   }
 
+  // World Rotation (Spins the morphing cage)
   if (world && !reducedMotion) {
-    world.rotation.y = time * 0.45; world.rotation.x = Math.sin(time * 0.8) * 0.10; world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
+    world.rotation.y = time * 0.45; world.rotation.x = Math.sin(time * 0.8) * 0.10; 
+    world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
   }
 
   if (morphMesh) {
@@ -656,15 +639,37 @@ function loop() {
     morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
   }
 
+  // FIX: Sigil stays perfectly facing the camera, centered in the drifting cage
   if (sigilGroup && sigilBase && sigilGlow) {
-    const mode = palette?.value || "hue"; const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
-    sigilBase.material.opacity = opacity; if (sigilBaseBack) sigilBaseBack.material.opacity = opacity;
-    let glowColor = new THREE.Color(0x00d4ff); if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
-    sigilGlow.material.color.copy(glowColor); if (sigilGlowBack) sigilGlowBack.material.color.copy(glowColor);
+    const mode = palette?.value || "hue"; 
+    const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
+    sigilBase.material.opacity = opacity; 
+    
+    let glowColor = new THREE.Color(0x00d4ff); 
+    if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
+    sigilGlow.material.color.copy(glowColor); 
+    
     const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
-    sigilGlow.material.opacity = glowOp; if (sigilGlowBack) sigilGlowBack.material.opacity = glowOp;
-    const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); sigilGroup.rotation.set(-0.18 + Math.sin(time * 1.0) * 0.015 + (Math.random() - 0.5) * jitter, 0.22 + Math.sin(time * 1.2) * 0.02 + (Math.random() - 0.5) * jitter, 0);
-    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); sigilGroup.position.y = Math.sin(time * 1.5) * 0.08;
+    sigilGlow.material.opacity = glowOp; 
+    
+    // Subtle wobble that keeps it mostly forward-facing
+    const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); 
+    sigilGroup.rotation.set(
+        Math.sin(time * 1.0) * 0.15 + (Math.random() - 0.5) * jitter, 
+        Math.sin(time * 1.2) * 0.15 + (Math.random() - 0.5) * jitter, 
+        0
+    );
+    
+    // Scale and position tracking
+    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; 
+    sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); 
+    
+    if (world && !reducedMotion) {
+        sigilGroup.position.x = world.position.x;
+        sigilGroup.position.y = world.position.y + Math.sin(time * 1.5) * 0.08;
+    } else {
+        sigilGroup.position.set(0, Math.sin(time * 1.5) * 0.08, 0);
+    }
   }
 
   for (const r of ringPool) {
