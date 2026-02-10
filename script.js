@@ -15,7 +15,6 @@ import { RGBShiftShader } from "https://unpkg.com/three@0.160.0/examples/jsm/sha
 const canvas = document.getElementById("viz");
 const stageEl = canvas.closest(".stage");
 const srText = document.getElementById("srText");
-const sens = document.getElementById("sens");
 const palette = document.getElementById("palette");
 
 const micBtn = document.getElementById("micBtn");
@@ -114,6 +113,7 @@ hud.appendChild(recBtn); hud.appendChild(hudRightControls); document.body.append
 const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
 
+// FIX: Added inline CSS to force inputs to stay inside boundaries (width: 100%, overflow-x: hidden)
 enginePanel.innerHTML = `
   <div class="panel-header">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -122,7 +122,7 @@ enginePanel.innerHTML = `
     </div>
     <button id="si-engineClose" type="button" class="close-btn">✕</button>
   </div>
-  <div class="panel-grid">
+  <div class="panel-grid" style="overflow-x: hidden;">
     <div class="chapter-box">
       <div class="chapter-title">CHAPTER</div>
       <div class="chapter-btns">
@@ -131,18 +131,18 @@ enginePanel.innerHTML = `
         <button id="chapAsc" type="button" class="chap-btn">ASCENSION</button>
       </div>
     </div>
-    <div class="sigil-preset-row">
+    <div class="sigil-preset-row" style="flex-wrap: wrap;">
         <button id="customSigilBtn" type="button" class="sigil-btn">Upload Sigil</button>
-        <div class="preset-info"><b>PRESETS</b> Save: Shift+1..4 | Load: 1..4</div>
+        <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
-    <label class="panel-label">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.2"></label>
-    <label class="panel-label">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10"></label>
-    <label class="panel-label">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18"></label>
-    <label class="panel-label">HUE<input id="hueShift" type="range" min="0" max="360" value="280"></label>
+    <label class="panel-label">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="1.0" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="checkbox-row"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
     <div class="mic-section">
       <label class="checkbox-row"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
-      <label class="panel-label" style="margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35"></label>
+      <label class="panel-label" style="margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
       <div id="feedbackWarn">🔇 Feedback risk detected — mic monitor muted</div>
     </div>
     <div id="midiStatus">🎹 MIDI: Waiting for connection...</div>
@@ -175,14 +175,8 @@ const zoomEl = enginePanel.querySelector("#zoomInt");
 const hueEl  = enginePanel.querySelector("#hueShift");
 const midiStatusEl = enginePanel.querySelector("#midiStatus");
 
-// Sync both sensitivity sliders
+// FIX: We now ONLY use the new Engine Panel slider for sensitivity to prevent value corruption.
 const panelSensEl = enginePanel.querySelector("#sens-panel");
-if (sens && panelSensEl) {
-    sens.value = "0.2";
-    panelSensEl.value = "0.2";
-    sens.addEventListener("input", (e) => { panelSensEl.value = e.target.value; });
-    panelSensEl.addEventListener("input", (e) => { sens.value = e.target.value; });
-}
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
 const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
@@ -260,8 +254,7 @@ function loadPreset(slot) {
     const saved = localStorage.getItem(`sonicPreset_${slot}`);
     if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
     const data = JSON.parse(saved);
-    if(panelSensEl) panelSensEl.value = data.sens;
-    if(sens) sens.value = data.sens; 
+    if(panelSensEl) panelSensEl.value = data.sens; 
     if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
     if(partEl) partEl.value = data.stars; if(palette) palette.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
@@ -463,7 +456,7 @@ function fireSparks(intensity) {
   }
 }
 
-/* ================= SIGIL FIX (PERFECT BILLBOARDING) ================= */
+/* ================= SIGIL FIX ================= */
 function loadSigilLayers(url, isCustom = false) {
   if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; } 
   fetch(url).then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); }).then(data => {
@@ -589,7 +582,7 @@ micBtn?.addEventListener("click", async () => {
 
 /* ================= AUDIO ANALYSIS ================= */
 function hzToBin(hz) { if (!engine?.ctx || !analyser) return 0; const nyquist = engine.ctx.sampleRate / 2; const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1)); return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx)); }
-function bandEnergy(freqData, hzLo, hzHi) { const a = hzToBin(hzLo), b = hzToBin(hzHi); let sum = 0; const n = Math.max(1, b - a + 1); for (let i = a; i <= b; i++) sum += freqData[i]; return (sum / n) / 255; }
+function bandEnergy(freqData, hzLo, hzHi) { const a = hzToBin(hzLo), b = hzToBin(hzHi); let sum = 0; const n = Math.max(1, b - a + 1); for (let i = a; i <= b; i++) sum += freqData[i] || 0; return (sum / n) / 255; }
 let bassSm = 0, midSm = 0, snareSm = 0; let snareAvg = 0, snarePrev = 0, lastSnareTrig = 0; let snapFlash = 0;
 
 /* ================= MAIN LOOP ================= */
@@ -601,7 +594,14 @@ function loop() {
 
   if (analyser && dataFreq) {
     analyser.getByteFrequencyData(dataFreq);
-    const sensitivity = panelSensEl ? parseFloat(panelSensEl.value) : 0.2; 
+    
+    // FIX: Safely parse sensitivity to prevent NaN math freezes
+    let sensitivity = 1.0;
+    if (panelSensEl) {
+        const parsed = parseFloat(panelSensEl.value);
+        if (!isNaN(parsed)) sensitivity = parsed;
+    }
+
     const bass = bandEnergy(dataFreq, 30, 140) * sensitivity; const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity; const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
     bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
     snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
@@ -710,26 +710,50 @@ function loop() {
   composer.render();
 }
 
-/* ================= RECORDING ================= */
+/* ================= RECORDING (FIXED ERROR HANDLING) ================= */
 let mediaRecorder = null, recordedChunks = [], recording = false;
 function pickMime() { const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]; for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ""; }
 function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+
 async function startRecording() {
-  if (!engineInitialized) await initEngine();
-  
-  recBtn.classList.add('recording-pulse');
-  
-  const fps = 60; const canvasStream = canvas.captureStream(fps); const out = audioRecordDest?.stream; if (out && out.getAudioTracks().length) canvasStream.addTrack(out.getAudioTracks()[0]);
-  recordedChunks = []; const mimeType = pickMime(); mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
-  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
-  mediaRecorder.onstop = () => { downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); setStatus("✅ Recording saved"); };
-  mediaRecorder.start(250); recording = true; recBtn.textContent = "⏹ STOP"; setStatus("⏺ Recording…");
+  try {
+      if (!engineInitialized) await initEngine();
+      
+      recBtn.classList.add('recording-pulse');
+      
+      const fps = 60; 
+      const canvasStream = canvas.captureStream(fps); 
+      const out = audioRecordDest?.stream; 
+      if (out && out.getAudioTracks().length) {
+          canvasStream.addTrack(out.getAudioTracks()[0]);
+      }
+      
+      recordedChunks = []; 
+      const mimeType = pickMime(); 
+      mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
+      mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = () => { 
+          downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); 
+          setStatus("✅ Recording saved"); 
+      };
+      mediaRecorder.start(250); 
+      recording = true; 
+      recBtn.textContent = "⏹ STOP"; 
+      setStatus("⏺ Recording…");
+  } catch (err) {
+      console.error("Recording failed to start:", err);
+      stopRecording();
+      setStatus("❌ Recording failed");
+  }
 }
+
 function stopRecording() { 
-    if (!mediaRecorder) return; 
-    try { mediaRecorder.stop(); } catch {} 
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        try { mediaRecorder.stop(); } catch {} 
+    }
     recording = false; 
     recBtn.textContent = "⏺ RECORD"; 
     recBtn.classList.remove('recording-pulse');
 }
+
 recBtn.addEventListener("click", async () => { if (!recording) await startRecording(); else stopRecording(); });
