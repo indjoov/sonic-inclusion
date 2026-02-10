@@ -119,6 +119,7 @@ const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: 980px; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box;`;
 
+// NOTE: Changed default value of the sensitivity slider to 0.2 to prevent overdosing the screen
 enginePanel.innerHTML = `
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -142,6 +143,7 @@ enginePanel.innerHTML = `
             <b>PRESETS</b> Save: Shift+1..4 | Load: 1..4
         </div>
     </div>
+    <label style="font-size:12px; opacity:0.8;">SENSITIVITY<input id="sens" type="range" min="0.1" max="3" step="0.1" value="0.2" style="width:100%; margin-top:6px;"></label>
     <label style="font-size:12px; opacity:0.8;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;"></label>
     <label style="font-size:12px; opacity:0.8;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; margin-top:6px;"></label>
     <label style="font-size:12px; opacity:0.8;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; margin-top:6px;"></label>
@@ -169,7 +171,10 @@ enginePanel.addEventListener("touchmove", (e) => {
   if (dy > 50) { setEngineOpen(false); touchStartY = null; }
 }, { passive: true });
 
-const partEl = enginePanel.querySelector("#partAmount"); const zoomEl = enginePanel.querySelector("#zoomInt"); const hueEl  = enginePanel.querySelector("#hueShift");
+const partEl = enginePanel.querySelector("#partAmount"); 
+const zoomEl = enginePanel.querySelector("#zoomInt"); 
+const hueEl  = enginePanel.querySelector("#hueShift");
+const sensEl = enginePanel.querySelector("#sens"); // Map the new sens slider
 const midiStatusEl = enginePanel.querySelector("#midiStatus");
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
@@ -228,14 +233,14 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 
 /* ================= PRESET SYSTEM ================= */
 function savePreset(slot) {
-    const data = { sens: sens?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: palette?.value, chapter: chapter };
+    const data = { sens: sensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: palette?.value, chapter: chapter };
     localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Preset ${slot} Saved`);
 }
 function loadPreset(slot) {
     const saved = localStorage.getItem(`sonicPreset_${slot}`);
     if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
     const data = JSON.parse(saved);
-    if(sens) sens.value = data.sens; if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
+    if(sensEl) sensEl.value = data.sens; if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
     if(partEl) partEl.value = data.stars; if(palette) palette.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
 }
@@ -245,11 +250,13 @@ window.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") { setEngineOpen(false); if(isFullscreen) toggleFullscreen(); }
   if (e.key.toLowerCase() === "p") toggleFullscreen();
   
+  // VJ Camera Cuts
   if (e.key.toLowerCase() === "c") {
       currentCameraMode = (currentCameraMode + 1) % 4;
       setStatus(`🎥 Camera Mode: ${currentCameraMode + 1}`);
   }
 
+  // Preset Manager
   if (["1", "2", "3", "4"].includes(e.key)) {
       if (e.shiftKey) { savePreset(e.key); } else { loadPreset(e.key); }
   }
@@ -436,9 +443,9 @@ function fireSparks(intensity) {
   }
 }
 
-/* ================= SIGIL FIX (CRISP, SINGLE, CAMERA-FACING) ================= */
+/* ================= SIGIL FIX (PERFECT BILLBOARDING) ================= */
 function loadSigilLayers(url, isCustom = false) {
-  if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; } // Remove from SCENE now, not world
+  if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; } 
   fetch(url).then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); }).then(data => {
       const img = new Image(); img.crossOrigin = "anonymous";
       img.onload = () => {
@@ -454,16 +461,16 @@ function loadSigilLayers(url, isCustom = false) {
         sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         
-        // FIX: Only ONE mesh per layer, DoubleSide enabled.
+        // Only ONE mesh, NO clones. It will billboard to face the camera.
         const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
         
         sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
         
         sigilGroup = new THREE.Group(); 
-        sigilGroup.add(sigilGlow, sigilBase); // No more clones!
+        sigilGroup.add(sigilGlow, sigilBase); 
         
-        // FIX: Add to SCENE so it never rotates 90-degrees and disappears
+        // Add to SCENE (not world) so it can easily billboard independently of the cage spin
         scene.add(sigilGroup); 
         setStatus("✅ Sigil loaded");
         if(isCustom) URL.revokeObjectURL(url);
@@ -576,7 +583,7 @@ function loop() {
 
   if (analyser && dataFreq) {
     analyser.getByteFrequencyData(dataFreq);
-    const sensitivity = sens ? parseFloat(sens.value) : 1;
+    const sensitivity = sensEl ? parseFloat(sensEl.value) : 0.2; // Default to 0.2 to prevent overdose
     const bass = bandEnergy(dataFreq, 30, 140) * sensitivity; const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity; const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
     bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
     snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
@@ -605,8 +612,9 @@ function loop() {
     camera.updateProjectionMatrix();
   }
 
+  // FIX: Cap internal lighting so it never overdoses the screen
   if (coreLight) {
-    coreLight.intensity = (bassSm * 200) + (snapFlash * 500);
+    coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
     if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
   }
@@ -619,7 +627,6 @@ function loop() {
     starPoints.material.opacity = Math.max(0, Math.min(0.8, P.starsOpacity + 0.03 * Math.sin(time * 0.7) + Math.max(0, Math.min(0.20, 0.0065 * slider)) + bassSm * 0.2));
   }
 
-  // World Rotation (Spins the morphing cage)
   if (world && !reducedMotion) {
     world.rotation.y = time * 0.45; world.rotation.x = Math.sin(time * 0.8) * 0.10; 
     world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
@@ -639,7 +646,7 @@ function loop() {
     morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
   }
 
-  // FIX: Sigil stays perfectly facing the camera, centered in the drifting cage
+  // FIX: Billboarding to ensure sigil NEVER disappears
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue"; 
     const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
@@ -652,15 +659,13 @@ function loop() {
     const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
     sigilGlow.material.opacity = glowOp; 
     
-    // Subtle wobble that keeps it mostly forward-facing
+    // Copy the camera's exact rotation so it is ALWAYS perfectly flat to the screen
+    sigilGroup.quaternion.copy(camera.quaternion);
+
+    // Apply a tiny 2D roll (wobble) so it feels alive without turning sideways
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); 
-    sigilGroup.rotation.set(
-        Math.sin(time * 1.0) * 0.15 + (Math.random() - 0.5) * jitter, 
-        Math.sin(time * 1.2) * 0.15 + (Math.random() - 0.5) * jitter, 
-        0
-    );
+    sigilGroup.rotateZ(Math.sin(time * 1.0) * 0.05 + (Math.random() - 0.5) * jitter);
     
-    // Scale and position tracking
     const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; 
     sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); 
     
@@ -688,7 +693,8 @@ function loop() {
     const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
   }
 
-  if (bloomPass) bloomPass.strength = P.bloomStrength + bassSm * 0.35 + snapFlash * 0.55;
+  // FIX: Toned down bloom slightly to prevent washout
+  if (bloomPass) bloomPass.strength = P.bloomStrength + (bassSm * 0.15) + (snapFlash * 0.3);
   composer.render();
 }
 
