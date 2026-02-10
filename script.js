@@ -97,13 +97,9 @@ let fxaaPass = null;
 
 let world = null;       
 let starPoints = null;  
-let cageGroup = null;
 
-// The 4 Distinct Shapes
-let shapeCore = null;   // Icosahedron (Rest)
-let shapeMid = null;    // Octahedron (Vocals/Mids)
-let shapeBass = null;   // Torus Knot (Bass)
-let shapeHigh = null;   // Tetrahedron (Snare/Highs)
+// The Single Morphing Line Geometry
+let morphMesh = null;
 
 // Performance Art State
 let coreLight = null;       
@@ -264,9 +260,9 @@ micMonitorVolEl.addEventListener("input", (e) => {
 /* ================= CHAPTER SYSTEM ================= */
 
 const CHAPTERS = {
-  INVOCATION: { starsOpacity: 0.16, cageOpacityBase: 0.22, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
-  POSSESSION: { starsOpacity: 0.20, cageOpacityBase: 0.26, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
-  ASCENSION:  { starsOpacity: 0.24, cageOpacityBase: 0.30, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
+  INVOCATION: { starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
+  POSSESSION: { starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
+  ASCENSION:  { starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
 };
 
 let chapter = "POSSESSION";
@@ -331,8 +327,7 @@ function initThree() {
   starPoints = makeStars(1900, 120);
   scene.add(starPoints);
 
-  cageGroup = makeDefinedCage();
-  world.add(cageGroup);
+  makeSingleMorphingCage();
 
   initRings();
   initGhosts();
@@ -404,25 +399,63 @@ function updateStars(delta) {
   starGeo.attributes.position.needsUpdate = true;
 }
 
-/* ================= SHARP MORPHING CAGE ================= */
+/* ================= SINGLE SHAPE MORPHING (SMOOTH WAVES) ================= */
 
-function createCageLayer(geometry, color, opacity) {
-  const wire = new THREE.WireframeGeometry(geometry);
-  const mat = new THREE.LineBasicMaterial({
-    color: color, transparent: true, opacity: opacity,
-    blending: THREE.AdditiveBlending, depthWrite: false
+function makeSingleMorphingCage() {
+  if (morphMesh) { world.remove(morphMesh); morphMesh.geometry.dispose(); }
+
+  // High detail base sphere to allow fluid wave morphs
+  const baseGeo = new THREE.IcosahedronGeometry(5.0, 10); 
+  const posAttribute = baseGeo.attributes.position;
+  
+  const cubePositions = [];
+  const wavePositions = [];
+  const spikePositions = [];
+
+  const vec = new THREE.Vector3();
+
+  for (let i = 0; i < posAttribute.count; i++) {
+    vec.fromBufferAttribute(posAttribute, i);
+    
+    // --- Target 0: CUBE (Heavy Bass) ---
+    const norm = vec.clone().normalize();
+    const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
+    const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5);
+    cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
+
+    // --- Target 1: WAVE/ORGANIC (Mids/Vocals) ---
+    // Mathematically distorting the sphere using continuous sine waves based on coords
+    const waveScale = 1.0 + 0.15 * (Math.sin(vec.x * 2.0) + Math.cos(vec.y * 2.0) + Math.sin(vec.z * 2.0));
+    const waveVec = vec.clone().multiplyScalar(waveScale);
+    wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
+
+    // --- Target 2: SPIKES (Snare/Highs) ---
+    const noise = Math.sin(vec.x * 6.0) * Math.cos(vec.y * 6.0) * Math.sin(vec.z * 6.0);
+    const spikeScale = 1.0 + Math.max(0, noise) * 1.2; 
+    const spikeVec = vec.clone().multiplyScalar(spikeScale);
+    spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
+  }
+
+  baseGeo.morphAttributes.position = [
+    new THREE.Float32BufferAttribute(cubePositions, 3),  // Index 0: Cube
+    new THREE.Float32BufferAttribute(wavePositions, 3),  // Index 1: Waves
+    new THREE.Float32BufferAttribute(spikePositions, 3)  // Index 2: Spikes
+  ];
+
+  // ONLY ONE WIREFRAME MATERIAL
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x00d4ff,
+    wireframe: true, 
+    transparent: true,
+    opacity: 0.8, // Brighter since it's only one line
+    morphTargets: true, 
+    blending: THREE.AdditiveBlending,
+    depthWrite: false, // Ensures perfectly clean transparency
+    side: THREE.DoubleSide
   });
-  return new THREE.LineSegments(wire, mat);
-}
 
-function makeDefinedCage() {
-  const group = new THREE.Group();
-  shapeCore = createCageLayer(new THREE.IcosahedronGeometry(5.0, 2), 0x00d4ff, 0.4);
-  shapeMid  = createCageLayer(new THREE.OctahedronGeometry(6.0, 1), 0x8feaff, 0);
-  shapeBass = createCageLayer(new THREE.TorusKnotGeometry(3.5, 1.2, 100, 16, 2, 3), 0xff2b5a, 0);
-  shapeHigh = createCageLayer(new THREE.TetrahedronGeometry(7.5, 1), 0xffffff, 0);
-  group.add(shapeCore, shapeMid, shapeBass, shapeHigh);
-  return group;
+  morphMesh = new THREE.Mesh(baseGeo, mat);
+  world.add(morphMesh);
 }
 
 /* ================= RITUAL RINGS ================= */
@@ -538,7 +571,6 @@ function loadSigilLayers(url) {
 
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         
-        // Use DoubleSide to make it perfectly visible from front and back without cloning the mesh!
         const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
 
@@ -703,52 +735,39 @@ function loop() {
     world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
   }
 
-  // 4. SHARP LAYER MORPHING
-  if (cageGroup && shapeCore) {
-    // Determine which shapes to show (hard thresholds for sharp snap morphs)
-    const showMid = midSm > 0.4 ? midSm : 0;
-    const showBass = bassSm > 0.6 ? bassSm : 0;
-    const showHigh = snareSm > 0.5 ? snareSm : 0;
+  // 4. FLUID SHAPE MORPHING (One Line)
+  if (morphMesh) {
+    // We use a very low lerp factor (0.05) to make the transition incredibly smooth and fluid like water/waves
+    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassSm * 1.5, 0.05); // Cube
+    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.0, 0.05);  // Smooth Waves
+    morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], snareSm * 1.5, 0.1); // Spikes
 
-    // Fade Core out when others take over
-    shapeCore.material.opacity = Math.max(0, P.cageOpacityBase - (showBass + showHigh));
-    
-    // Snappy opacities for transformation effect
-    shapeMid.material.opacity = THREE.MathUtils.lerp(shapeMid.material.opacity, showMid > 0 ? 0.8 : 0, 0.2);
-    shapeBass.material.opacity = THREE.MathUtils.lerp(shapeBass.material.opacity, showBass > 0 ? 0.9 : 0, 0.2);
-    shapeHigh.material.opacity = THREE.MathUtils.lerp(shapeHigh.material.opacity, showHigh > 0 ? 1.0 : 0, 0.3);
+    const drift = reducedMotion ? 0 : 0.001;
+    morphMesh.rotation.y += drift + midSm * 0.005; // Spin faster on vocals smoothly
+    morphMesh.rotation.x += drift;
+    morphMesh.rotation.z += Math.sin(time * 0.5) * 0.002; // Extra wave-like rocking
 
-    // Color Logic
+    // Smooth Scale Zoom
+    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
+    const targetScale = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
+    morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, targetScale, 0.1));
+
+    // Colors
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
     const mode = palette?.value || "hue";
     
     if (mode === "grayscale") {
-      shapeCore.material.color.setHex(0xe6e6e6); shapeMid.material.color.setHex(0xffffff);
-      shapeBass.material.color.setHex(0xaaaaaa); shapeHigh.material.color.setHex(0xffffff);
+      morphMesh.material.color.setHex(0xe6e6e6);
     } else if (mode === "energy") {
-      shapeCore.material.color.setHSL(hue, 0.6, 0.5); shapeMid.material.color.setHSL(hue, 0.8, 0.7);
-      shapeBass.material.color.setHSL(0, 0.9, 0.5); shapeHigh.material.color.setHSL(0.16, 0.9, 0.8);
+      const energyHue = (hue + bassSm * 0.2 + midSm * 0.1) % 1;
+      morphMesh.material.color.setHSL(energyHue, 0.85, 0.5 + snareSm * 0.4);
     } else {
-      shapeCore.material.color.setHSL(hue, 0.75, 0.5); shapeMid.material.color.setHSL((hue + 0.1) % 1, 0.9, 0.6);
-      shapeBass.material.color.setHSL((hue + 0.5) % 1, 0.8, 0.6); shapeHigh.material.color.setHSL((hue + 0.05) % 1, 1.0, 0.9);
+      // Flowing color shift
+      const flowingHue = (hue + Math.sin(time * 0.2) * 0.1) % 1;
+      morphMesh.material.color.setHSL(flowingHue, 0.75, 0.55);
     }
-
-    // Flashes
-    shapeCore.material.opacity += snapFlash * 0.1; shapeHigh.material.opacity += snapFlash * 0.3;
-
-    // Rotate and Pop Scale (Creates physical shapeshift illusion)
-    const drift = reducedMotion ? 0 : 0.002;
-    shapeCore.rotation.y += drift;           
-    shapeMid.rotation.set(shapeMid.rotation.x + drift, shapeMid.rotation.y - drift * 3.0, 0);
-    shapeBass.rotation.set(0, shapeBass.rotation.y + drift * 0.5, shapeBass.rotation.z + drift * 0.5);
-    shapeHigh.rotation.set(shapeHigh.rotation.x + drift * 8.0, shapeHigh.rotation.y + drift * 4.0, 0);
-
-    shapeMid.scale.setScalar(1 + showMid * 0.5);
-    shapeBass.scale.setScalar(1 + showBass * 0.2);
-    shapeHigh.scale.setScalar(1 + showHigh * 0.3);
-
-    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
-    cageGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04);
+    
+    morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
   }
 
   // Sigil 
