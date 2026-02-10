@@ -113,16 +113,19 @@ hud.appendChild(recBtn); hud.appendChild(hudRightControls); document.body.append
 const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
 
+// FIX: Force max-width and hidden overflow to physically stop sliders from pushing out.
+enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow: hidden;`;
+
 enginePanel.innerHTML = `
-  <div class="panel-header">
+  <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="panel-icon-wrap">⚙️</div>
       <div><div class="panel-title">ENGINE</div><div class="panel-subtitle">Swipe down to close</div></div>
     </div>
     <button id="si-engineClose" type="button" class="close-btn">✕</button>
   </div>
-  <div class="panel-grid" style="overflow-x: hidden;">
-    <div class="chapter-box">
+  <div class="panel-grid" style="width: 100%; box-sizing: border-box; overflow-x: hidden;">
+    <div class="chapter-box" style="width: 100%; box-sizing: border-box;">
       <div class="chapter-title">CHAPTER</div>
       <div class="chapter-btns">
         <button id="chapInv" type="button" class="chap-btn">INVOCATION</button>
@@ -130,21 +133,24 @@ enginePanel.innerHTML = `
         <button id="chapAsc" type="button" class="chap-btn">ASCENSION</button>
       </div>
     </div>
-    <div class="sigil-preset-row" style="flex-wrap: wrap;">
+    <div class="sigil-preset-row" style="flex-wrap: wrap; width: 100%; box-sizing: border-box;">
         <button id="customSigilBtn" type="button" class="sigil-btn">Upload Sigil</button>
         <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
-    <label class="panel-label">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.5" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="checkbox-row"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
-    <div class="mic-section">
+    
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.5" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    
+    <label class="checkbox-row" style="max-width:100%;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
+    
+    <div class="mic-section" style="width: 100%; box-sizing: border-box;">
       <label class="checkbox-row"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
-      <label class="panel-label" style="margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+      <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
       <div id="feedbackWarn">🔇 Feedback risk detected — mic monitor muted</div>
     </div>
-    <div id="midiStatus">🎹 MIDI: Waiting for connection...</div>
+    <div id="midiStatus" style="max-width:100%;">🎹 MIDI: Waiting for connection...</div>
   </div>
 `;
 document.body.appendChild(enginePanel);
@@ -365,7 +371,6 @@ function updateStars(delta) {
   if (!starPoints || !starGeo) return;
   const positions = starGeo.attributes.position.array; const vels = starGeo.userData.velocities; const spread = starGeo.userData.spread;
   
-  // FIX: Safety clamp for warpSpeed to prevent explosion
   let warpSpeed = 1 + (bassSm * 8); 
   if (isNaN(warpSpeed)) warpSpeed = 1;
 
@@ -593,7 +598,6 @@ function bandEnergy(freqData, hzLo, hzHi) {
     const n = Math.max(1, b - a + 1); 
     for (let i = a; i <= b; i++) sum += freqData[i] || 0; 
     
-    // Safety check to ensure we always return a valid number, never NaN
     const result = (sum / n) / 255; 
     return isNaN(result) ? 0 : result;
 }
@@ -603,140 +607,143 @@ let bassSm = 0, midSm = 0, snareSm = 0; let snareAvg = 0, snarePrev = 0, lastSna
 /* ================= MAIN LOOP ================= */
 function loop() {
   raf = requestAnimationFrame(loop);
-  if (!renderer || !scene || !camera || !composer) return;
-
-  const dt = 1/60; const time = performance.now() * 0.001;
-
-  if (analyser && dataFreq) {
-    analyser.getByteFrequencyData(dataFreq);
-    
-    // FIX: Safely parse sensitivity and clamp it so it can never be NaN or cause a white-out explosion
-    let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.5;
-    if (isNaN(rawSens)) rawSens = 0.5;
-    const sensitivity = Math.max(0.1, Math.min(rawSens, 5.0)); 
-
-    const bass = bandEnergy(dataFreq, 30, 140) * sensitivity; 
-    const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity; 
-    const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
-    
-    bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
-    snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
-    if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
-      lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
-      if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm));
-    }
-  } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
-  snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
-
-  if (nebulaMaterial) {
-      nebulaMaterial.uniforms.time.value = time * 0.2; nebulaMaterial.uniforms.bass.value = bassSm;
-      const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
-      nebulaMaterial.uniforms.color1.value.setHSL(hue, 0.6, 0.08); nebulaMaterial.uniforms.color2.value.setHSL((hue + 0.1)%1, 0.8, 0.2); 
-  }
-
-  if (!reducedMotion) {
-    if (currentCameraMode === 0) { camTargetPos.set(0, 0, 18 - bassSm * 2); camTargetLook.set(0,0,0); } 
-    else if (currentCameraMode === 1) { camTargetPos.set(0, 0, 0); camTargetLook.set(Math.sin(time)*5, Math.cos(time*0.8)*5, -10); } 
-    else if (currentCameraMode === 2) { camTargetPos.set(Math.sin(time*0.5)*15, 15, Math.cos(time*0.5)*15); camTargetLook.set(0,0,0); } 
-    else if (currentCameraMode === 3) { camTargetPos.set(Math.sin(time)*3, Math.cos(time)*3, 5); camTargetLook.set(0,0,0); }
-    camera.position.lerp(camTargetPos, 0.05); const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
-    currentLook.lerp(camTargetLook, 0.1); camera.lookAt(currentLook);
-    
-    // Safety clamp on FOV to prevent NaN rendering collapse
-    let nextFov = baseFov - (bassSm * 15);
-    if(isNaN(nextFov)) nextFov = baseFov;
-    camera.fov = THREE.MathUtils.lerp(camera.fov, Math.max(10, Math.min(nextFov, 120)), 0.1);
-    
-    const shake = snapFlash * 0.3; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
-    camera.updateProjectionMatrix();
-  }
-
-  if (coreLight) {
-    coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
-    const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
-    if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
-  }
-
-  if (rgbShiftPass) rgbShiftPass.uniforms['amount'].value = THREE.MathUtils.lerp(rgbShiftPass.uniforms['amount'].value, 0.0015 + (bassSm * 0.01) + (snapFlash * 0.02), 0.1);
-  if (glitchPass) glitchPass.enabled = (bassSm + midSm + snareSm > 2.2 && Math.random() > 0.8);
-
-  if (starPoints) {
-    updateStars(dt); const slider = partEl ? parseFloat(partEl.value) : 10; 
-    starPoints.material.opacity = Math.max(0, Math.min(0.8, P.starsOpacity + 0.03 * Math.sin(time * 0.7) + Math.max(0, Math.min(0.20, 0.0065 * slider)) + bassSm * 0.2));
-  }
-
-  if (world && !reducedMotion) {
-    world.rotation.y = time * 0.45; world.rotation.x = Math.sin(time * 0.8) * 0.10; 
-    world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
-  }
-
-  if (morphMesh) {
-    const bassPunch = Math.pow(bassSm, 1.5) * 2.0; morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.15); 
-    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.12); 
-    const spikePunch = (snareSm * 2.0) + (snapFlash * 1.5); morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.25); 
-
-    const drift = reducedMotion ? 0 : 0.001; morphMesh.rotation.y += drift + midSm * 0.015; morphMesh.rotation.x += drift; morphMesh.rotation.z += Math.sin(time * 0.5) * 0.005;
-    
-    // Safety clamp on zoom object
-    let zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; if (isNaN(zoomInt)) zoomInt = 0.18;
-    const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
-    morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, Math.max(0.1, targetScale), 0.2));
-
-    const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360); const mode = palette?.value || "hue";
-    if (mode === "grayscale") { morphMesh.material.color.setHex(0xe6e6e6); } else if (mode === "energy") { morphMesh.material.color.setHSL((hue + bassSm * 0.2 + midSm * 0.1) % 1, 0.85, 0.5 + snareSm * 0.4); } else { morphMesh.material.color.setHSL((hue + Math.sin(time * 0.2) * 0.1) % 1, 0.75, 0.55); }
-    morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
-  }
-
-  if (sigilGroup && sigilBase && sigilGlow) {
-    const mode = palette?.value || "hue"; 
-    const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
-    sigilBase.material.opacity = opacity; 
-    
-    let glowColor = new THREE.Color(0x00d4ff); 
-    if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
-    sigilGlow.material.color.copy(glowColor); 
-    
-    const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
-    sigilGlow.material.opacity = glowOp; 
-    
-    sigilGroup.quaternion.copy(camera.quaternion);
-    const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); 
-    sigilGroup.rotateZ(Math.sin(time * 1.0) * 0.05 + (Math.random() - 0.5) * jitter);
-    
-    let zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; if (isNaN(zoomInt)) zoomInt = 0.18;
-    sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); 
-    
-    if (world && !reducedMotion) {
-        sigilGroup.position.x = world.position.x;
-        sigilGroup.position.y = world.position.y + Math.sin(time * 1.5) * 0.08;
-    } else {
-        sigilGroup.position.set(0, Math.sin(time * 1.5) * 0.08, 0);
-    }
-  }
-
-  for (const r of ringPool) {
-    if (r.t >= 999) continue; r.t += dt; const p = Math.min(1, r.t / r.life); r.mesh.scale.setScalar(r.baseScale + (1 - Math.pow(1 - p, 3)) * 1.35);
-    r.mesh.material.opacity = (1 - p) * 0.85 * (0.92 + 0.08 * Math.sin(time * 20)) * P.ringStrength; if (p >= 1) { r.t = 999; r.mesh.material.opacity = 0; }
-  }
-  for (const g of ghostPool) {
-    if (g.t >= 999) continue; g.t += dt; const p = Math.min(1, g.t / g.life);
-    g.group.position.x += g.vx * 0.14; g.group.position.y += g.vy * 0.14; g.group.rotation.y += g.spin * 0.04; g.group.scale.setScalar(g.baseScale + (1 - Math.pow(1 - p, 2)) * 0.28);
-    const fade = (1 - p); g.ink.material.opacity = Math.max(0, g.ink.material.opacity * 0.90) * fade; g.glow.material.opacity = Math.max(0, g.glow.material.opacity * 0.88) * fade; if (p >= 1) { g.t = 999; g.group.visible = false; }
-  }
-
-  for (let i = 0; i < sparkPool.length; i++) {
-    const s = sparkPool[i]; if (!s.active) continue; s.life += dt; if (s.life >= s.maxLife) { s.active = false; s.mesh.visible = false; continue; }
-    s.mesh.position.addScaledVector(s.velocity, dt); s.velocity.multiplyScalar(0.95); s.mesh.rotation.set(s.mesh.rotation.x + s.spin.x, s.mesh.rotation.y + s.spin.y, s.mesh.rotation.z + s.spin.z);
-    const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
-  }
-
-  // FIX: Safe clamp on Bloom Pass
-  if (bloomPass) {
-      const targetBloom = P.bloomStrength + (bassSm * 0.15) + (snapFlash * 0.3);
-      bloomPass.strength = isNaN(targetBloom) ? 1.0 : Math.min(targetBloom, 3.0); 
-  }
   
-  composer.render();
+  // WRAP EVERYTHING IN TRY/CATCH SO A MATH ERROR NEVER KILLS THE ANIMATION LOOP
+  try {
+      if (!renderer || !scene || !camera || !composer) return;
+
+      const dt = 1/60; const time = performance.now() * 0.001;
+
+      if (analyser && dataFreq) {
+        analyser.getByteFrequencyData(dataFreq);
+        
+        let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.5;
+        if (isNaN(rawSens)) rawSens = 0.5;
+        const sensitivity = Math.max(0.1, Math.min(rawSens, 5.0)); 
+
+        const bass = bandEnergy(dataFreq, 30, 140) * sensitivity; 
+        const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity; 
+        const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
+        
+        bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
+        snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
+        if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
+          lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
+          if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm));
+        }
+      } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
+      snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
+
+      if (nebulaMaterial) {
+          nebulaMaterial.uniforms.time.value = time * 0.2; nebulaMaterial.uniforms.bass.value = bassSm;
+          const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
+          nebulaMaterial.uniforms.color1.value.setHSL(hue, 0.6, 0.08); nebulaMaterial.uniforms.color2.value.setHSL((hue + 0.1)%1, 0.8, 0.2); 
+      }
+
+      if (!reducedMotion) {
+        if (currentCameraMode === 0) { camTargetPos.set(0, 0, 18 - bassSm * 2); camTargetLook.set(0,0,0); } 
+        else if (currentCameraMode === 1) { camTargetPos.set(0, 0, 0); camTargetLook.set(Math.sin(time)*5, Math.cos(time*0.8)*5, -10); } 
+        else if (currentCameraMode === 2) { camTargetPos.set(Math.sin(time*0.5)*15, 15, Math.cos(time*0.5)*15); camTargetLook.set(0,0,0); } 
+        else if (currentCameraMode === 3) { camTargetPos.set(Math.sin(time)*3, Math.cos(time)*3, 5); camTargetLook.set(0,0,0); }
+        camera.position.lerp(camTargetPos, 0.05); const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
+        currentLook.lerp(camTargetLook, 0.1); camera.lookAt(currentLook);
+        
+        let nextFov = baseFov - (bassSm * 15);
+        if(isNaN(nextFov)) nextFov = baseFov;
+        camera.fov = THREE.MathUtils.lerp(camera.fov, Math.max(10, Math.min(nextFov, 120)), 0.1);
+        
+        const shake = snapFlash * 0.3; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
+        camera.updateProjectionMatrix();
+      }
+
+      if (coreLight) {
+        coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
+        const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
+        if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
+      }
+
+      if (rgbShiftPass) rgbShiftPass.uniforms['amount'].value = THREE.MathUtils.lerp(rgbShiftPass.uniforms['amount'].value, 0.0015 + (bassSm * 0.01) + (snapFlash * 0.02), 0.1);
+      if (glitchPass) glitchPass.enabled = (bassSm + midSm + snareSm > 2.2 && Math.random() > 0.8);
+
+      if (starPoints) {
+        updateStars(dt); const slider = partEl ? parseFloat(partEl.value) : 10; 
+        starPoints.material.opacity = Math.max(0, Math.min(0.8, P.starsOpacity + 0.03 * Math.sin(time * 0.7) + Math.max(0, Math.min(0.20, 0.0065 * slider)) + bassSm * 0.2));
+      }
+
+      if (world && !reducedMotion) {
+        world.rotation.y = time * 0.45; world.rotation.x = Math.sin(time * 0.8) * 0.10; 
+        world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
+      }
+
+      if (morphMesh) {
+        const bassPunch = Math.pow(bassSm, 1.5) * 2.0; morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.15); 
+        morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.12); 
+        const spikePunch = (snareSm * 2.0) + (snapFlash * 1.5); morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.25); 
+
+        const drift = reducedMotion ? 0 : 0.001; morphMesh.rotation.y += drift + midSm * 0.015; morphMesh.rotation.x += drift; morphMesh.rotation.z += Math.sin(time * 0.5) * 0.005;
+        
+        let zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; if (isNaN(zoomInt)) zoomInt = 0.18;
+        const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
+        morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, Math.max(0.1, targetScale), 0.2));
+
+        const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360); const mode = palette?.value || "hue";
+        if (mode === "grayscale") { morphMesh.material.color.setHex(0xe6e6e6); } else if (mode === "energy") { morphMesh.material.color.setHSL((hue + bassSm * 0.2 + midSm * 0.1) % 1, 0.85, 0.5 + snareSm * 0.4); } else { morphMesh.material.color.setHSL((hue + Math.sin(time * 0.2) * 0.1) % 1, 0.75, 0.55); }
+        morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
+      }
+
+      if (sigilGroup && sigilBase && sigilGlow) {
+        const mode = palette?.value || "hue"; 
+        const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
+        sigilBase.material.opacity = opacity; 
+        
+        let glowColor = new THREE.Color(0x00d4ff); 
+        if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
+        sigilGlow.material.color.copy(glowColor); 
+        
+        const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
+        sigilGlow.material.opacity = glowOp; 
+        
+        sigilGroup.quaternion.copy(camera.quaternion);
+        const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); 
+        sigilGroup.rotateZ(Math.sin(time * 1.0) * 0.05 + (Math.random() - 0.5) * jitter);
+        
+        let zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; if (isNaN(zoomInt)) zoomInt = 0.18;
+        sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); 
+        
+        if (world && !reducedMotion) {
+            sigilGroup.position.x = world.position.x;
+            sigilGroup.position.y = world.position.y + Math.sin(time * 1.5) * 0.08;
+        } else {
+            sigilGroup.position.set(0, Math.sin(time * 1.5) * 0.08, 0);
+        }
+      }
+
+      for (const r of ringPool) {
+        if (r.t >= 999) continue; r.t += dt; const p = Math.min(1, r.t / r.life); r.mesh.scale.setScalar(r.baseScale + (1 - Math.pow(1 - p, 3)) * 1.35);
+        r.mesh.material.opacity = (1 - p) * 0.85 * (0.92 + 0.08 * Math.sin(time * 20)) * P.ringStrength; if (p >= 1) { r.t = 999; r.mesh.material.opacity = 0; }
+      }
+      for (const g of ghostPool) {
+        if (g.t >= 999) continue; g.t += dt; const p = Math.min(1, g.t / g.life);
+        g.group.position.x += g.vx * 0.14; g.group.position.y += g.vy * 0.14; g.group.rotation.y += g.spin * 0.04; g.group.scale.setScalar(g.baseScale + (1 - Math.pow(1 - p, 2)) * 0.28);
+        const fade = (1 - p); g.ink.material.opacity = Math.max(0, g.ink.material.opacity * 0.90) * fade; g.glow.material.opacity = Math.max(0, g.glow.material.opacity * 0.88) * fade; if (p >= 1) { g.t = 999; g.group.visible = false; }
+      }
+
+      for (let i = 0; i < sparkPool.length; i++) {
+        const s = sparkPool[i]; if (!s.active) continue; s.life += dt; if (s.life >= s.maxLife) { s.active = false; s.mesh.visible = false; continue; }
+        s.mesh.position.addScaledVector(s.velocity, dt); s.velocity.multiplyScalar(0.95); s.mesh.rotation.set(s.mesh.rotation.x + s.spin.x, s.mesh.rotation.y + s.spin.y, s.mesh.rotation.z + s.spin.z);
+        const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
+      }
+
+      if (bloomPass) {
+          const targetBloom = P.bloomStrength + (bassSm * 0.15) + (snapFlash * 0.3);
+          bloomPass.strength = isNaN(targetBloom) ? 1.0 : Math.min(targetBloom, 3.0); 
+      }
+      
+      composer.render();
+      
+  } catch (renderError) {
+      console.error("Frame render error, recovering...", renderError);
+  }
 }
 
 /* ================= RECORDING ================= */
@@ -748,13 +755,25 @@ async function startRecording() {
   try {
       if (!engineInitialized) await initEngine();
       
+      if (!canvas.captureStream) {
+          setStatus("❌ Recording not supported on this browser.");
+          return;
+      }
+      
       recBtn.classList.add('recording-pulse');
       
-      const fps = 60; 
+      // FIX: Dropped to 30 FPS to stop mobile CPU/GPU from crashing
+      const fps = 30; 
       const canvasStream = canvas.captureStream(fps); 
-      const out = audioRecordDest?.stream; 
-      if (out && out.getAudioTracks().length) {
-          canvasStream.addTrack(out.getAudioTracks()[0]);
+      
+      // FIX: Wrap audio track binding in a safe block so it won't crash the video capture
+      try {
+          const out = audioRecordDest?.stream; 
+          if (out && out.getAudioTracks().length > 0) {
+              canvasStream.addTrack(out.getAudioTracks()[0]);
+          }
+      } catch (audioErr) {
+          console.warn("Could not bind audio to video track, recording video only.", audioErr);
       }
       
       recordedChunks = []; 
@@ -765,10 +784,17 @@ async function startRecording() {
           downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); 
           setStatus("✅ Recording saved"); 
       };
+      
       mediaRecorder.start(250); 
       recording = true; 
       recBtn.textContent = "⏹ STOP"; 
       setStatus("⏺ Recording…");
+      
+      // FIX: Force wake the audio context back up in case the browser muted it to start recording
+      if (engine && engine.ctx && engine.ctx.state === 'suspended') {
+          await engine.ctx.resume();
+      }
+      
   } catch (err) {
       console.error("Recording failed to start:", err);
       stopRecording();
