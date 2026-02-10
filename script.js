@@ -99,9 +99,7 @@ let fxaaPass = null;
 
 let world = null;       // cage/sigil/rings live here
 let starPoints = null;  // star field in scene space
-
-// === THE SHAPESHIFTER ===
-let morphMesh = null;   // The single morphing form
+let morphMesh = null;   // THE MORPHING MESH
 
 // Sigil layers
 let sigilGroup = null;
@@ -422,12 +420,12 @@ function initThree() {
   world = new THREE.Group();
   scene.add(world);
 
-  // Stars
+  // Stars in scene space (Deep Space)
   starPoints = makeStars(1900, 120);
   scene.add(starPoints);
 
-  // The Morphing Shape
-  makeMorphShape();
+  // Cage + sigil etc inside world
+  makeMorphingCage();
 
   initRings();
   initGhosts();
@@ -451,30 +449,38 @@ function initThree() {
   applyChapter(chapter);
 }
 
-/* ================= IMPROVED STARS ================= */
+/* ================= IMPROVED STARS (WARP FIELD) ================= */
 
 let starGeo = null;
 
 function makeStars(count, spread) {
   starGeo = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
-  const velocities = []; 
+  const velocities = []; // Store speed per star for parallax
 
   for (let i = 0; i < count; i++) {
     const ix = i * 3;
+    // Spread X/Y widely, place Z deep into the screen
     positions[ix] = (Math.random() - 0.5) * spread * 1.5; 
     positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
-    positions[ix + 2] = (Math.random() - 0.5) * spread * 2; 
+    positions[ix + 2] = (Math.random() - 0.5) * spread * 2; // Depth
+    // Random speed between 0.05 and 0.3
     velocities.push(0.05 + Math.random() * 0.25);
   }
 
   starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   
+  // Use a slightly brighter material for the warp effect
   const mat = new THREE.PointsMaterial({
-    color: 0x8feaff, size: 0.08, transparent: true,
-    opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending
+    color: 0x8feaff, // Slight cyan tint
+    size: 0.08,      // Slightly larger
+    transparent: true,
+    opacity: 0.6,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
   });
   
+  // Save velocities for the loop
   starGeo.userData = { velocities: velocities, spread: spread };
   return new THREE.Points(starGeo, mat);
 }
@@ -485,121 +491,85 @@ function updateStars(delta) {
   const positions = starGeo.attributes.position.array;
   const vels = starGeo.userData.velocities;
   const spread = starGeo.userData.spread;
+  
+  // Speed multiplier based on Bass energy (Warp drive effect)
   const warpSpeed = 1 + (bassSm * 8); 
 
   for (let i = 0; i < vels.length; i++) {
     const ix = i * 3;
+    // Move Z towards camera
     positions[ix + 2] += vels[i] * warpSpeed * delta * 20;
+
+    // If star passes camera (Z > 20), reset to far background
     if (positions[ix + 2] > 20) {
-      positions[ix + 2] = -150; 
+      positions[ix + 2] = -150; // Send back to deep space
+      // Randomize X/Y again for variety
       positions[ix] = (Math.random() - 0.5) * spread * 1.5;
       positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
     }
   }
+  
   starGeo.attributes.position.needsUpdate = true;
 }
 
-/* ================= THE MORPHING SHAPE ================= */
+/* ================= MORPHING CAGE (TRUE MORPH) ================= */
 
-function makeMorphShape() {
-  // Use a high-detail Icosahedron as our "clay"
-  const geo = new THREE.IcosahedronGeometry(4.5, 5); // Radius 4.5, Detail 5 (high vertex count)
-
-  // Store original positions for calculating deformations relative to the sphere
-  const posAttribute = geo.attributes.position;
-  const originalPos = new Float32Array(posAttribute.array.length);
-  originalPos.set(posAttribute.array);
-  geo.userData = { originalPos: originalPos };
-
-  // Use a wireframe material that looks cool
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0x00d4ff,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.5,
-    blending: THREE.AdditiveBlending
-  });
-
-  morphMesh = new THREE.Mesh(geo, mat);
-  world.add(morphMesh);
-}
-
-// Pseudo-noise function for waves without external library
-function cheapNoise(x, y, z, time) {
-  return Math.sin(x * 0.5 + time) + 
-         Math.sin(y * 0.3 + time * 1.2) + 
-         Math.sin(z * 0.5 + time * 0.8);
-}
-
-function updateMorphShape(time) {
-  if (!morphMesh || reducedMotion) return;
-
-  const geom = morphMesh.geometry;
-  const pos = geom.attributes.position;
-  const arr = pos.array;
-  const orig = geom.userData.originalPos;
-
-  // Music Factors
-  const bassForce = bassSm * 2.5; // Creates large blob wobbly waves
-  const snareForce = snareSm * 3.0; // Creates sharp spikes
-  const midForce = midSm * 1.0;     // General jitter
-
-  // Color Morphing based on Audio
-  const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
-  const hue = ((hueShift % 360) / 360);
-  
-  // Base Color -> Spike Color
-  const baseColor = new THREE.Color().setHSL(hue, 0.7, 0.5);
-  const bassColor = new THREE.Color().setHSL(0, 0.8, 0.5); // Red for Bass
-  const snareColor = new THREE.Color().setHSL(0.16, 1.0, 0.8); // Yellow/White for Snare
-
-  // Blend colors
-  const finalColor = baseColor.clone();
-  finalColor.lerp(bassColor, Math.min(1, bassSm));
-  finalColor.lerp(snareColor, Math.min(1, snareSm));
-  morphMesh.material.color.copy(finalColor);
-
-  // Opacity pulse
-  morphMesh.material.opacity = 0.2 + bassSm * 0.4 + snareSm * 0.4;
-
-  // Vertex Manipulation loop
-  for (let i = 0; i < arr.length; i += 3) {
-    const ox = orig[i];
-    const oy = orig[i + 1];
-    const oz = orig[i + 2];
-
-    // Normalize (direction from center)
-    const len = Math.sqrt(ox*ox + oy*oy + oz*oz);
-    const nx = ox / len;
-    const ny = oy / len;
-    const nz = oz / len;
-
-    // 1. BLOB EFFECT (Bass) - Low Frequency Noise
-    // Slow moving, large waves
-    const blobNoise = cheapNoise(ox * 0.2, oy * 0.2, oz * 0.2, time * 2.0);
-    const blobOffset = blobNoise * bassForce;
-
-    // 2. SPIKE EFFECT (Snare) - High Frequency Noise
-    // Fast moving, sharp waves
-    // Use higher multiplier on coordinates for "spikier" noise
-    const spikeNoise = Math.pow(Math.sin(ox * 1.5 + time * 15.0) * Math.cos(oy * 1.5), 2); 
-    const spikeOffset = spikeNoise * snareForce;
-
-    // 3. Combine
-    // New Radius = Original Radius + Blob + Spike
-    const newRadius = len + blobOffset + spikeOffset;
-
-    arr[i]     = nx * newRadius;
-    arr[i + 1] = ny * newRadius;
-    arr[i + 2] = nz * newRadius;
+function makeMorphingCage() {
+  if (morphMesh) {
+    world.remove(morphMesh);
+    morphMesh.geometry.dispose();
   }
 
-  pos.needsUpdate = true;
-  geom.computeVertexNormals(); // Re-calculate normals so lighting/shading works (if needed)
+  // 1. BASE GEOMETRY (Sphere/Icosahedron)
+  const baseGeo = new THREE.IcosahedronGeometry(5.0, 5); // High detail for smooth morph
+  const posAttribute = baseGeo.attributes.position;
+  
+  // 2. CREATE MORPH TARGETS (Different Shapes)
+  const cubePositions = [];
+  const spikePositions = [];
 
-  // Rotate the whole object slightly
-  morphMesh.rotation.y += 0.002 + bassSm * 0.01;
-  morphMesh.rotation.z += midSm * 0.01;
+  const vec = new THREE.Vector3();
+
+  for (let i = 0; i < posAttribute.count; i++) {
+    vec.fromBufferAttribute(posAttribute, i);
+    
+    // --- Target A: CUBE (Bass) ---
+    // Project sphere vertices onto a cube surface
+    const norm = vec.clone().normalize();
+    // A point on a cube is derived by dividing vector by its max component
+    const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
+    const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5); // Cube Radius
+    cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
+
+    // --- Target B: SPIKES (Highs) ---
+    // Push vertices out randomly to form crystal spikes
+    // Use position based noise to keep it deterministic (spikes don't jitter, they morph)
+    const noise = Math.sin(vec.x * 0.5) * Math.cos(vec.y * 0.5) * Math.sin(vec.z * 0.5);
+    const spikeScale = 1.0 + Math.abs(noise) * 1.5; // Up to 2.5x size
+    const spikeVec = vec.clone().multiplyScalar(spikeScale);
+    spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
+  }
+
+  // 3. ADD ATTRIBUTES TO GEOMETRY
+  baseGeo.morphAttributes.position = [
+    new THREE.Float32BufferAttribute(cubePositions, 3),  // Index 0: Cube
+    new THREE.Float32BufferAttribute(spikePositions, 3)  // Index 1: Spikes
+  ];
+
+  // 4. MATERIAL
+  // Use MeshBasicMaterial with wireframe:true because standard Lines don't support morphs easily
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x00d4ff,
+    wireframe: true, // WIREFRAME MODE
+    transparent: true,
+    opacity: 0.35,
+    morphTargets: true, // Enable morphing
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+  });
+
+  morphMesh = new THREE.Mesh(baseGeo, mat);
+  world.add(morphMesh);
 }
 
 /* ================= RITUAL RINGS ================= */
@@ -924,8 +894,6 @@ function loop() {
   raf = requestAnimationFrame(loop);
   if (!renderer || !scene || !camera || !composer) return;
 
-  const time = performance.now() * 0.001;
-
   // Audio Data
   if (analyser && dataFreq) {
     analyser.getByteFrequencyData(dataFreq);
@@ -941,9 +909,10 @@ function loop() {
     snareAvg = snareAvg * 0.965 + snareSm * 0.035;
     const rise = snareSm - snarePrev;
     snarePrev = snareSm;
+    const now = performance.now() / 1000;
     const isHit = (snareSm > snareAvg * 1.45) && (rise > 0.055);
-    if (isHit && (time - lastSnareTrig) > 0.14) {
-      lastSnareTrig = time;
+    if (isHit && (now - lastSnareTrig) > 0.14) {
+      lastSnareTrig = now;
       snapFlash = 1.0;
       triggerRingPulse(Math.min(1, snareSm * 1.6));
       spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
@@ -953,33 +922,75 @@ function loop() {
   }
   snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
-  // 1. STARS
+  // 1. STARS: Warp Field (Drift + Acceleration)
   if (starPoints) {
-    updateStars(1/60);
+    updateStars(1/60); // Drift logic
     const base = P.starsOpacity;
-    const tw = base + 0.03 * Math.sin(time * 0.7);
+    const tw = base + 0.03 * Math.sin(performance.now() * 0.0007);
     const slider = partEl ? parseFloat(partEl.value) : 10; 
     const add = Math.max(0, Math.min(0.20, 0.0065 * slider));
     starPoints.material.opacity = Math.max(0, Math.min(0.8, tw + add + bassSm * 0.2));
   }
 
-  // 2. WORLD MOVEMENT
+  // 2. WORLD MOVEMENT (Rotation)
   if (world && !reducedMotion) {
-    world.rotation.y = time * 0.25;
-    world.rotation.x = Math.sin(time * 0.4) * 0.05;
-    world.position.x = Math.sin(time * 0.6) * 0.25;
-    world.position.y = Math.cos(time * 0.5) * 0.2;
+    const t = performance.now() * 0.00025;
+    world.rotation.y = t * 0.45;
+    world.rotation.x = Math.sin(t * 0.8) * 0.10;
+    world.position.x = Math.sin(t * 1.2) * 0.55;
+    world.position.y = Math.cos(t * 0.9) * 0.35;
   }
 
-  // 3. MORPH SHAPE
+  // 3. MORPHING LOGIC (Single Shape -> Many Forms)
   if (morphMesh) {
-    updateMorphShape(time);
+    // Morph Target Influences: 0-1 range
+    // Index 0: Cube (Bass driven)
+    // Index 1: Spikes (Highs driven)
+    
+    // Smoothly apply bass influence to Morph Target 0 (Cube)
+    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(
+      morphMesh.morphTargetInfluences[0], 
+      bassSm * 1.2, // Strength
+      0.1
+    );
+
+    // Smoothly apply treble influence to Morph Target 1 (Spikes)
+    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(
+      morphMesh.morphTargetInfluences[1], 
+      snareSm * 1.5, // Strength
+      0.2
+    );
+
+    // Rotation (Twist effect via rotation speed)
+    const drift = reducedMotion ? 0 : 0.002;
+    morphMesh.rotation.y += drift + midSm * 0.01; // Spin faster on vocals
+    morphMesh.rotation.x += drift;
+
+    // Pulse Scale (Beat zoom)
     const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
     const scale = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
     morphMesh.scale.set(scale, scale, scale);
+
+    // Color
+    const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
+    const hue = ((hueShift % 360) / 360);
+    const mode = palette?.value || "hue";
+    
+    if (mode === "grayscale") {
+      morphMesh.material.color.setHex(0xe6e6e6);
+    } else if (mode === "energy") {
+       // Shift color from Blue (calm) to Red (Bass) to White (Highs)
+       const energyHue = (hue + bassSm * 0.2) % 1;
+       morphMesh.material.color.setHSL(energyHue, 0.85, 0.5 + snareSm * 0.4);
+    } else {
+       morphMesh.material.color.setHSL(hue, 0.75, 0.55);
+    }
+    
+    // Opacity pulse
+    morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.2 + snapFlash * 0.2;
   }
 
-  // 4. SIGIL (Relative to world)
+  // Sigil
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue";
     sigilBase.material.opacity = P.sigilInk + bassSm * 0.06;
@@ -996,12 +1007,11 @@ function loop() {
     const flash = snapFlash * P.glowSnap;
     sigilGlow.material.opacity = Math.max(0.22, Math.min(0.98, aura + flash));
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
-    // Sigil spins opposite to MorphMesh for depth
-    sigilGroup.rotation.y = -(time * 0.2) + (Math.random() - 0.5) * jitter;
-    sigilGroup.rotation.x = -0.18 + (Math.random() - 0.5) * jitter;
+    sigilGroup.rotation.y = 0.22 + Math.sin(performance.now() * 0.0012) * 0.02 + (Math.random() - 0.5) * jitter;
+    sigilGroup.rotation.x = -0.18 + Math.sin(performance.now() * 0.0010) * 0.015 + (Math.random() - 0.5) * jitter;
   }
 
-  // Rings & Ghosts
+  // Rings & Ghosts Animation
   const dt = 1/60;
   for (const r of ringPool) {
     if (r.t >= 999) continue;
@@ -1010,7 +1020,7 @@ function loop() {
     const ease = 1 - Math.pow(1 - p, 3);
     const scale = r.baseScale + ease * 1.35;
     r.mesh.scale.set(scale, scale, scale);
-    const flick = 0.92 + 0.08 * Math.sin(time * 12);
+    const flick = 0.92 + 0.08 * Math.sin(performance.now() * 0.02);
     r.mesh.material.opacity = (1 - p) * 0.85 * flick * P.ringStrength;
     if (p >= 1) { r.t = 999; r.mesh.material.opacity = 0; }
   }
@@ -1051,11 +1061,37 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function startRecording() {
-  // Only init if we are idle (not playing)
+  // Safe init: only initialize if NOT already running
   if (currentMode === "idle") {
     await initEngine();
   }
-  // If playing, DO NOT re-init (fixes the "stop" bug)
 
   const fps = 60;
-  const canvas
+  const canvasStream = canvas.captureStream(fps);
+  const out = audioRecordDest?.stream;
+  if (out && out.getAudioTracks().length) canvasStream.addTrack(out.getAudioTracks()[0]);
+  recordedChunks = [];
+  const mimeType = pickMime();
+  mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: mimeType || "video/webm" });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadBlob(blob, `sonic-inclusion-${stamp}.webm`);
+    setStatus("✅ Recording saved");
+  };
+  mediaRecorder.start(250);
+  recording = true;
+  recBtn.textContent = "⏹ STOP";
+  setStatus("⏺ Recording…");
+}
+function stopRecording() {
+  if (!mediaRecorder) return;
+  try { mediaRecorder.stop(); } catch {}
+  recording = false;
+  recBtn.textContent = "⏺ RECORD";
+}
+recBtn.addEventListener("click", async () => {
+  if (!recording) await startRecording();
+  else stopRecording();
+});
