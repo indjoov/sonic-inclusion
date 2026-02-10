@@ -116,7 +116,6 @@ hud.appendChild(recBtn); hud.appendChild(hudRightControls); document.body.append
 const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
 
-// FIX: Added the Audio controls directly into the Engine Panel HTML
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
 enginePanel.innerHTML = `
@@ -181,10 +180,10 @@ function setEngineOpen(open) {
   engineOpen = open; 
   if(open) {
       enginePanel.classList.add('open');
-      enginePanel.style.display = "block"; // Ensure it shows
+      enginePanel.style.display = "block";
   } else {
       enginePanel.classList.remove('open');
-      setTimeout(() => { if(!engineOpen) enginePanel.style.display = "none"; }, 400); // Hide after animation
+      setTimeout(() => { if(!engineOpen) enginePanel.style.display = "none"; }, 400);
   }
 }
 engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
@@ -203,7 +202,7 @@ const zoomEl = enginePanel.querySelector("#zoomInt");
 const hueEl  = enginePanel.querySelector("#hueShift");
 const midiStatusEl = enginePanel.querySelector("#midiStatus");
 const panelSensEl = enginePanel.querySelector("#sens-panel");
-const paletteEl = enginePanel.querySelector("#palette-panel"); // Link new palette selector
+const paletteEl = enginePanel.querySelector("#palette-panel");
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
 const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
@@ -536,7 +535,7 @@ function getMIDIMessage(message) {
   if (command === 176 && note === 1) { if(zoomEl) zoomEl.value = Math.round((velocity / 127) * 100); }
 }
 
-/* ================= AUDIO ENGINE INIT (BULLETPROOF) ================= */
+/* ================= AUDIO ENGINE INIT ================= */
 let engineInitialized = false;
 
 async function initEngine() {
@@ -573,7 +572,7 @@ async function initEngine() {
 overlay.style.cursor = "pointer";
 overlay.addEventListener("click", () => { initEngine(); });
 
-/* ================= CLEAN STOP / INPUTS (MOVED TO PANEL) ================= */
+/* ================= CLEAN STOP / INPUTS ================= */
 async function stopAll({ suspend = true } = {}) {
   if (bufferSrc) { try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {} bufferSrc = null; }
   if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
@@ -582,14 +581,18 @@ async function stopAll({ suspend = true } = {}) {
   const panelMicBtn = enginePanel.querySelector("#panel-micBtn");
   if (panelMicBtn) panelMicBtn.textContent = "🎙️ Mic"; 
   feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
-  if (suspend) try { await engine.ctx.suspend(); } catch {}
+  if (suspend && engine && engine.ctx) try { await engine.ctx.suspend(); } catch {}
 }
 
 async function playDemo(path) {
   if (!engineInitialized) await initEngine();
   await stopAll({ suspend: false }); setStatus("⏳ Loading demo…");
   const buf = await fetch(path).then(r => r.arrayBuffer()); const audio = await engine.ctx.decodeAudioData(buf);
-  await engine.resume(); currentMode = "demo"; if (monitorGain) monitorGain.gain.value = 1;
+  
+  // FIX: Safely resume the specific Audio Context so the music actually plays
+  if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
+  
+  currentMode = "demo"; if (monitorGain) monitorGain.gain.value = 1;
   bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
   bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
 }
@@ -604,24 +607,38 @@ enginePanel.querySelector("#panel-fileBtn").addEventListener("click", async () =
 });
 
 fileInput?.addEventListener("change", async (e) => {
-  try { if(!engineInitialized) await initEngine(); const file = e.target.files?.[0]; if (!file) return; await stopAll({ suspend: false }); setStatus("⏳ Decoding file…");
-    const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf); await engine.resume(); currentMode = "file"; if (monitorGain) monitorGain.gain.value = 1;
-    bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain); bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ File finished"); };
+  try { 
+    if(!engineInitialized) await initEngine(); 
+    const file = e.target.files?.[0]; if (!file) return; 
+    await stopAll({ suspend: false }); setStatus("⏳ Decoding file…");
+    const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf); 
+    
+    // FIX: Safely resume the specific Audio Context
+    if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
+    
+    currentMode = "file"; if (monitorGain) monitorGain.gain.value = 1;
+    bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain); 
+    bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ File finished"); };
     bufferSrc.start(0); setStatus(`🎵 Playing: ${file.name}`);
-  } catch { setStatus("❌ File error"); } finally { if (fileInput) fileInput.value = ""; }
+  } catch (err) { setStatus("❌ File error"); console.error(err); } finally { if (fileInput) fileInput.value = ""; }
 });
 
 enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) => {
   if(!engineInitialized) await initEngine();
   if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
-  try { await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
+  try { 
+    await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
-    await engine.resume(); currentMode = "mic"; micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
+    
+    // FIX: Safely resume the specific Audio Context
+    if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
+    
+    currentMode = "mic"; micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
     e.target.textContent = "⏹ Stop Mic"; applyMicMonitorGain(); setStatus("🎙️ Mic active");
-  } catch { setStatus("❌ Mic error"); await stopAll({ suspend: true }); }
+  } catch (err) { setStatus("❌ Mic error"); console.error(err); await stopAll({ suspend: true }); }
 });
 
-/* ================= AUDIO ANALYSIS (BULLETPROOF MATH FIX) ================= */
+/* ================= AUDIO ANALYSIS ================= */
 function hzToBin(hz) { if (!engine?.ctx || !analyser) return 0; const nyquist = engine.ctx.sampleRate / 2; const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1)); return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx)); }
 
 function bandEnergy(freqData, hzLo, hzHi) { 
