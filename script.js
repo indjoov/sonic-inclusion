@@ -105,6 +105,8 @@ let morphMesh = null;   // THE MORPHING MESH
 let sigilGroup = null;
 let sigilBase = null;
 let sigilGlow = null;
+let sigilBaseBack = null; // Back side
+let sigilGlowBack = null; // Back side
 
 let sigilBaseTex = null;
 let sigilGlowTex = null;
@@ -557,7 +559,6 @@ function makeMorphingCage() {
   ];
 
   // 4. MATERIAL
-  // Use MeshBasicMaterial with wireframe:true because standard Lines don't support morphs easily
   const mat = new THREE.MeshBasicMaterial({
     color: 0x00d4ff,
     wireframe: true, // WIREFRAME MODE
@@ -565,7 +566,8 @@ function makeMorphingCage() {
     opacity: 0.35,
     morphTargets: true, // Enable morphing
     blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    depthWrite: false // FIX: Don't write to depth buffer (Hologram Mode)
   });
 
   morphMesh = new THREE.Mesh(baseGeo, mat);
@@ -718,32 +720,38 @@ function loadSigilLayers(url) {
         sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
 
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
+        
+        // --- FRONT SIDE MATERIAL ---
         const inkMat = new THREE.MeshBasicMaterial({
-          map: sigilBaseTex,
-          transparent: true,
-          opacity: 0.90,
-          depthWrite: false,
-          depthTest: false,
+          map: sigilBaseTex, transparent: true, opacity: 0.90,
+          depthWrite: false, depthTest: false,
           blending: THREE.NormalBlending,
-          side: THREE.DoubleSide // <--- FIX: Ensure sigil is visible from back
+          side: THREE.DoubleSide
         });
         const glowMat = new THREE.MeshBasicMaterial({
-          map: sigilGlowTex,
-          transparent: true,
-          opacity: 0.50,
-          color: new THREE.Color(0x00d4ff),
-          depthWrite: false,
-          depthTest: false,
+          map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff),
+          depthWrite: false, depthTest: false,
           blending: THREE.AdditiveBlending,
-          side: THREE.DoubleSide // <--- FIX: Ensure sigil is visible from back
+          side: THREE.DoubleSide
         });
 
         sigilBase = new THREE.Mesh(plane, inkMat);
         sigilGlow = new THREE.Mesh(plane, glowMat);
         sigilGlow.scale.set(1.08, 1.08, 1.08);
 
+        // --- BACK SIDE MESH (GUARANTEED VISIBILITY) ---
+        sigilBaseBack = sigilBase.clone();
+        sigilBaseBack.rotation.y = Math.PI; // Flip 180
+        
+        sigilGlowBack = sigilGlow.clone();
+        sigilGlowBack.rotation.y = Math.PI; // Flip 180
+
         sigilGroup = new THREE.Group();
-        sigilGroup.add(sigilGlow); sigilGroup.add(sigilBase);
+        sigilGroup.add(sigilGlow);
+        sigilGroup.add(sigilBase);
+        sigilGroup.add(sigilGlowBack); // Add Back
+        sigilGroup.add(sigilBaseBack); // Add Back
+
         sigilGroup.position.set(0, 0, 0.22);
         sigilGroup.rotation.x = -0.18; sigilGroup.rotation.y = 0.22;
         world.add(sigilGroup);
@@ -1006,7 +1014,9 @@ function loop() {
     const mode = palette?.value || "hue";
     
     // 1. ANCHOR OPACITY: Ensure it never drops below 0.35
-    sigilBase.material.opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
+    const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
+    sigilBase.material.opacity = opacity;
+    if (sigilBaseBack) sigilBaseBack.material.opacity = opacity;
     
     let glowColor = new THREE.Color(0x00d4ff);
     if (mode === "grayscale") {
@@ -1017,11 +1027,14 @@ function loop() {
       glowColor = cyan.clone().lerp(purple, Math.min(1, snapFlash * 1.1));
     }
     sigilGlow.material.color.copy(glowColor);
+    if (sigilGlowBack) sigilGlowBack.material.color.copy(glowColor);
     
     // 2. GLOW ANCHOR
     const aura = P.glowBase + bassSm * P.glowBass;
     const flash = snapFlash * P.glowSnap;
-    sigilGlow.material.opacity = Math.max(0.30, Math.min(0.98, aura + flash));
+    const glowOp = Math.max(0.30, Math.min(0.98, aura + flash));
+    sigilGlow.material.opacity = glowOp;
+    if (sigilGlowBack) sigilGlowBack.material.opacity = glowOp;
     
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
     sigilGroup.rotation.y = 0.22 + Math.sin(performance.now() * 0.0012) * 0.02 + (Math.random() - 0.5) * jitter;
