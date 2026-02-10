@@ -61,7 +61,7 @@ const engine = new AudioEngine();
 let raf = null; let analyser = null; let dataFreq = null;
 let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
-let audioRecordDest = null; // Safety declaration
+let audioRecordDest = null; 
 
 /* ================= THREE STATE ================= */
 
@@ -119,7 +119,6 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-// FIX: Default sensitivity set to minimum (0.1)
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -450,7 +449,10 @@ function initGhosts() {
     const group = new THREE.Group(); group.visible = false; group.position.set(0, 0, 0.2); group.rotation.set(-0.18, 0.22, 0);
     const plane = new THREE.PlaneGeometry(6.9, 6.9);
     const inkMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
-    const glowMat = new MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+    
+    // FIX: Re-added the missing "THREE." that was causing the crash
+    const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+    
     const glow = new THREE.Mesh(plane, glowMat); glow.scale.setScalar(1.08); const ink = new THREE.Mesh(plane, inkMat);
     group.add(glow, ink); world?.add(group); ghostPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
   }
@@ -786,7 +788,7 @@ function loop() {
   }
 }
 
-/* ================= RECORDING (FIXED MOBILE AUDIO FREEZE) ================= */
+/* ================= RECORDING ================= */
 let mediaRecorder = null, recordedChunks = [], recording = false;
 function pickMime() { const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]; for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ""; }
 function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -804,25 +806,19 @@ async function startRecording() {
       
       const fps = 30; 
       const canvasStream = canvas.captureStream(fps); 
-      const videoTrack = canvasStream.getVideoTracks()[0];
-      let combinedStream;
       
-      // FIX: Create a completely new stream for recording so it doesn't break the main audio loop
       try {
           const out = audioRecordDest?.stream; 
           if (out && out.getAudioTracks().length > 0) {
-              combinedStream = new MediaStream([videoTrack, out.getAudioTracks()[0]]);
-          } else {
-              combinedStream = new MediaStream([videoTrack]);
+              canvasStream.addTrack(out.getAudioTracks()[0]);
           }
       } catch (audioErr) {
-          console.warn("Could not bind audio securely, recording video only to prevent crash.", audioErr);
-          combinedStream = new MediaStream([videoTrack]);
+          console.warn("Could not bind audio to video track, recording video only.", audioErr);
       }
       
       recordedChunks = []; 
       const mimeType = pickMime(); 
-      mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
+      mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
       mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
       mediaRecorder.onstop = () => { 
           downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); 
