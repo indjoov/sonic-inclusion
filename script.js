@@ -26,6 +26,13 @@ const fileBtn = document.getElementById("fileBtn");
 const demoBtn = document.getElementById("demoBtn");
 const fileInput = document.getElementById("fileInput");
 
+// Custom Sigil Input (Created dynamically)
+const sigilInput = document.createElement("input");
+sigilInput.type = "file";
+sigilInput.accept = "image/png, image/jpeg, image/svg+xml";
+sigilInput.hidden = true;
+document.body.appendChild(sigilInput);
+
 if (srText) {
   srText.setAttribute("aria-live", "polite");
   srText.setAttribute("role", "status");
@@ -97,11 +104,8 @@ let fxaaPass = null;
 
 let world = null;       
 let starPoints = null;  
-
-// The Single Morphing Line Geometry
 let morphMesh = null;
 
-// Performance Art State
 let coreLight = null;       
 let rgbShiftPass = null;    
 let glitchPass = null;      
@@ -109,7 +113,6 @@ let sparkPool = [];
 let sparkCursor = 0;
 let baseFov = 55;           
 
-// Sigil layers
 let sigilGroup = null;
 let sigilBase = null;
 let sigilGlow = null;
@@ -145,7 +148,7 @@ hud.id = "si-hud";
 hud.style.cssText = `
   position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 2000; display: flex; gap: 12px; align-items: center; justify-content: space-between;
-  pointer-events: none; box-sizing: border-box; max-width: 980px; margin: 0 auto;
+  box-sizing: border-box; max-width: 980px; margin: 0 auto;
 `;
 
 const recBtn = document.createElement("button");
@@ -153,9 +156,20 @@ recBtn.id = "si-recBtn";
 recBtn.type = "button";
 recBtn.textContent = "⏺ RECORD";
 recBtn.style.cssText = `
-  pointer-events: auto; background: #ff2b5a; color: #111; border: 1px solid rgba(255,255,255,0.15);
+  background: #ff2b5a; color: #111; border: 1px solid rgba(255,255,255,0.15);
   padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 0.5px;
-  box-shadow: 0 12px 30px rgba(255,43,90,0.25); display: inline-flex; align-items: center; gap: 10px;
+  box-shadow: 0 12px 30px rgba(255,43,90,0.25); cursor: pointer;
+`;
+
+const hudRightControls = document.createElement("div");
+hudRightControls.style.cssText = "display: flex; gap: 10px;";
+
+const fsBtn = document.createElement("button");
+fsBtn.type = "button";
+fsBtn.textContent = "📺 PROJECTION";
+fsBtn.style.cssText = `
+  background: rgba(10,10,10,0.85); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+  padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 1px; cursor: pointer;
 `;
 
 const engineToggle = document.createElement("button");
@@ -163,13 +177,15 @@ engineToggle.id = "si-engineToggle";
 engineToggle.type = "button";
 engineToggle.textContent = "⚙️ ENGINE";
 engineToggle.style.cssText = `
-  pointer-events: auto; flex: 0 0 auto; background: rgba(10,10,10,0.85); color: #8feaff;
-  border: 1px solid rgba(0,212,255,0.65); padding: 12px 16px; border-radius: 999px;
-  font-weight: 900; letter-spacing: 2px; box-shadow: 0 0 0 1px rgba(0,212,255,0.15), 0 16px 40px rgba(0,212,255,0.12);
+  background: rgba(10,10,10,0.85); color: #8feaff; border: 1px solid rgba(0,212,255,0.65);
+  padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 2px;
+  box-shadow: 0 0 0 1px rgba(0,212,255,0.15), 0 16px 40px rgba(0,212,255,0.12); cursor: pointer;
 `;
 
+hudRightControls.appendChild(fsBtn);
+hudRightControls.appendChild(engineToggle);
 hud.appendChild(recBtn);
-hud.appendChild(engineToggle);
+hud.appendChild(hudRightControls);
 document.body.appendChild(hud);
 
 const enginePanel = document.createElement("div");
@@ -205,15 +221,11 @@ enginePanel.innerHTML = `
         <button id="chapAsc" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">ASCENSION</button>
       </div>
     </div>
+    <button id="customSigilBtn" type="button" style="background: rgba(124,77,255,0.2); border: 1px solid rgba(124,77,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">Upload Custom Sigil</button>
     <label style="font-size:12px; opacity:0.8;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;"></label>
     <label style="font-size:12px; opacity:0.8;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; margin-top:6px;"></label>
     <label style="font-size:12px; opacity:0.8;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; margin-top:6px;"></label>
-    <label style="font-size:12px; display:flex; align-items:center; gap:10px;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
-    <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.12);">
-      <label style="font-size:12px; display:flex; align-items:center; gap:10px;"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
-      <label style="font-size:12px; opacity:0.8; display:block; margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; margin-top:6px;"></label>
-      <div id="feedbackWarn" style="display:none; margin-top:10px; font-size:12px; color:#ff2b5a; font-weight:900;">🔇 Feedback risk detected — mic monitor muted</div>
-    </div>
+    <div id="midiStatus" style="font-size:11px; color:#8feaff; text-align:center; padding: 4px; border-top: 1px solid rgba(255,255,255,0.1);">🎹 MIDI: Waiting for connection...</div>
   </div>
 `;
 document.body.appendChild(enginePanel);
@@ -226,36 +238,121 @@ function setEngineOpen(open) {
 engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
 enginePanel.querySelector("#si-engineClose").addEventListener("click", () => setEngineOpen(false));
 
-let touchStartY = null;
-enginePanel.addEventListener("touchstart", (e) => { touchStartY = e.touches?.[0]?.clientY ?? null; }, { passive: true });
-enginePanel.addEventListener("touchmove", (e) => {
-  if (touchStartY == null) return;
-  const dy = (e.touches?.[0]?.clientY ?? touchStartY) - touchStartY;
-  if (dy > 50) { setEngineOpen(false); touchStartY = null; }
-}, { passive: true });
-
 const partEl = enginePanel.querySelector("#partAmount");
 const zoomEl = enginePanel.querySelector("#zoomInt");
 const hueEl  = enginePanel.querySelector("#hueShift");
+const midiStatusEl = enginePanel.querySelector("#midiStatus");
 
-enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
-const micMonitorEl = enginePanel.querySelector("#micMonitor");
-const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol");
-const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
+/* ================= FULLSCREEN & UI TOGGLE ================= */
 
-micMonitorEl.checked = micMonitor;
-micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
-micMonitorEl.addEventListener("change", (e) => {
-  micMonitor = !!e.target.checked;
-  feedbackMuted = false;
-  feedbackWarnEl.style.display = "none";
-  applyMicMonitorGain();
-  setStatus(micMonitor ? "🎙️ Mic monitor ON" : "🎙️ Mic monitor OFF");
+let isFullscreen = false;
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(err => {
+      console.warn(`Error attempting to enable fullscreen: ${err.message}`);
+    });
+    // Hide all UI panels for clean projection
+    document.querySelector('.controls').style.display = 'none';
+    document.querySelector('.site-header').style.display = 'none';
+    document.querySelector('.site-footer').style.display = 'none';
+    hud.style.display = 'none';
+    enginePanel.style.display = 'none';
+    canvas.closest(".stage").style.height = "100vh";
+    canvas.closest(".stage").style.border = "none";
+    canvas.closest(".stage").style.borderRadius = "0";
+    document.body.style.overflow = "hidden";
+    isFullscreen = true;
+    setStatus("📺 Entered projection mode");
+  } else {
+    document.exitFullscreen();
+    resetUI();
+  }
+}
+
+function resetUI() {
+  document.querySelector('.controls').style.display = 'grid';
+  document.querySelector('.site-header').style.display = 'block';
+  document.querySelector('.site-footer').style.display = 'block';
+  hud.style.display = 'flex';
+  canvas.closest(".stage").style.height = "min(62vh, 720px)";
+  canvas.closest(".stage").style.border = "1px solid rgba(255,255,255,.08)";
+  canvas.closest(".stage").style.borderRadius = "22px";
+  document.body.style.overflow = "auto";
+  isFullscreen = false;
+  fitRendererToStage();
+}
+
+fsBtn.addEventListener("click", toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) resetUI();
+  setTimeout(fitRendererToStage, 100); // Recalculate aspect ratio
 });
-micMonitorVolEl.addEventListener("input", (e) => {
-  micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100));
-  applyMicMonitorGain();
+
+/* ================= CUSTOM SIGIL UPLOAD ================= */
+
+enginePanel.querySelector("#customSigilBtn").addEventListener("click", () => sigilInput.click());
+
+sigilInput.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  loadSigilLayers(url, true);
+  setStatus("✅ Custom sigil loaded");
 });
+
+/* ================= MIDI INTEGRATION ================= */
+
+function initMIDI() {
+  if (navigator.requestMIDIAccess) {
+    navigator.requestMIDIAccess().then(onMIDISuccess, onMIDIFailure);
+  } else {
+    midiStatusEl.textContent = "🎹 MIDI: Not supported by browser.";
+  }
+}
+
+function onMIDISuccess(midiAccess) {
+  midiStatusEl.textContent = "🎹 MIDI: Connected & Active";
+  for (let input of midiAccess.inputs.values()) {
+    input.onmidimessage = getMIDIMessage;
+  }
+  midiAccess.onstatechange = (e) => {
+    if (e.port.state === 'connected') {
+        midiStatusEl.textContent = `🎹 MIDI: Connected (${e.port.name})`;
+        e.port.onmidimessage = getMIDIMessage;
+    }
+  };
+}
+
+function onMIDIFailure() {
+  midiStatusEl.textContent = "🎹 MIDI: Access Denied or Failed.";
+}
+
+function getMIDIMessage(message) {
+  const command = message.data[0];
+  const note = message.data[1];
+  const velocity = (message.data.length > 2) ? message.data[2] : 0; // 0-127
+
+  // Log to console so the artist knows what signals their controller sends
+  console.log(`MIDI Command: ${command}, Note/CC: ${note}, Value: ${velocity}`);
+
+  // Example Mapping: CC (Control Change) messages usually start with 176
+  if (command === 176) {
+    // Map CC 1 (Modulation Wheel on many keyboards) to Bass Zoom
+    if (note === 1) {
+      const scaledValue = Math.round((velocity / 127) * 100);
+      if(zoomEl) zoomEl.value = scaledValue;
+    }
+    // Add your own mappings here based on console logs!
+    // if (note === 2) { hueEl.value = ... }
+  }
+  
+  // Example Mapping: Note On (Drum pad or Key pressed)
+  if (command === 144 && velocity > 0) {
+     // You could trigger manual sparks, chapter changes, or glitches here
+     // if(note === 36) triggerRingPulse(1.0); 
+  }
+}
 
 /* ================= CHAPTER SYSTEM ================= */
 
@@ -332,7 +429,7 @@ function initThree() {
   initRings();
   initGhosts();
   initSparks();
-  loadSigilLayers("media/indjoov-sigil.svg");
+  loadSigilLayers("media/indjoov-sigil.svg", false);
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
   composer = new EffectComposer(renderer, rt);
@@ -356,6 +453,9 @@ function initThree() {
 
   fitRendererToStage();
   applyChapter(chapter);
+  
+  // Start MIDI listener
+  initMIDI();
 }
 
 /* ================= IMPROVED STARS (WARP FIELD) ================= */
@@ -403,34 +503,22 @@ function updateStars(delta) {
 
 function makeResponsiveMorphingCage() {
   if (morphMesh) { world.remove(morphMesh); morphMesh.geometry.dispose(); }
-
-  // High detail base sphere 
   const baseGeo = new THREE.IcosahedronGeometry(5.0, 10); 
   const posAttribute = baseGeo.attributes.position;
-  
-  const cubePositions = [];
-  const wavePositions = [];
-  const spikePositions = [];
-
+  const cubePositions = []; const wavePositions = []; const spikePositions = [];
   const vec = new THREE.Vector3();
 
   for (let i = 0; i < posAttribute.count; i++) {
     vec.fromBufferAttribute(posAttribute, i);
-    
-    // --- Target 0: CUBE (Heavy Bass) ---
     const norm = vec.clone().normalize();
     const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
     const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5);
     cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
 
-    // --- Target 1: WAVE/ORGANIC (Mids/Vocals) ---
-    // INCREASING AMPLITUDE: Multiplier from 0.15 to 0.45 for dramatic waves
     const waveScale = 1.0 + 0.45 * (Math.sin(vec.x * 3.0) + Math.cos(vec.y * 3.0) + Math.sin(vec.z * 3.0));
     const waveVec = vec.clone().multiplyScalar(waveScale);
     wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
 
-    // --- Target 2: SPIKES (Snare/Highs) ---
-    // INCREASING AMPLITUDE: Multiplier from 1.2 to 2.5 for explosive spikes
     const noise = Math.sin(vec.x * 8.0) * Math.cos(vec.y * 8.0) * Math.sin(vec.z * 8.0);
     const spikeScale = 1.0 + Math.max(0, noise) * 2.5; 
     const spikeVec = vec.clone().multiplyScalar(spikeScale);
@@ -438,24 +526,16 @@ function makeResponsiveMorphingCage() {
   }
 
   baseGeo.morphAttributes.position = [
-    new THREE.Float32BufferAttribute(cubePositions, 3),  // Index 0: Cube
-    new THREE.Float32BufferAttribute(wavePositions, 3),  // Index 1: Waves
-    new THREE.Float32BufferAttribute(spikePositions, 3)  // Index 2: Spikes
+    new THREE.Float32BufferAttribute(cubePositions, 3), 
+    new THREE.Float32BufferAttribute(wavePositions, 3), 
+    new THREE.Float32BufferAttribute(spikePositions, 3) 
   ];
 
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x00d4ff,
-    wireframe: true, 
-    transparent: true,
-    opacity: 0.8, 
-    morphTargets: true, 
-    blending: THREE.AdditiveBlending,
-    depthWrite: false, 
-    side: THREE.DoubleSide
+    color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, 
+    morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
   });
-
-  morphMesh = new THREE.Mesh(baseGeo, mat);
-  world.add(morphMesh);
+  morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
 }
 
 /* ================= RITUAL RINGS ================= */
@@ -468,15 +548,13 @@ function initRings() {
     const m = new THREE.MeshBasicMaterial({ color: 0x8feaff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
     const mesh = new THREE.Mesh(g, m);
     mesh.position.set(0, 0, 0.25); mesh.rotation.set(-0.18, 0.22, 0);
-    world?.add(mesh);
-    ringPool.push({ mesh, t: 999, life: 0.55, baseScale: 1.0 });
+    world?.add(mesh); ringPool.push({ mesh, t: 999, life: 0.55, baseScale: 1.0 });
   }
 }
-
 function triggerRingPulse(intensity = 1) {
   if (!ringPool.length) return;
-  const r = ringPool[ringCursor % ringPool.length];
-  ringCursor++; r.t = 0; r.life = 0.48; r.baseScale = 0.92 + 0.22 * intensity;
+  const r = ringPool[ringCursor % ringPool.length]; ringCursor++;
+  r.t = 0; r.life = 0.48; r.baseScale = 0.92 + 0.22 * intensity;
   r.mesh.material.color.setHex((Math.random() < 0.5) ? 0x00d4ff : 0x7c4dff);
   r.mesh.material.opacity = 0.85 * P.ringStrength;
 }
@@ -487,18 +565,16 @@ function initGhosts() {
   ghostPool.forEach(g => { world?.remove(g.group); g.group.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); }); });
   ghostPool = []; ghostCursor = 0;
   for (let i = 0; i < 18; i++) {
-    const group = new THREE.Group();
-    group.visible = false; group.position.set(0, 0, 0.2); group.rotation.set(-0.18, 0.22, 0);
+    const group = new THREE.Group(); group.visible = false; group.position.set(0, 0, 0.2); group.rotation.set(-0.18, 0.22, 0);
     const plane = new THREE.PlaneGeometry(6.9, 6.9);
     const inkMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
     const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
-    const glow = new THREE.Mesh(plane, glowMat); glow.scale.set(1.08, 1.08, 1.08);
+    const glow = new THREE.Mesh(plane, glowMat); glow.scale.setScalar(1.08);
     const ink = new THREE.Mesh(plane, inkMat);
     group.add(glow, ink); world?.add(group);
     ghostPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
   }
 }
-
 function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
   if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex) return;
   const useCount = Math.max(1, Math.min(6, count));
@@ -510,7 +586,7 @@ function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
     g.ink.material.map = sigilBaseTex; g.glow.material.map = sigilGlowTex;
     g.glow.material.color.copy(new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, 0.45 + snapFlash * 0.65)));
     g.ink.material.opacity = 0.22 + 0.20 * intensity; g.glow.material.opacity = 0.40 + 0.55 * snapFlash;
-    g.glow.scale.set(1.12, 1.12, 1.12); g.group.scale.setScalar(g.baseScale);
+    g.glow.scale.setScalar(1.12); g.group.scale.setScalar(g.baseScale);
   }
 }
 
@@ -520,12 +596,10 @@ function initSparks() {
   const sparkGeo = new THREE.TetrahedronGeometry(0.15, 0);
   const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
   for (let i = 0; i < 60; i++) {
-    const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone());
-    mesh.visible = false; scene.add(mesh);
+    const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone()); mesh.visible = false; scene.add(mesh);
     sparkPool.push({ mesh: mesh, active: false, life: 0, maxLife: 0, velocity: new THREE.Vector3(), spin: new THREE.Vector3() });
   }
 }
-
 function fireSparks(intensity) {
   if (!sparkPool.length) return;
   const count = Math.floor(intensity * 10); 
@@ -542,18 +616,16 @@ function fireSparks(intensity) {
 
 /* ================= SIGIL LAYERS ================= */
 
-function loadSigilLayers(url) {
+function loadSigilLayers(url, isCustom = false) {
   if (sigilGroup) { world.remove(sigilGroup); sigilGroup = null; }
   fetch(url)
-    .then(r => { if (!r.ok) throw new Error(); return r.text(); })
-    .then(svgText => {
+    .then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); })
+    .then(data => {
       const img = new Image(); img.crossOrigin = "anonymous";
       img.onload = () => {
-        const size = 1024;
-        const base = document.createElement("canvas"); base.width = size; base.height = size;
+        const size = 1024; const base = document.createElement("canvas"); base.width = size; base.height = size;
         const ctx = base.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, size, size);
-        const scale = Math.min(size / img.width, size / img.height);
-        const w = img.width * scale, h = img.height * scale;
+        const scale = Math.min(size / img.width, size / img.height); const w = img.width * scale, h = img.height * scale;
         ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
         
         const imgData = ctx.getImageData(0, 0, size, size); const d = imgData.data; const thr = 245;
@@ -570,22 +642,21 @@ function loadSigilLayers(url) {
         sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
 
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
-        
         const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
 
-        sigilBase = new THREE.Mesh(plane, inkMat);
-        sigilGlow = new THREE.Mesh(plane, glowMat);
-        sigilGlow.scale.set(1.08, 1.08, 1.08);
-
-        sigilGroup = new THREE.Group();
-        sigilGroup.add(sigilGlow, sigilBase);
+        sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
+        sigilGroup = new THREE.Group(); sigilGroup.add(sigilGlow, sigilBase);
         sigilGroup.position.set(0, 0, 0.22); sigilGroup.rotation.set(-0.18, 0.22, 0);
-        world.add(sigilGroup);
-        setStatus("✅ Sigil loaded (ink + glow)");
+        world.add(sigilGroup); setStatus("✅ Sigil loaded");
+        if(isCustom) URL.revokeObjectURL(url); // Clean up memory
       };
-      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
-    }).catch(() => setStatus("⚠️ Sigil SVG fetch failed"));
+      if (isCustom) {
+          img.src = URL.createObjectURL(data);
+      } else {
+          img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`;
+      }
+    }).catch(() => setStatus("⚠️ Sigil fetch failed"));
 }
 
 /* ================= AUDIO ENGINE INIT ================= */
@@ -656,7 +727,8 @@ micBtn?.addEventListener("click", async () => {
 });
 
 window.addEventListener("keydown", async (e) => {
-  if (e.key === "Escape") setEngineOpen(false);
+  if (e.key === "Escape") { setEngineOpen(false); if(isFullscreen) toggleFullscreen(); }
+  if (e.key.toLowerCase() === "p") toggleFullscreen();
   if (e.key === " ") { e.preventDefault(); if (currentMode !== "idle") { await stopAll({ suspend: true }); setStatus("⏹ Stopped"); } }
 });
 
@@ -702,7 +774,6 @@ function loop() {
   } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
   snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
-  // 1. DYNAMIC CAMERA CHOREOGRAPHY
   if (!reducedMotion) {
     camera.fov = THREE.MathUtils.lerp(camera.fov, baseFov - (bassSm * 15), 0.1);
     const shake = snapFlash * 0.3;
@@ -711,70 +782,52 @@ function loop() {
     camera.rotation.z = Math.sin(time * 0.2) * 0.02; camera.updateProjectionMatrix();
   }
 
-  // 2. AUDIO REACTIVE LIGHTING
   if (coreLight) {
     coreLight.intensity = (bassSm * 200) + (snapFlash * 500);
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
     if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
   }
 
-  // 3. POST-PROCESSING CHAOS
   if (rgbShiftPass) rgbShiftPass.uniforms['amount'].value = THREE.MathUtils.lerp(rgbShiftPass.uniforms['amount'].value, 0.0015 + (bassSm * 0.01) + (snapFlash * 0.02), 0.1);
   if (glitchPass) glitchPass.enabled = (bassSm + midSm + snareSm > 2.2 && Math.random() > 0.8);
 
-  // Stars: Warp Field
   if (starPoints) {
     updateStars(dt); 
     const slider = partEl ? parseFloat(partEl.value) : 10; 
     starPoints.material.opacity = Math.max(0, Math.min(0.8, P.starsOpacity + 0.03 * Math.sin(time * 0.7) + Math.max(0, Math.min(0.20, 0.0065 * slider)) + bassSm * 0.2));
   }
 
-  // World Rotation
   if (world && !reducedMotion) {
     world.rotation.y = time * 0.45; world.rotation.x = Math.sin(time * 0.8) * 0.10;
     world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
   }
 
-  // 4. HYPER-RESPONSIVE SHAPE MORPHING
   if (morphMesh) {
-    // INCREASED INTERPOLATION SPEEDS: 0.15, 0.12, 0.25 for snappy, instantaneous reaction
-    // EXPONENTIAL BASS: Math.pow ensures only deep, heavy hits morph into the cube
     const bassPunch = Math.pow(bassSm, 1.5) * 2.0;
-    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.15); // Cube
-    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.12); // Waves
-    
-    // Snare hits trigger an immediate, sharp spike combined with the raw snapFlash
+    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.15); 
+    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.12); 
     const spikePunch = (snareSm * 2.0) + (snapFlash * 1.5);
-    morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.25); // Spikes
+    morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.25); 
 
     const drift = reducedMotion ? 0 : 0.001;
-    morphMesh.rotation.y += drift + midSm * 0.015; // Aggressive spin on vocals
+    morphMesh.rotation.y += drift + midSm * 0.015; 
     morphMesh.rotation.x += drift;
     morphMesh.rotation.z += Math.sin(time * 0.5) * 0.005;
 
-    // SNAPPY SCALE ZOOM: Base scale pulses exponentially with the bass
     const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
     const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
     morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, targetScale, 0.2));
 
-    // Colors
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
     const mode = palette?.value || "hue";
     
-    if (mode === "grayscale") {
-      morphMesh.material.color.setHex(0xe6e6e6);
-    } else if (mode === "energy") {
-      const energyHue = (hue + bassSm * 0.2 + midSm * 0.1) % 1;
-      morphMesh.material.color.setHSL(energyHue, 0.85, 0.5 + snareSm * 0.4);
-    } else {
-      const flowingHue = (hue + Math.sin(time * 0.2) * 0.1) % 1;
-      morphMesh.material.color.setHSL(flowingHue, 0.75, 0.55);
-    }
+    if (mode === "grayscale") { morphMesh.material.color.setHex(0xe6e6e6); } 
+    else if (mode === "energy") { morphMesh.material.color.setHSL((hue + bassSm * 0.2 + midSm * 0.1) % 1, 0.85, 0.5 + snareSm * 0.4); } 
+    else { morphMesh.material.color.setHSL((hue + Math.sin(time * 0.2) * 0.1) % 1, 0.75, 0.55); }
     
     morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
   }
 
-  // Sigil 
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue";
     sigilBase.material.opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
@@ -793,7 +846,6 @@ function loop() {
     sigilGroup.position.y = Math.sin(time * 1.5) * 0.08;
   }
 
-  // Rings & Ghosts 
   for (const r of ringPool) {
     if (r.t >= 999) continue;
     r.t += dt; const p = Math.min(1, r.t / r.life); const scale = r.baseScale + (1 - Math.pow(1 - p, 3)) * 1.35; r.mesh.scale.setScalar(scale);
@@ -809,7 +861,6 @@ function loop() {
     if (p >= 1) { g.t = 999; g.group.visible = false; }
   }
 
-  // Update Sparks
   for (let i = 0; i < sparkPool.length; i++) {
     const s = sparkPool[i]; if (!s.active) continue;
     s.life += dt;
