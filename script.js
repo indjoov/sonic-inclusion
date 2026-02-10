@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { AudioEngine } from "./audio/AudioEngine.js";
 
-// Postprocessing (no bundler)
+// Postprocessing
 import { EffectComposer } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -97,9 +97,13 @@ let composer = null;
 let bloomPass = null;
 let fxaaPass = null;
 
-let world = null;      // <-- cage/sigil/rings live here
-let starPoints = null; // <-- star field in scene space
-let cage = null;
+let world = null;       // cage/sigil/rings live here
+let starPoints = null;  // star field in scene space
+let cageGroup = null;
+
+// Morphing Cage Parts
+let cageShapeA = null; // Calm (Icosahedron)
+let cageShapeB = null; // Chaos (Torus Knot)
 
 // Sigil layers
 let sigilGroup = null;
@@ -133,17 +137,13 @@ function applyMicMonitorGain() {
   monitorGain.gain.value = want;
 }
 
-/* ================= CLEAN LEGACY UI ================= */
+/* ================= MODERN HUD ================= */
 
 function removeLegacyUI() {
   document.getElementById("si-hud")?.remove();
   document.getElementById("si-enginePanel")?.remove();
-  document.getElementById("engine-controls")?.remove();
-  document.getElementById("engine-controls-toggle")?.remove();
 }
 removeLegacyUI();
-
-/* ================= MODERN HUD (layout-safe: left/right) ================= */
 
 const hud = document.createElement("div");
 hud.id = "si-hud";
@@ -167,7 +167,6 @@ const recBtn = document.createElement("button");
 recBtn.id = "si-recBtn";
 recBtn.type = "button";
 recBtn.textContent = "⏺ RECORD";
-recBtn.setAttribute("aria-pressed", "false");
 recBtn.style.cssText = `
   pointer-events: auto;
   background: #ff2b5a;
@@ -187,8 +186,6 @@ const engineToggle = document.createElement("button");
 engineToggle.id = "si-engineToggle";
 engineToggle.type = "button";
 engineToggle.textContent = "⚙️ ENGINE";
-engineToggle.setAttribute("aria-expanded", "false");
-engineToggle.setAttribute("aria-controls", "si-enginePanel");
 engineToggle.style.cssText = `
   pointer-events: auto;
   flex: 0 0 auto;
@@ -206,13 +203,10 @@ hud.appendChild(recBtn);
 hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
-/* ================= ENGINE PANEL (layout-safe: left/right) ================= */
+/* ================= ENGINE PANEL ================= */
 
 const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
-enginePanel.setAttribute("role", "dialog");
-enginePanel.setAttribute("aria-label", "Engine controls");
-enginePanel.setAttribute("aria-hidden", "true");
 enginePanel.style.cssText = `
   position: fixed;
   left: 16px;
@@ -221,7 +215,6 @@ enginePanel.style.cssText = `
   z-index: 2001;
   max-width: 980px;
   margin: 0 auto;
-
   background: rgba(10,10,10,0.92);
   border: 1px solid rgba(0,212,255,0.65);
   border-radius: 18px;
@@ -244,14 +237,9 @@ enginePanel.innerHTML = `
         <div style="font-size:12px; opacity:0.65;">Swipe down to close</div>
       </div>
     </div>
-    <button id="si-engineClose" type="button" aria-label="Close engine panel" style="
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.18);
-      color: #fff;
-      border-radius: 12px;
-      padding: 8px 10px;
-      cursor: pointer;
-      font-weight: 900;
+    <button id="si-engineClose" type="button" style="
+      background: transparent; border: 1px solid rgba(255,255,255,0.18);
+      color: #fff; border-radius: 12px; padding: 8px 10px; cursor: pointer; font-weight: 900;
     ">✕</button>
   </div>
 
@@ -304,13 +292,11 @@ enginePanel.innerHTML = `
 `;
 document.body.appendChild(enginePanel);
 
-// Panel open/close
+// Panel logic
 let engineOpen = false;
 function setEngineOpen(open) {
   engineOpen = open;
   enginePanel.style.display = open ? "block" : "none";
-  enginePanel.setAttribute("aria-hidden", open ? "false" : "true");
-  engineToggle.setAttribute("aria-expanded", open ? "true" : "false");
 }
 engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
 enginePanel.querySelector("#si-engineClose").addEventListener("click", () => setEngineOpen(false));
@@ -322,23 +308,19 @@ enginePanel.addEventListener("touchstart", (e) => {
 }, { passive: true });
 enginePanel.addEventListener("touchmove", (e) => {
   if (touchStartY == null) return;
-  const y = e.touches?.[0]?.clientY ?? touchStartY;
-  const dy = y - touchStartY;
+  const dy = (e.touches?.[0]?.clientY ?? touchStartY) - touchStartY;
   if (dy > 50) {
     setEngineOpen(false);
     touchStartY = null;
   }
 }, { passive: true });
 
-/* ================= PANEL HOOKS ================= */
-
+// Panel Hooks
 const partEl = enginePanel.querySelector("#partAmount");
 const zoomEl = enginePanel.querySelector("#zoomInt");
 const hueEl  = enginePanel.querySelector("#hueShift");
 
-enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => {
-  reducedMotion = !!e.target.checked;
-});
+enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
 
 const micMonitorEl = enginePanel.querySelector("#micMonitor");
 const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol");
@@ -364,46 +346,19 @@ micMonitorVolEl.addEventListener("input", (e) => {
 
 const CHAPTERS = {
   INVOCATION: {
-    starsOpacity: 0.16,
-    cageOpacityBase: 0.22,
-    sigilInk: 0.90,
-    glowBase: 0.28,
-    glowBass: 0.35,
-    glowSnap: 0.55,
-    jitter: 0.010,
-    ringStrength: 0.75,
-    ghostCount: 2,
-    bloomStrength: 0.65,
-    bloomRadius: 0.45,
-    bloomThreshold: 0.18,
+    starsOpacity: 0.16, cageOpacityBase: 0.22, sigilInk: 0.90, glowBase: 0.28,
+    glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75,
+    ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18,
   },
   POSSESSION: {
-    starsOpacity: 0.20,
-    cageOpacityBase: 0.26,
-    sigilInk: 0.88,
-    glowBase: 0.38,
-    glowBass: 0.55,
-    glowSnap: 0.95,
-    jitter: 0.020,
-    ringStrength: 1.00,
-    ghostCount: 3,
-    bloomStrength: 0.95,
-    bloomRadius: 0.55,
-    bloomThreshold: 0.14,
+    starsOpacity: 0.20, cageOpacityBase: 0.26, sigilInk: 0.88, glowBase: 0.38,
+    glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00,
+    ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14,
   },
   ASCENSION: {
-    starsOpacity: 0.24,
-    cageOpacityBase: 0.30,
-    sigilInk: 0.84,
-    glowBase: 0.50,
-    glowBass: 0.85,
-    glowSnap: 1.05,
-    jitter: 0.016,
-    ringStrength: 1.15,
-    ghostCount: 4,
-    bloomStrength: 1.25,
-    bloomRadius: 0.65,
-    bloomThreshold: 0.10,
+    starsOpacity: 0.24, cageOpacityBase: 0.30, sigilInk: 0.84, glowBase: 0.50,
+    glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15,
+    ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10,
   },
 };
 
@@ -414,13 +369,11 @@ function applyChapter(name) {
   if (!CHAPTERS[name]) return;
   chapter = name;
   P = CHAPTERS[chapter];
-
   if (bloomPass) {
     bloomPass.strength = P.bloomStrength;
     bloomPass.radius = P.bloomRadius;
     bloomPass.threshold = P.bloomThreshold;
   }
-
   setStatus(`🔮 Chapter: ${chapter}`);
 }
 
@@ -430,36 +383,21 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 
 /* ================= RESIZE ================= */
 
-let lastDpr = 1;
-
 function fitRendererToStage() {
   if (!renderer || !camera) return;
-
   const rect = (stageEl || canvas).getBoundingClientRect();
   const w = Math.max(1, Math.floor(rect.width));
   const h = Math.max(1, Math.floor(rect.height));
-
-  // Higher DPR helps sharpness, but keep it sane on mobile
   const dpr = Math.max(1, Math.min(2.6, window.devicePixelRatio || 1));
-  lastDpr = dpr;
-
   renderer.setPixelRatio(dpr);
   renderer.setSize(w, h, false);
-
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-
   composer?.setSize(w, h);
-
   if (fxaaPass) {
-    // FXAA uses inverse resolution in screen pixels
-    fxaaPass.material.uniforms["resolution"].value.set(
-      1 / (w * dpr),
-      1 / (h * dpr)
-    );
+    fxaaPass.material.uniforms["resolution"].value.set(1 / (w * dpr), 1 / (h * dpr));
   }
 }
-
 const ro = new ResizeObserver(() => fitRendererToStage());
 if (stageEl) ro.observe(stageEl);
 window.addEventListener("resize", fitRendererToStage);
@@ -470,9 +408,7 @@ function initThree() {
   if (renderer) return;
 
   renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: true,  // helps base render
-    alpha: true,
+    canvas, antialias: true, alpha: true,
     powerPreference: "high-performance"
   });
   renderer.setClearColor(0x000000, 1);
@@ -488,23 +424,19 @@ function initThree() {
   world = new THREE.Group();
   scene.add(world);
 
-  // Stars in scene space => creates "universe"
+  // Stars in scene space (Deep Space)
   starPoints = makeStars(1900, 120);
   scene.add(starPoints);
 
   // Cage + sigil etc inside world
-  cage = makeCage();
-  world.add(cage);
+  cageGroup = makeCage();
+  world.add(cageGroup);
 
   initRings();
   initGhosts();
   loadSigilLayers("media/indjoov-sigil.svg");
 
-  // Composer with MSAA target (if WebGL2) => much sharper lines on mobile
-  const rt = new THREE.WebGLRenderTarget(1, 1, {
-    samples: renderer.capabilities.isWebGL2 ? 4 : 0
-  });
-
+  const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
 
@@ -515,7 +447,6 @@ function initThree() {
   );
   composer.addPass(bloomPass);
 
-  // FXAA AFTER bloom => reduces jaggies / "pixel cage"
   fxaaPass = new ShaderPass(FXAAShader);
   composer.addPass(fxaaPass);
 
@@ -523,45 +454,100 @@ function initThree() {
   applyChapter(chapter);
 }
 
+/* ================= IMPROVED STARS (WARP FIELD) ================= */
+
+let starGeo = null;
+
 function makeStars(count, spread) {
-  const geom = new THREE.BufferGeometry();
+  starGeo = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
+  const velocities = []; // Store speed per star for parallax
 
   for (let i = 0; i < count; i++) {
     const ix = i * 3;
-
-    // pseudo-spherical distribution
-    const r = Math.random() * spread;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-
-    positions[ix + 0] = r * Math.sin(phi) * Math.cos(theta);
-    positions[ix + 1] = r * Math.cos(phi);
-    positions[ix + 2] = r * Math.sin(phi) * Math.sin(theta);
+    // Spread X/Y widely, place Z deep into the screen
+    positions[ix] = (Math.random() - 0.5) * spread * 1.5; 
+    positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
+    positions[ix + 2] = (Math.random() - 0.5) * spread * 2; // Depth
+    // Random speed between 0.05 and 0.3
+    velocities.push(0.05 + Math.random() * 0.25);
   }
 
-  geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  
+  // Use a slightly brighter material for the warp effect
   const mat = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 0.055,
+    color: 0x8feaff, // Slight cyan tint
+    size: 0.08,      // Slightly larger
     transparent: true,
-    opacity: 0.22,
-    depthWrite: false
+    opacity: 0.6,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
   });
-  return new THREE.Points(geom, mat);
+  
+  // Save velocities for the loop
+  starGeo.userData = { velocities: velocities, spread: spread };
+  return new THREE.Points(starGeo, mat);
 }
 
+function updateStars(delta) {
+  if (!starPoints || !starGeo) return;
+  
+  const positions = starGeo.attributes.position.array;
+  const vels = starGeo.userData.velocities;
+  const spread = starGeo.userData.spread;
+  
+  // Speed multiplier based on Bass energy (Warp drive effect)
+  const warpSpeed = 1 + (bassSm * 8); 
+
+  for (let i = 0; i < vels.length; i++) {
+    const ix = i * 3;
+    // Move Z towards camera
+    positions[ix + 2] += vels[i] * warpSpeed * delta * 20;
+
+    // If star passes camera (Z > 20), reset to far background
+    if (positions[ix + 2] > 20) {
+      positions[ix + 2] = -150; // Send back to deep space
+      // Randomize X/Y again for variety
+      positions[ix] = (Math.random() - 0.5) * spread * 1.5;
+      positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
+    }
+  }
+  
+  starGeo.attributes.position.needsUpdate = true;
+}
+
+/* ================= MORPHING CAGE ================= */
+
 function makeCage() {
-  // Higher detail geometry + wireframe lines
-  const geo = new THREE.IcosahedronGeometry(5.2, 4); // 4 is smoother than 3
-  const wire = new THREE.WireframeGeometry(geo);
-  const mat = new THREE.LineBasicMaterial({
+  const group = new THREE.Group();
+
+  // --- SHAPE A: Geometric / Divine (Low Energy) ---
+  const geoA = new THREE.IcosahedronGeometry(5.2, 2);
+  const wireA = new THREE.WireframeGeometry(geoA);
+  const matA = new THREE.LineBasicMaterial({
     color: 0x00d4ff,
     transparent: true,
-    opacity: 0.28
+    opacity: 0.3,
+    blending: THREE.AdditiveBlending
   });
-  const lines = new THREE.LineSegments(wire, mat);
-  return lines;
+  cageShapeA = new THREE.LineSegments(wireA, matA);
+  group.add(cageShapeA);
+
+  // --- SHAPE B: Organic / Chaos (High Energy) ---
+  // Torus Knot: radius, tube, radialSegs, tubSegs, p, q
+  const geoB = new THREE.TorusKnotGeometry(3.5, 1.2, 120, 16, 2, 3);
+  const wireB = new THREE.WireframeGeometry(geoB);
+  const matB = new THREE.LineBasicMaterial({
+    color: 0xff2b5a, // Red/Pink for high energy
+    transparent: true,
+    opacity: 0.0,    // Invisible initially
+    blending: THREE.AdditiveBlending
+  });
+  cageShapeB = new THREE.LineSegments(wireB, matB);
+  group.add(cageShapeB);
+
+  return group;
 }
 
 /* ================= RITUAL RINGS ================= */
@@ -578,19 +564,13 @@ function initRings() {
   for (let i = 0; i < 8; i++) {
     const g = new THREE.RingGeometry(2.6, 2.9, 120);
     const m = new THREE.MeshBasicMaterial({
-      color: 0x8feaff,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      depthTest: false
+      color: 0x8feaff, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false
     });
     const mesh = new THREE.Mesh(g, m);
     mesh.position.set(0, 0, 0.25);
-    mesh.rotation.x = -0.18;
-    mesh.rotation.y = 0.22;
+    mesh.rotation.x = -0.18; mesh.rotation.y = 0.22;
     world?.add(mesh);
-
     ringPool.push({ mesh, t: 999, life: 0.55, baseScale: 1.0 });
   }
 }
@@ -599,11 +579,7 @@ function triggerRingPulse(intensity = 1) {
   if (!ringPool.length) return;
   const r = ringPool[ringCursor % ringPool.length];
   ringCursor++;
-
-  r.t = 0;
-  r.life = 0.48;
-  r.baseScale = 0.92 + 0.22 * intensity;
-
+  r.t = 0; r.life = 0.48; r.baseScale = 0.92 + 0.22 * intensity;
   const col = (Math.random() < 0.5) ? 0x00d4ff : 0x7c4dff;
   r.mesh.material.color.setHex(col);
   r.mesh.material.opacity = 0.85 * P.ringStrength;
@@ -626,80 +602,52 @@ function initGhosts() {
     const group = new THREE.Group();
     group.visible = false;
     group.position.set(0, 0, 0.2);
-    group.rotation.x = -0.18;
-    group.rotation.y = 0.22;
+    group.rotation.x = -0.18; group.rotation.y = 0.22;
 
     const plane = new THREE.PlaneGeometry(6.9, 6.9);
-
     const inkMat = new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      depthTest: false,
-      blending: THREE.NormalBlending
+      transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.NormalBlending
     });
-
     const glowMat = new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      color: new THREE.Color(0x00d4ff),
-      depthWrite: false,
-      depthTest: false,
-      blending: THREE.AdditiveBlending
+      transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff),
+      depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending
     });
 
     const glow = new THREE.Mesh(plane, glowMat);
     glow.scale.set(1.08, 1.08, 1.08);
-
     const ink = new THREE.Mesh(plane, inkMat);
-
-    group.add(glow);
-    group.add(ink);
-
+    group.add(glow); group.add(ink);
     world?.add(group);
 
     ghostPool.push({
-      group, glow, ink,
-      t: 999, life: 0.45,
-      vx: 0, vy: 0, spin: 0,
-      baseScale: 1
+      group, glow, ink, t: 999, life: 0.45,
+      vx: 0, vy: 0, spin: 0, baseScale: 1
     });
   }
 }
 
 function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
   if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex) return;
-
   const useCount = Math.max(1, Math.min(6, count));
   for (let k = 0; k < useCount; k++) {
     const g = ghostPool[ghostCursor % ghostPool.length];
     ghostCursor++;
-
-    g.t = 0;
-    g.life = 0.28 + Math.random() * 0.25;
-
+    g.t = 0; g.life = 0.28 + Math.random() * 0.25;
     g.vx = (Math.random() - 0.5) * (0.22 + intensity * 0.25);
     g.vy = (Math.random() - 0.5) * (0.18 + intensity * 0.22);
     g.spin = (Math.random() - 0.5) * (0.12 + intensity * 0.18);
-
     g.baseScale = 1.02 + k * 0.04;
-
     g.group.visible = true;
     g.group.position.set(0, 0, 0.21 + 0.01 * k);
-    g.group.rotation.x = -0.18;
-    g.group.rotation.y = 0.22;
-
+    g.group.rotation.x = -0.18; g.group.rotation.y = 0.22;
     g.ink.material.map = sigilBaseTex;
     g.glow.material.map = sigilGlowTex;
-
     const cyan = new THREE.Color(0x00d4ff);
     const purple = new THREE.Color(0x7c4dff);
     const col = cyan.clone().lerp(purple, Math.min(1, 0.45 + snapFlash * 0.65));
     g.glow.material.color.copy(col);
-
     g.ink.material.opacity = 0.22 + 0.20 * intensity;
     g.glow.material.opacity = 0.40 + 0.55 * snapFlash;
-
     g.glow.scale.set(1.12, 1.12, 1.12);
     g.group.scale.set(g.baseScale, g.baseScale, g.baseScale);
   }
@@ -707,103 +655,54 @@ function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
 
 /* ================= SIGIL LAYERS ================= */
 
-function disposeSigilGroup() {
-  if (!sigilGroup) return;
-  world.remove(sigilGroup);
-  sigilGroup.traverse(o => {
-    if (o.geometry) o.geometry.dispose?.();
-    if (o.material) o.material.dispose?.();
-  });
-  sigilGroup = null;
-  sigilBase = null;
-  sigilGlow = null;
-  sigilBaseTex = null;
-  sigilGlowTex = null;
-}
-
 function loadSigilLayers(url) {
-  disposeSigilGroup();
-
+  if (sigilGroup) {
+    world.remove(sigilGroup);
+    sigilGroup = null;
+  }
   fetch(url)
-    .then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.text();
-    })
+    .then(r => { if (!r.ok) throw new Error(); return r.text(); })
     .then(svgText => {
       const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
       const img = new Image();
       img.crossOrigin = "anonymous";
-
       img.onload = () => {
         const size = 1024;
-
         const base = document.createElement("canvas");
-        base.width = size;
-        base.height = size;
+        base.width = size; base.height = size;
         const ctx = base.getContext("2d");
-
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, size, size);
-
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, size, size);
         const scale = Math.min(size / img.width, size / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        const x = (size - w) / 2;
-        const y = (size - h) / 2;
-        ctx.drawImage(img, x, y, w, h);
-
+        const w = img.width * scale, h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        
         const imgData = ctx.getImageData(0, 0, size, size);
-        const d = imgData.data;
-        const thr = 245;
-
+        const d = imgData.data; const thr = 245;
         for (let i = 0; i < d.length; i += 4) {
-          const r = d[i], g = d[i + 1], b = d[i + 2];
-          if (r >= thr && g >= thr && b >= thr) d[i + 3] = 0;
+          if (d[i] >= thr && d[i + 1] >= thr && d[i + 2] >= thr) d[i + 3] = 0;
         }
         ctx.putImageData(imgData, 0, 0);
 
         const glow = document.createElement("canvas");
-        glow.width = size;
-        glow.height = size;
+        glow.width = size; glow.height = size;
         const gctx = glow.getContext("2d");
-
-        gctx.filter = "blur(10px)";
-        gctx.globalAlpha = 1;
-        gctx.drawImage(base, 0, 0);
-
-        gctx.filter = "blur(22px)";
-        gctx.globalAlpha = 0.85;
-        gctx.drawImage(base, 0, 0);
-
+        gctx.filter = "blur(10px)"; gctx.globalAlpha = 1; gctx.drawImage(base, 0, 0);
+        gctx.filter = "blur(22px)"; gctx.globalAlpha = 0.85; gctx.drawImage(base, 0, 0);
         gctx.filter = "none";
 
         sigilBaseTex = new THREE.CanvasTexture(base);
         sigilBaseTex.colorSpace = THREE.SRGBColorSpace;
-        sigilBaseTex.needsUpdate = true;
-
         sigilGlowTex = new THREE.CanvasTexture(glow);
         sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
-        sigilGlowTex.needsUpdate = true;
 
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
-
         const inkMat = new THREE.MeshBasicMaterial({
-          map: sigilBaseTex,
-          transparent: true,
-          opacity: 0.90,
-          depthWrite: false,
-          depthTest: false,
-          blending: THREE.NormalBlending
+          map: sigilBaseTex, transparent: true, opacity: 0.90,
+          depthWrite: false, depthTest: false, blending: THREE.NormalBlending
         });
-
         const glowMat = new THREE.MeshBasicMaterial({
-          map: sigilGlowTex,
-          transparent: true,
-          opacity: 0.50,
-          color: new THREE.Color(0x00d4ff),
-          depthWrite: false,
-          depthTest: false,
-          blending: THREE.AdditiveBlending
+          map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff),
+          depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending
         });
 
         sigilBase = new THREE.Mesh(plane, inkMat);
@@ -811,234 +710,144 @@ function loadSigilLayers(url) {
         sigilGlow.scale.set(1.08, 1.08, 1.08);
 
         sigilGroup = new THREE.Group();
-        sigilGroup.add(sigilGlow);
-        sigilGroup.add(sigilBase);
-
+        sigilGroup.add(sigilGlow); sigilGroup.add(sigilBase);
         sigilGroup.position.set(0, 0, 0.22);
-        sigilGroup.rotation.x = -0.18;
-        sigilGroup.rotation.y = 0.22;
-
+        sigilGroup.rotation.x = -0.18; sigilGroup.rotation.y = 0.22;
         world.add(sigilGroup);
         setStatus("✅ Sigil loaded (ink + glow)");
       };
-
-      img.onerror = () => setStatus("⚠️ Sigil image decode failed");
       img.src = dataUrl;
     })
-    .catch(err => {
-      console.error(err);
-      setStatus("⚠️ Sigil SVG fetch failed (path/case?)");
-    });
+    .catch(() => setStatus("⚠️ Sigil SVG fetch failed (path/case?)"));
 }
 
 /* ================= INIT AUDIO ENGINE ================= */
 
 let audioRecordDest = null;
-
 async function initEngine() {
   initThree();
-
   setStatus("⏳ Initializing engine…");
-  try {
-    await engine.init();
-  } catch (e) {
-    console.error(e);
-  }
+  try { await engine.init(); } catch (e) { console.error(e); }
 
   analyser = engine.ctx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.85;
-
   dataFreq = new Uint8Array(analyser.frequencyBinCount);
 
   inputGain = engine.ctx.createGain();
-  inputGain.gain.value = 1;
-
   monitorGain = engine.ctx.createGain();
   monitorGain.gain.value = 0;
-
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
   monitorGain.connect(engine.master);
 
-  // for recording audio
   audioRecordDest = engine.ctx.createMediaStreamDestination();
   try { engine.master.connect(audioRecordDest); } catch {}
 
   overlay.style.display = "none";
   setStatus("✅ Engine ready (Demo / File / Mic)");
-
   if (!raf) loop();
 }
-
 overlay.onclick = initEngine;
 
 /* ================= CLEAN STOP ================= */
 
 async function stopAll({ suspend = true } = {}) {
   if (bufferSrc) {
-    try { bufferSrc.onended = null; } catch {}
-    try { bufferSrc.stop(0); } catch {}
-    try { bufferSrc.disconnect(); } catch {}
+    try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {}
     bufferSrc = null;
   }
-
   if (micSourceNode) {
     try { micSourceNode.disconnect(); } catch {}
     micSourceNode = null;
   }
-
   if (micStream) {
     try { micStream.getTracks().forEach(t => t.stop()); } catch {}
     micStream = null;
   }
-
   currentMode = "idle";
   if (micBtn) micBtn.textContent = "🎙️ Use Microphone";
-
   feedbackMuted = false;
   feedbackWarnEl.style.display = "none";
   if (monitorGain) monitorGain.gain.value = 0;
-
-  if (suspend) {
-    try { await engine.ctx.suspend(); } catch {}
-  }
+  if (suspend) try { await engine.ctx.suspend(); } catch {}
 }
 
-/* ================= DEMO (play once) ================= */
+/* ================= INPUT SOURCES ================= */
 
 async function playDemo(path) {
   await initEngine();
   await stopAll({ suspend: false });
-
   setStatus("⏳ Loading demo…");
-
   const buf = await fetch(path).then(r => r.arrayBuffer());
   const audio = await engine.ctx.decodeAudioData(buf);
-
   await engine.resume();
   currentMode = "demo";
-
   if (monitorGain) monitorGain.gain.value = 1;
-
   bufferSrc = engine.ctx.createBufferSource();
   bufferSrc.buffer = audio;
-  bufferSrc.loop = false;
   bufferSrc.connect(inputGain);
-
-  bufferSrc.onended = async () => {
-    await stopAll({ suspend: true });
-    setStatus("✅ Demo finished (played once)");
-  };
-
+  bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); };
   bufferSrc.start(0);
-  setStatus("🎧 Demo playing (once)");
+  setStatus("🎧 Demo playing");
 }
 demoBtn?.addEventListener("click", () => playDemo("media/kasubo hoerprobe.mp3"));
 
-/* ================= FILE INPUT (play once) ================= */
-
-fileBtn?.addEventListener("click", async () => {
-  await initEngine();
-  fileInput?.click();
-});
-
+fileBtn?.addEventListener("click", async () => { await initEngine(); fileInput?.click(); });
 fileInput?.addEventListener("change", async (e) => {
   try {
     await initEngine();
     const file = e.target.files?.[0];
     if (!file) return;
-
     await stopAll({ suspend: false });
     setStatus("⏳ Decoding file…");
-
     const arrayBuf = await file.arrayBuffer();
     const audio = await engine.ctx.decodeAudioData(arrayBuf);
-
     await engine.resume();
     currentMode = "file";
-
     if (monitorGain) monitorGain.gain.value = 1;
-
     bufferSrc = engine.ctx.createBufferSource();
     bufferSrc.buffer = audio;
-    bufferSrc.loop = false;
     bufferSrc.connect(inputGain);
-
-    bufferSrc.onended = async () => {
-      await stopAll({ suspend: true });
-      setStatus("✅ File playback finished");
-    };
-
+    bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ File finished"); };
     bufferSrc.start(0);
-    setStatus(`🎵 Playing file: ${file.name}`);
-  } catch (err) {
-    console.error(err);
-    setStatus("❌ File playback error");
-  } finally {
-    if (fileInput) fileInput.value = "";
-  }
+    setStatus(`🎵 Playing: ${file.name}`);
+  } catch { setStatus("❌ File error"); }
+  finally { if (fileInput) fileInput.value = ""; }
 });
-
-/* ================= MIC INPUT (toggle) ================= */
 
 micBtn?.addEventListener("click", async () => {
   await initEngine();
-
   if (currentMode === "mic") {
     await stopAll({ suspend: true });
     setStatus("⏹ Mic stopped");
     return;
   }
-
   try {
     await stopAll({ suspend: false });
-    setStatus("⏳ Requesting microphone…");
-
+    setStatus("⏳ Requesting mic…");
     micStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: false
-      }
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
     });
-
     await engine.resume();
     currentMode = "mic";
-
     micSourceNode = engine.ctx.createMediaStreamSource(micStream);
     micSourceNode.connect(inputGain);
-
     micBtn.textContent = "⏹ Stop Microphone";
-
     applyMicMonitorGain();
     setStatus("🎙️ Mic active");
-  } catch (err) {
-    console.error(err);
-    setStatus("❌ Mic permission / device error");
-    await stopAll({ suspend: true });
-  }
+  } catch { setStatus("❌ Mic error"); await stopAll({ suspend: true }); }
 });
-
-/* ================= KEYBOARD SHORTCUTS ================= */
 
 window.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") setEngineOpen(false);
-
   if (e.key === " ") {
     e.preventDefault();
-    if (currentMode !== "idle") {
-      await stopAll({ suspend: true });
-      setStatus("⏹ Stopped");
-    }
+    if (currentMode !== "idle") { await stopAll({ suspend: true }); setStatus("⏹ Stopped"); }
   }
-
-  if (e.key.toLowerCase() === "m") micBtn?.click();
-  if (e.key.toLowerCase() === "f") fileBtn?.click();
-  if (e.key.toLowerCase() === "d") demoBtn?.click();
 });
 
-/* ================= AUDIO HELPERS ================= */
+/* ================= AUDIO ANALYSIS ================= */
 
 function hzToBin(hz) {
   if (!engine?.ctx || !analyser) return 0;
@@ -1046,42 +855,30 @@ function hzToBin(hz) {
   const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1));
   return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx));
 }
-
 function bandEnergy(freqData, hzLo, hzHi) {
-  const a = hzToBin(hzLo);
-  const b = hzToBin(hzHi);
-  let sum = 0;
-  const n = Math.max(1, b - a + 1);
+  const a = hzToBin(hzLo), b = hzToBin(hzHi);
+  let sum = 0; const n = Math.max(1, b - a + 1);
   for (let i = a; i <= b; i++) sum += freqData[i];
   return (sum / n) / 255;
 }
 
-let bassSm = 0;
-let midSm = 0;
-let snareSm = 0;
-
-let snareAvg = 0;
-let snarePrev = 0;
-let lastSnareTrig = 0;
-
+let bassSm = 0, midSm = 0, snareSm = 0;
+let snareAvg = 0, snarePrev = 0, lastSnareTrig = 0;
 let snapFlash = 0;
 
 /* ================= MAIN LOOP ================= */
 
 function loop() {
   raf = requestAnimationFrame(loop);
-
   if (!renderer || !scene || !camera || !composer) return;
 
-  let bass = 0, mid = 0, snare = 0;
-
+  // Audio Data
   if (analyser && dataFreq) {
     analyser.getByteFrequencyData(dataFreq);
     const sensitivity = sens ? parseFloat(sens.value) : 1;
-
-    bass = bandEnergy(dataFreq, 30, 140) * sensitivity;
-    mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity;
-    snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
+    const bass = bandEnergy(dataFreq, 30, 140) * sensitivity;
+    const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity;
+    const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
 
     bassSm = bassSm * 0.88 + bass * 0.12;
     midSm  = midSm  * 0.90 + mid  * 0.10;
@@ -1090,84 +887,87 @@ function loop() {
     snareAvg = snareAvg * 0.965 + snareSm * 0.035;
     const rise = snareSm - snarePrev;
     snarePrev = snareSm;
-
     const now = performance.now() / 1000;
-    const cooldown = 0.14;
     const isHit = (snareSm > snareAvg * 1.45) && (rise > 0.055);
-
-    if (isHit && (now - lastSnareTrig) > cooldown) {
+    if (isHit && (now - lastSnareTrig) > 0.14) {
       lastSnareTrig = now;
       snapFlash = 1.0;
-
       triggerRingPulse(Math.min(1, snareSm * 1.6));
       spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
     }
   } else {
-    bassSm *= 0.97;
-    midSm *= 0.97;
-    snareSm *= 0.97;
+    bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97;
   }
+  snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
-  snapFlash *= 0.86;
-  if (snapFlash < 0.001) snapFlash = 0;
-
-  // Stars: create "universe" (no music movement), but gentle twinkle
+  // 1. STARS: Warp Field (Drift + Acceleration)
   if (starPoints) {
+    updateStars(1/60); // Drift logic
     const base = P.starsOpacity;
     const tw = base + 0.03 * Math.sin(performance.now() * 0.0007);
-    const slider = partEl ? parseFloat(partEl.value) : 10; // 0..30
+    const slider = partEl ? parseFloat(partEl.value) : 10; 
     const add = Math.max(0, Math.min(0.20, 0.0065 * slider));
-    starPoints.material.opacity = Math.max(0, Math.min(0.65, tw + add));
+    starPoints.material.opacity = Math.max(0, Math.min(0.8, tw + add + bassSm * 0.2));
   }
 
-  // World movement: cage moves through space
+  // 2. WORLD MOVEMENT (Rotation)
   if (world && !reducedMotion) {
     const t = performance.now() * 0.00025;
-
-    // orbit-like drift
-    world.position.x = Math.sin(t * 1.2) * 0.55;
-    world.position.y = Math.cos(t * 0.9) * 0.35;
-
-    // deep-space drift forward/back
-    world.position.z = Math.sin(t * 0.7) * 0.8;
-
     world.rotation.y = t * 0.45;
     world.rotation.x = Math.sin(t * 0.8) * 0.10;
+    // World drift (Z) is handled by the stars now, so we keep world mostly centered
+    world.position.x = Math.sin(t * 1.2) * 0.55;
+    world.position.y = Math.cos(t * 0.9) * 0.35;
   }
 
-  // Cage color/opacity + crisp lines support
-  if (cage) {
+  // 3. CAGE MORPHING (Art Performance)
+  if (cageGroup && cageShapeA && cageShapeB) {
+    // Energy determines transformation state (0 = calm, 1 = chaos)
+    const energy = Math.min(1, bassSm * 0.8 + snareSm * 0.5);
+    
+    // Smooth transition
+    // Shape A (Icosahedron) fades OUT
+    cageShapeA.material.opacity = THREE.MathUtils.lerp(cageShapeA.material.opacity, P.cageOpacityBase * (1 - energy * 0.8), 0.1);
+    
+    // Shape B (Torus Knot) fades IN
+    cageShapeB.material.opacity = THREE.MathUtils.lerp(cageShapeB.material.opacity, energy * 0.8, 0.05);
+
+    // Color logic
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
     const hue = ((hueShift % 360) / 360);
     const mode = palette?.value || "hue";
-    const energy = Math.min(1, (bassSm * 0.65 + midSm * 0.25 + snareSm * 0.55));
 
     if (mode === "grayscale") {
-      cage.material.color.setHex(0xe6e6e6);
+      cageShapeA.material.color.setHex(0xe6e6e6);
+      cageShapeB.material.color.setHex(0xffffff);
     } else if (mode === "energy") {
-      cage.material.color.setHSL(hue, 0.85, 0.35 + energy * 0.35);
+      cageShapeA.material.color.setHSL(hue, 0.85, 0.35 + energy * 0.35);
+      cageShapeB.material.color.setHSL(hue, 0.95, 0.5 + energy * 0.2); // Bright pink/red
     } else {
-      cage.material.color.setHSL(hue, 0.75, 0.55);
+      cageShapeA.material.color.setHSL(hue, 0.75, 0.55);
+      cageShapeB.material.color.setHSL((hue + 0.5) % 1, 0.85, 0.6); // Complementary color
     }
 
-    cage.material.opacity = P.cageOpacityBase + bassSm * 0.14 + snapFlash * 0.07;
+    // Add flash to opacity
+    cageShapeA.material.opacity += snapFlash * 0.07;
+    cageShapeB.material.opacity += snapFlash * 0.15;
 
-    // subtle cage rotation
-    const drift = reducedMotion ? 0 : 0.0010;
-    cage.rotation.y += drift;
-    cage.rotation.x += drift * 0.65;
+    // Independent rotations
+    const drift = reducedMotion ? 0 : 0.002;
+    cageShapeA.rotation.y += drift;
+    cageShapeB.rotation.y -= drift * 1.5;
+    cageShapeB.rotation.z += drift;
+    
+    // Pulse
+    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
+    const scale = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
+    cageGroup.scale.set(scale, scale, scale);
   }
-
-  // Object zoom (no camera zoom => avoids "moving stars")
-  const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
-  const objZoom = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
 
   // Sigil
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue";
-
     sigilBase.material.opacity = P.sigilInk + bassSm * 0.06;
-
     let glowColor = new THREE.Color(0x00d4ff);
     if (mode === "grayscale") {
       glowColor = new THREE.Color(0xffffff);
@@ -1177,141 +977,91 @@ function loop() {
       glowColor = cyan.clone().lerp(purple, Math.min(1, snapFlash * 1.1));
     }
     sigilGlow.material.color.copy(glowColor);
-
     const aura = P.glowBase + bassSm * P.glowBass;
     const flash = snapFlash * P.glowSnap;
     sigilGlow.material.opacity = Math.max(0.22, Math.min(0.98, aura + flash));
-
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
     sigilGroup.rotation.y = 0.22 + Math.sin(performance.now() * 0.0012) * 0.02 + (Math.random() - 0.5) * jitter;
     sigilGroup.rotation.x = -0.18 + Math.sin(performance.now() * 0.0010) * 0.015 + (Math.random() - 0.5) * jitter;
-
-    sigilGroup.scale.set(objZoom, objZoom, objZoom);
+    // Object zoom is handled on cageGroup now, sigil stays relative
   }
 
-  // Rings
-  const dt = 1 / 60;
+  // Rings & Ghosts Animation
+  const dt = 1/60;
   for (const r of ringPool) {
     if (r.t >= 999) continue;
     r.t += dt;
     const p = Math.min(1, r.t / r.life);
     const ease = 1 - Math.pow(1 - p, 3);
-
     const scale = r.baseScale + ease * 1.35;
     r.mesh.scale.set(scale, scale, scale);
-
     const flick = 0.92 + 0.08 * Math.sin(performance.now() * 0.02);
     r.mesh.material.opacity = (1 - p) * 0.85 * flick * P.ringStrength;
-
-    if (p >= 1) {
-      r.t = 999;
-      r.mesh.material.opacity = 0;
-    }
+    if (p >= 1) { r.t = 999; r.mesh.material.opacity = 0; }
   }
-
-  // Ghosts
   for (const g of ghostPool) {
     if (g.t >= 999) continue;
     g.t += dt;
     const p = Math.min(1, g.t / g.life);
-
     const ease = 1 - Math.pow(1 - p, 2);
-    g.group.position.x += g.vx * 0.14;
-    g.group.position.y += g.vy * 0.14;
+    g.group.position.x += g.vx * 0.14; g.group.position.y += g.vy * 0.14;
     g.group.rotation.y += g.spin * 0.04;
-
     const s = g.baseScale + ease * 0.28;
     g.group.scale.set(s, s, s);
-
     const fade = (1 - p);
     g.ink.material.opacity = Math.max(0, g.ink.material.opacity * 0.90) * fade;
     g.glow.material.opacity = Math.max(0, g.glow.material.opacity * 0.88) * fade;
-
-    if (p >= 1) {
-      g.t = 999;
-      g.group.visible = false;
-    }
+    if (p >= 1) { g.t = 999; g.group.visible = false; }
   }
 
-  // Bloom reacts (but slightly less aggressive to avoid "pixel cage")
-  if (bloomPass) {
-    bloomPass.strength = P.bloomStrength + bassSm * 0.35 + snapFlash * 0.55;
-  }
+  // Bloom
+  if (bloomPass) bloomPass.strength = P.bloomStrength + bassSm * 0.35 + snapFlash * 0.55;
 
   composer.render();
 }
 
-/* ================= RECORD (REAL) ================= */
+/* ================= RECORDING ================= */
 
-let mediaRecorder = null;
-let recordedChunks = [];
-let recording = false;
-
+let mediaRecorder = null, recordedChunks = [], recording = false;
 function pickMime() {
-  const mimes = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
-    "video/webm;codecs=vp9",
-    "video/webm"
-  ];
-  for (const m of mimes) {
-    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
-  }
+  const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
   return "";
 }
-
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
 async function startRecording() {
   await initEngine();
-
   const fps = 60;
   const canvasStream = canvas.captureStream(fps);
-
-  // attach audio track (from master tap)
   const out = audioRecordDest?.stream;
-  if (out && out.getAudioTracks().length) {
-    canvasStream.addTrack(out.getAudioTracks()[0]);
-  }
-
+  if (out && out.getAudioTracks().length) canvasStream.addTrack(out.getAudioTracks()[0]);
   recordedChunks = [];
   const mimeType = pickMime();
-
   mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-  };
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
   mediaRecorder.onstop = () => {
     const blob = new Blob(recordedChunks, { type: mimeType || "video/webm" });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     downloadBlob(blob, `sonic-inclusion-${stamp}.webm`);
-    setStatus("✅ Recording saved (.webm)");
+    setStatus("✅ Recording saved");
   };
-
   mediaRecorder.start(250);
   recording = true;
-  recBtn.setAttribute("aria-pressed", "true");
   recBtn.textContent = "⏹ STOP";
   setStatus("⏺ Recording…");
 }
-
 function stopRecording() {
   if (!mediaRecorder) return;
   try { mediaRecorder.stop(); } catch {}
   recording = false;
-  recBtn.setAttribute("aria-pressed", "false");
   recBtn.textContent = "⏺ RECORD";
 }
-
 recBtn.addEventListener("click", async () => {
   if (!recording) await startRecording();
   else stopRecording();
