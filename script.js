@@ -993,7 +993,10 @@ function loop() {
   // Sigil
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue";
-    sigilBase.material.opacity = P.sigilInk + bassSm * 0.06;
+    
+    // 1. ANCHOR OPACITY: Ensure it never drops below 0.35
+    sigilBase.material.opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
+    
     let glowColor = new THREE.Color(0x00d4ff);
     if (mode === "grayscale") {
       glowColor = new THREE.Color(0xffffff);
@@ -1003,12 +1006,25 @@ function loop() {
       glowColor = cyan.clone().lerp(purple, Math.min(1, snapFlash * 1.1));
     }
     sigilGlow.material.color.copy(glowColor);
+    
+    // 2. GLOW ANCHOR
     const aura = P.glowBase + bassSm * P.glowBass;
     const flash = snapFlash * P.glowSnap;
-    sigilGlow.material.opacity = Math.max(0.22, Math.min(0.98, aura + flash));
+    sigilGlow.material.opacity = Math.max(0.30, Math.min(0.98, aura + flash));
+    
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
     sigilGroup.rotation.y = 0.22 + Math.sin(performance.now() * 0.0012) * 0.02 + (Math.random() - 0.5) * jitter;
     sigilGroup.rotation.x = -0.18 + Math.sin(performance.now() * 0.0010) * 0.015 + (Math.random() - 0.5) * jitter;
+
+    // 3. SCALE WITH CAGE: Prevent the 3D shapes from swallowing the 2D sigil
+    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
+    const scale = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
+    sigilGroup.scale.set(scale, scale, scale);
+
+    // 4. FLOATING ANIMATION (Levitation)
+    // Sine wave motion independent of music
+    const time = performance.now() * 0.001;
+    sigilGroup.position.y = Math.sin(time * 1.5) * 0.08;
   }
 
   // Rings & Ghosts Animation
