@@ -61,6 +61,7 @@ const engine = new AudioEngine();
 let raf = null; let analyser = null; let dataFreq = null;
 let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
+let audioRecordDest = null; // Safety declaration
 
 /* ================= THREE STATE ================= */
 
@@ -118,6 +119,7 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
+// FIX: Default sensitivity set to minimum (0.1)
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -150,7 +152,7 @@ enginePanel.innerHTML = `
         <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
     
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.5" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
@@ -278,7 +280,7 @@ function loadPreset(slot) {
     const saved = localStorage.getItem(`sonicPreset_${slot}`);
     if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
     const data = JSON.parse(saved);
-    if(panelSensEl) panelSensEl.value = data.sens; 
+    if(panelSensEl) panelSensEl.value = data.sens || "0.1"; 
     if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
     if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
@@ -448,7 +450,7 @@ function initGhosts() {
     const group = new THREE.Group(); group.visible = false; group.position.set(0, 0, 0.2); group.rotation.set(-0.18, 0.22, 0);
     const plane = new THREE.PlaneGeometry(6.9, 6.9);
     const inkMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
-    const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+    const glowMat = new MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
     const glow = new THREE.Mesh(plane, glowMat); glow.scale.setScalar(1.08); const ink = new THREE.Mesh(plane, inkMat);
     group.add(glow, ink); world?.add(group); ghostPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
   }
@@ -588,10 +590,7 @@ async function playDemo(path) {
   if (!engineInitialized) await initEngine();
   await stopAll({ suspend: false }); setStatus("⏳ Loading demo…");
   const buf = await fetch(path).then(r => r.arrayBuffer()); const audio = await engine.ctx.decodeAudioData(buf);
-  
-  // FIX: Safely resume the specific Audio Context so the music actually plays
   if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
-  
   currentMode = "demo"; if (monitorGain) monitorGain.gain.value = 1;
   bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
   bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
@@ -612,10 +611,7 @@ fileInput?.addEventListener("change", async (e) => {
     const file = e.target.files?.[0]; if (!file) return; 
     await stopAll({ suspend: false }); setStatus("⏳ Decoding file…");
     const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf); 
-    
-    // FIX: Safely resume the specific Audio Context
     if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
-    
     currentMode = "file"; if (monitorGain) monitorGain.gain.value = 1;
     bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain); 
     bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ File finished"); };
@@ -629,10 +625,7 @@ enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) =
   try { 
     await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
-    
-    // FIX: Safely resume the specific Audio Context
     if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
-    
     currentMode = "mic"; micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
     e.target.textContent = "⏹ Stop Mic"; applyMicMonitorGain(); setStatus("🎙️ Mic active");
   } catch (err) { setStatus("❌ Mic error"); console.error(err); await stopAll({ suspend: true }); }
@@ -646,7 +639,6 @@ function bandEnergy(freqData, hzLo, hzHi) {
     let sum = 0; 
     const n = Math.max(1, b - a + 1); 
     for (let i = a; i <= b; i++) sum += freqData[i] || 0; 
-    
     const result = (sum / n) / 255; 
     return isNaN(result) ? 0 : result;
 }
@@ -665,8 +657,8 @@ function loop() {
       if (analyser && dataFreq) {
         analyser.getByteFrequencyData(dataFreq);
         
-        let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.5;
-        if (isNaN(rawSens)) rawSens = 0.5;
+        let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.1;
+        if (isNaN(rawSens)) rawSens = 0.1;
         const sensitivity = Math.max(0.1, Math.min(rawSens, 5.0)); 
 
         const bass = bandEnergy(dataFreq, 30, 140) * sensitivity; 
@@ -794,7 +786,7 @@ function loop() {
   }
 }
 
-/* ================= RECORDING ================= */
+/* ================= RECORDING (FIXED MOBILE AUDIO FREEZE) ================= */
 let mediaRecorder = null, recordedChunks = [], recording = false;
 function pickMime() { const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]; for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ""; }
 function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -812,19 +804,25 @@ async function startRecording() {
       
       const fps = 30; 
       const canvasStream = canvas.captureStream(fps); 
+      const videoTrack = canvasStream.getVideoTracks()[0];
+      let combinedStream;
       
+      // FIX: Create a completely new stream for recording so it doesn't break the main audio loop
       try {
           const out = audioRecordDest?.stream; 
           if (out && out.getAudioTracks().length > 0) {
-              canvasStream.addTrack(out.getAudioTracks()[0]);
+              combinedStream = new MediaStream([videoTrack, out.getAudioTracks()[0]]);
+          } else {
+              combinedStream = new MediaStream([videoTrack]);
           }
       } catch (audioErr) {
-          console.warn("Could not bind audio to video track, recording video only.", audioErr);
+          console.warn("Could not bind audio securely, recording video only to prevent crash.", audioErr);
+          combinedStream = new MediaStream([videoTrack]);
       }
       
       recordedChunks = []; 
       const mimeType = pickMime(); 
-      mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
+      mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
       mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
       mediaRecorder.onstop = () => { 
           downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); 
