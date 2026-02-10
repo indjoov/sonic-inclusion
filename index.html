@@ -22,39 +22,6 @@
   </header>
 
   <main>
-    <section class="controls" aria-label="Audio input controls">
-      <button id="micBtn" class="primary">🎙️ Use Microphone</button>
-      <button id="fileBtn">📁 Load Audio File</button>
-      <button id="demoBtn">✨ Play Kasubo Demo</button>
-
-      <input id="fileInput" type="file" accept="audio/*" hidden />
-
-      <div class="sliders">
-        <label>
-          Sensitivity
-          <input id="sens" type="range" min="0.2" max="3" step="0.1" value="1" />
-        </label>
-
-        <label>
-          Color Mode
-          <select id="palette">
-            <option value="hue" selected>Hue by pitch (default)</option>
-            <option value="energy">Hue by energy</option>
-            <option value="grayscale">High-contrast grayscale</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="kbd-hint">
-        ⌨️ Keyboard:
-        <kbd>Space</kbd> Start/Stop ·
-        <kbd>M</kbd> Mic ·
-        <kbd>F</kbd> File ·
-        <kbd>D</kbd> Demo ·
-        <kbd>Esc</kbd> Close Engine
-      </div>
-    </section>
-
     <section class="stage" aria-label="Visualization stage">
       <canvas id="viz"></canvas>
     </section>
@@ -65,7 +32,7 @@
   </main>
 
   <footer class="site-footer">
-    <small>© 2025 Indjoov Arts · Sonic Inclusion Prototype</small>
+    <small>© 2026 Indjoov Arts · Sonic Inclusion Prototype</small>
   </footer>
 
   <script type="module" src="script.js"></script>
