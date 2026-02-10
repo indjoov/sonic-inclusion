@@ -5,6 +5,8 @@ import { AudioEngine } from "./audio/AudioEngine.js";
 import { EffectComposer } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js";
+import { FXAAShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/FXAAShader.js";
 
 /* ================= BASIC SETUP ================= */
 
@@ -93,9 +95,10 @@ let camera = null;
 
 let composer = null;
 let bloomPass = null;
+let fxaaPass = null;
 
-// Visuals
-let starPoints = null;
+let world = null;      // <-- cage/sigil/rings live here
+let starPoints = null; // <-- star field in scene space
 let cage = null;
 
 // Sigil layers
@@ -140,15 +143,14 @@ function removeLegacyUI() {
 }
 removeLegacyUI();
 
-/* ================= MODERN HUD ================= */
+/* ================= MODERN HUD (layout-safe: left/right) ================= */
 
 const hud = document.createElement("div");
 hud.id = "si-hud";
 hud.style.cssText = `
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(980px, calc(100% - 32px));
+  left: 16px;
+  right: 16px;
   bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 2000;
   display: flex;
@@ -157,6 +159,8 @@ hud.style.cssText = `
   justify-content: space-between;
   pointer-events: none;
   box-sizing: border-box;
+  max-width: 980px;
+  margin: 0 auto;
 `;
 
 const recBtn = document.createElement("button");
@@ -202,7 +206,7 @@ hud.appendChild(recBtn);
 hud.appendChild(engineToggle);
 document.body.appendChild(hud);
 
-/* ================= ENGINE PANEL ================= */
+/* ================= ENGINE PANEL (layout-safe: left/right) ================= */
 
 const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
@@ -211,11 +215,13 @@ enginePanel.setAttribute("aria-label", "Engine controls");
 enginePanel.setAttribute("aria-hidden", "true");
 enginePanel.style.cssText = `
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(980px, calc(100% - 32px));
+  left: 16px;
+  right: 16px;
   bottom: calc(74px + env(safe-area-inset-bottom));
   z-index: 2001;
+  max-width: 980px;
+  margin: 0 auto;
+
   background: rgba(10,10,10,0.92);
   border: 1px solid rgba(0,212,255,0.65);
   border-radius: 18px;
@@ -358,46 +364,46 @@ micMonitorVolEl.addEventListener("input", (e) => {
 
 const CHAPTERS = {
   INVOCATION: {
-    starsOpacity: 0.18,
+    starsOpacity: 0.16,
     cageOpacityBase: 0.22,
     sigilInk: 0.90,
-    glowBase: 0.30,
+    glowBase: 0.28,
     glowBass: 0.35,
     glowSnap: 0.55,
     jitter: 0.010,
     ringStrength: 0.75,
     ghostCount: 2,
-    bloomStrength: 0.85,
-    bloomRadius: 0.55,
-    bloomThreshold: 0.15,
+    bloomStrength: 0.65,
+    bloomRadius: 0.45,
+    bloomThreshold: 0.18,
   },
   POSSESSION: {
-    starsOpacity: 0.22,
+    starsOpacity: 0.20,
     cageOpacityBase: 0.26,
     sigilInk: 0.88,
-    glowBase: 0.42,
+    glowBase: 0.38,
     glowBass: 0.55,
     glowSnap: 0.95,
     jitter: 0.020,
     ringStrength: 1.00,
     ghostCount: 3,
-    bloomStrength: 1.25,
-    bloomRadius: 0.65,
-    bloomThreshold: 0.10,
+    bloomStrength: 0.95,
+    bloomRadius: 0.55,
+    bloomThreshold: 0.14,
   },
   ASCENSION: {
-    starsOpacity: 0.26,
+    starsOpacity: 0.24,
     cageOpacityBase: 0.30,
     sigilInk: 0.84,
-    glowBase: 0.54,
+    glowBase: 0.50,
     glowBass: 0.85,
     glowSnap: 1.05,
     jitter: 0.016,
     ringStrength: 1.15,
     ghostCount: 4,
-    bloomStrength: 1.75,
-    bloomRadius: 0.78,
-    bloomThreshold: 0.06,
+    bloomStrength: 1.25,
+    bloomRadius: 0.65,
+    bloomThreshold: 0.10,
   },
 };
 
@@ -424,15 +430,18 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 
 /* ================= RESIZE ================= */
 
+let lastDpr = 1;
+
 function fitRendererToStage() {
   if (!renderer || !camera) return;
 
-  // IMPORTANT: higher DPR => sharper cage on mobile
-  const dpr = Math.max(1, Math.min(3.0, window.devicePixelRatio || 1));
   const rect = (stageEl || canvas).getBoundingClientRect();
-
   const w = Math.max(1, Math.floor(rect.width));
   const h = Math.max(1, Math.floor(rect.height));
+
+  // Higher DPR helps sharpness, but keep it sane on mobile
+  const dpr = Math.max(1, Math.min(2.6, window.devicePixelRatio || 1));
+  lastDpr = dpr;
 
   renderer.setPixelRatio(dpr);
   renderer.setSize(w, h, false);
@@ -441,7 +450,14 @@ function fitRendererToStage() {
   camera.updateProjectionMatrix();
 
   composer?.setSize(w, h);
-  bloomPass?.setSize(w, h);
+
+  if (fxaaPass) {
+    // FXAA uses inverse resolution in screen pixels
+    fxaaPass.material.uniforms["resolution"].value.set(
+      1 / (w * dpr),
+      1 / (h * dpr)
+    );
+  }
 }
 
 const ro = new ResizeObserver(() => fitRendererToStage());
@@ -455,43 +471,53 @@ function initThree() {
 
   renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true,
+    antialias: true,  // helps base render
     alpha: true,
     powerPreference: "high-performance"
   });
   renderer.setClearColor(0x000000, 1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   scene = new THREE.Scene();
-
-  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
-  camera.position.set(0, 0, 16);
-
   scene.add(new THREE.AmbientLight(0xffffff, 0.65));
 
-  // Stars: attach to camera so they do NOT "move" with music/zoom
-  starPoints = makeStars(1400, 80);
-  camera.add(starPoints);
-  scene.add(camera);
+  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 260);
+  camera.position.set(0, 0, 18);
 
-  // Cage: crisp LineSegments (sharper than wireframe mesh)
+  // World group -> moves in "space"
+  world = new THREE.Group();
+  scene.add(world);
+
+  // Stars in scene space => creates "universe"
+  starPoints = makeStars(1900, 120);
+  scene.add(starPoints);
+
+  // Cage + sigil etc inside world
   cage = makeCage();
-  scene.add(cage);
+  world.add(cage);
 
   initRings();
   initGhosts();
-
   loadSigilLayers("media/indjoov-sigil.svg");
 
-  // Postprocessing
-  composer = new EffectComposer(renderer);
+  // Composer with MSAA target (if WebGL2) => much sharper lines on mobile
+  const rt = new THREE.WebGLRenderTarget(1, 1, {
+    samples: renderer.capabilities.isWebGL2 ? 4 : 0
+  });
+
+  composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
 
   const rect = (stageEl || canvas).getBoundingClientRect();
   bloomPass = new UnrealBloomPass(
     new THREE.Vector2(Math.max(1, rect.width), Math.max(1, rect.height)),
-    1.2, 0.6, 0.1
+    1.0, 0.55, 0.12
   );
   composer.addPass(bloomPass);
+
+  // FXAA AFTER bloom => reduces jaggies / "pixel cage"
+  fxaaPass = new ShaderPass(FXAAShader);
+  composer.addPass(fxaaPass);
 
   fitRendererToStage();
   applyChapter(chapter);
@@ -503,23 +529,31 @@ function makeStars(count, spread) {
 
   for (let i = 0; i < count; i++) {
     const ix = i * 3;
-    positions[ix + 0] = (Math.random() - 0.5) * spread;
-    positions[ix + 1] = (Math.random() - 0.5) * spread;
-    positions[ix + 2] = -Math.random() * spread; // push "into depth"
+
+    // pseudo-spherical distribution
+    const r = Math.random() * spread;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    positions[ix + 0] = r * Math.sin(phi) * Math.cos(theta);
+    positions[ix + 1] = r * Math.cos(phi);
+    positions[ix + 2] = r * Math.sin(phi) * Math.sin(theta);
   }
 
   geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.PointsMaterial({
     color: 0xffffff,
-    size: 0.06,
+    size: 0.055,
     transparent: true,
-    opacity: 0.22
+    opacity: 0.22,
+    depthWrite: false
   });
   return new THREE.Points(geom, mat);
 }
 
 function makeCage() {
-  const geo = new THREE.IcosahedronGeometry(5.15, 3); // higher detail -> smoother cage
+  // Higher detail geometry + wireframe lines
+  const geo = new THREE.IcosahedronGeometry(5.2, 4); // 4 is smoother than 3
   const wire = new THREE.WireframeGeometry(geo);
   const mat = new THREE.LineBasicMaterial({
     color: 0x00d4ff,
@@ -527,7 +561,6 @@ function makeCage() {
     opacity: 0.28
   });
   const lines = new THREE.LineSegments(wire, mat);
-  lines.position.set(0, 0, 0);
   return lines;
 }
 
@@ -535,7 +568,7 @@ function makeCage() {
 
 function initRings() {
   ringPool.forEach(r => {
-    scene?.remove(r.mesh);
+    world?.remove(r.mesh);
     r.mesh.geometry.dispose();
     r.mesh.material.dispose();
   });
@@ -543,7 +576,7 @@ function initRings() {
   ringCursor = 0;
 
   for (let i = 0; i < 8; i++) {
-    const g = new THREE.RingGeometry(2.6, 2.9, 96);
+    const g = new THREE.RingGeometry(2.6, 2.9, 120);
     const m = new THREE.MeshBasicMaterial({
       color: 0x8feaff,
       transparent: true,
@@ -556,7 +589,7 @@ function initRings() {
     mesh.position.set(0, 0, 0.25);
     mesh.rotation.x = -0.18;
     mesh.rotation.y = 0.22;
-    scene?.add(mesh);
+    world?.add(mesh);
 
     ringPool.push({ mesh, t: 999, life: 0.55, baseScale: 1.0 });
   }
@@ -580,12 +613,10 @@ function triggerRingPulse(intensity = 1) {
 
 function initGhosts() {
   ghostPool.forEach(g => {
-    scene?.remove(g.group);
+    world?.remove(g.group);
     g.group.traverse(o => {
       o.geometry?.dispose?.();
-      if (o.material) {
-        o.material.dispose?.();
-      }
+      if (o.material) o.material.dispose?.();
     });
   });
   ghostPool = [];
@@ -625,7 +656,7 @@ function initGhosts() {
     group.add(glow);
     group.add(ink);
 
-    scene?.add(group);
+    world?.add(group);
 
     ghostPool.push({
       group, glow, ink,
@@ -678,7 +709,7 @@ function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
 
 function disposeSigilGroup() {
   if (!sigilGroup) return;
-  scene.remove(sigilGroup);
+  world.remove(sigilGroup);
   sigilGroup.traverse(o => {
     if (o.geometry) o.geometry.dispose?.();
     if (o.material) o.material.dispose?.();
@@ -787,7 +818,7 @@ function loadSigilLayers(url) {
         sigilGroup.rotation.x = -0.18;
         sigilGroup.rotation.y = 0.22;
 
-        scene.add(sigilGroup);
+        world.add(sigilGroup);
         setStatus("✅ Sigil loaded (ink + glow)");
       };
 
@@ -832,7 +863,6 @@ async function initEngine() {
 
   // for recording audio
   audioRecordDest = engine.ctx.createMediaStreamDestination();
-  // tap master into recorder destination
   try { engine.master.connect(audioRecordDest); } catch {}
 
   overlay.style.display = "none";
@@ -1081,16 +1111,31 @@ function loop() {
   snapFlash *= 0.86;
   if (snapFlash < 0.001) snapFlash = 0;
 
-  // STARS: true "space" + only tiny twinkle (no movement!)
+  // Stars: create "universe" (no music movement), but gentle twinkle
   if (starPoints) {
     const base = P.starsOpacity;
     const tw = base + 0.03 * Math.sin(performance.now() * 0.0007);
     const slider = partEl ? parseFloat(partEl.value) : 10; // 0..30
-    const add = Math.max(0, Math.min(0.18, 0.006 * slider));
-    starPoints.material.opacity = Math.max(0, Math.min(0.55, tw + add));
+    const add = Math.max(0, Math.min(0.20, 0.0065 * slider));
+    starPoints.material.opacity = Math.max(0, Math.min(0.65, tw + add));
   }
 
-  // Cage: slow drift + audio-driven opacity (not scaling the camera)
+  // World movement: cage moves through space
+  if (world && !reducedMotion) {
+    const t = performance.now() * 0.00025;
+
+    // orbit-like drift
+    world.position.x = Math.sin(t * 1.2) * 0.55;
+    world.position.y = Math.cos(t * 0.9) * 0.35;
+
+    // deep-space drift forward/back
+    world.position.z = Math.sin(t * 0.7) * 0.8;
+
+    world.rotation.y = t * 0.45;
+    world.rotation.x = Math.sin(t * 0.8) * 0.10;
+  }
+
+  // Cage color/opacity + crisp lines support
   if (cage) {
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
     const hue = ((hueShift % 360) / 360);
@@ -1098,25 +1143,26 @@ function loop() {
     const energy = Math.min(1, (bassSm * 0.65 + midSm * 0.25 + snareSm * 0.55));
 
     if (mode === "grayscale") {
-      cage.material.color.setHex(0xdadada);
+      cage.material.color.setHex(0xe6e6e6);
     } else if (mode === "energy") {
       cage.material.color.setHSL(hue, 0.85, 0.35 + energy * 0.35);
     } else {
       cage.material.color.setHSL(hue, 0.75, 0.55);
     }
 
-    cage.material.opacity = P.cageOpacityBase + bassSm * 0.16 + snapFlash * 0.08;
+    cage.material.opacity = P.cageOpacityBase + bassSm * 0.14 + snapFlash * 0.07;
 
+    // subtle cage rotation
     const drift = reducedMotion ? 0 : 0.0010;
     cage.rotation.y += drift;
     cage.rotation.x += drift * 0.65;
   }
 
-  // "Zoom" as object scale (not camera) => stars stay stable
+  // Object zoom (no camera zoom => avoids "moving stars")
   const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
-  const objZoom = 1 + bassSm * (0.35 * zoomInt) + snapFlash * 0.04;
+  const objZoom = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
 
-  // Sigil: ink readable + glow ritual
+  // Sigil
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue";
 
@@ -1143,7 +1189,7 @@ function loop() {
     sigilGroup.scale.set(objZoom, objZoom, objZoom);
   }
 
-  // Rings animate
+  // Rings
   const dt = 1 / 60;
   for (const r of ringPool) {
     if (r.t >= 999) continue;
@@ -1163,7 +1209,7 @@ function loop() {
     }
   }
 
-  // Ghosts animate
+  // Ghosts
   for (const g of ghostPool) {
     if (g.t >= 999) continue;
     g.t += dt;
@@ -1187,9 +1233,9 @@ function loop() {
     }
   }
 
-  // Bloom reacts
+  // Bloom reacts (but slightly less aggressive to avoid "pixel cage")
   if (bloomPass) {
-    bloomPass.strength = P.bloomStrength + bassSm * 0.45 + snapFlash * 0.65;
+    bloomPass.strength = P.bloomStrength + bassSm * 0.35 + snapFlash * 0.55;
   }
 
   composer.render();
