@@ -419,7 +419,6 @@ function makeResponsiveMorphingCage() {
     const waveScale = 1.0 + 0.45 * (Math.sin(vec.x * 3.0) + Math.cos(vec.y * 3.0) + Math.sin(vec.z * 3.0));
     const waveVec = vec.clone().multiplyScalar(waveScale); wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
     
-    // Create highly aggressive spikes
     const noise = Math.sin(vec.x * 12.0) * Math.cos(vec.y * 12.0) * Math.sin(vec.z * 12.0);
     const spikeScale = 1.0 + Math.max(0, noise) * 5.0; 
     const spikeVec = vec.clone().multiplyScalar(spikeScale); spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
@@ -474,7 +473,6 @@ function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
 function initSparks() {
   const sparkGeo = new THREE.TetrahedronGeometry(0.15, 0); const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
   
-  // Expanded pool for bigger bursts
   for (let i = 0; i < 150; i++) {
     const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone()); mesh.visible = false; scene.add(mesh);
     sparkPool.push({ mesh: mesh, active: false, life: 0, maxLife: 0, velocity: new THREE.Vector3(), spin: new THREE.Vector3() });
@@ -489,7 +487,6 @@ function fireSparks(intensity, sourceMesh) {
     s.active = true; s.life = 0; s.maxLife = 0.4 + Math.random() * 0.4; 
     
     if (sourceMesh) {
-        // Calculate emission directly from the tips of the 3D spikes
         const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
         const spikeInf = sourceMesh.morphTargetInfluences[2] || 0;
         const currentRadius = 5.0 * sourceMesh.scale.x * (1.0 + (spikeInf * 0.85)); 
@@ -826,21 +823,35 @@ async function startRecording() {
       
       recBtn.classList.add('recording-pulse');
       
+      if (engine && engine.ctx && engine.ctx.state === 'suspended') {
+          await engine.ctx.resume();
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       const fps = 30; 
       const canvasStream = canvas.captureStream(fps); 
+      const videoTrack = canvasStream.getVideoTracks()[0];
+      let combinedStream;
       
       try {
           const out = audioRecordDest?.stream; 
           if (out && out.getAudioTracks().length > 0) {
-              canvasStream.addTrack(out.getAudioTracks()[0]);
+              const audioTrack = out.getAudioTracks()[0];
+              combinedStream = new MediaStream([videoTrack, audioTrack]);
+              console.log("Audio track successfully bound to recording.");
+          } else {
+              combinedStream = new MediaStream([videoTrack]);
+              console.warn("No audio track found. Recording video only.");
           }
       } catch (audioErr) {
-          console.warn("Could not bind audio to video track, recording video only.", audioErr);
+          console.warn("Could not bind audio securely, recording video only.", audioErr);
+          combinedStream = new MediaStream([videoTrack]);
       }
       
       recordedChunks = []; 
       const mimeType = pickMime(); 
-      mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
+      mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
       mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
       mediaRecorder.onstop = () => { 
           downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); 
@@ -851,10 +862,6 @@ async function startRecording() {
       recording = true; 
       recBtn.textContent = "⏹ STOP"; 
       setStatus("⏺ Recording…");
-      
-      if (engine && engine.ctx && engine.ctx.state === 'suspended') {
-          await engine.ctx.resume();
-      }
       
   } catch (err) {
       console.error("Recording failed to start:", err);
