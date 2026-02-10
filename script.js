@@ -719,12 +719,23 @@ function loadSigilLayers(url) {
 
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         const inkMat = new THREE.MeshBasicMaterial({
-          map: sigilBaseTex, transparent: true, opacity: 0.90,
-          depthWrite: false, depthTest: false, blending: THREE.NormalBlending
+          map: sigilBaseTex,
+          transparent: true,
+          opacity: 0.90,
+          depthWrite: false,
+          depthTest: false,
+          blending: THREE.NormalBlending,
+          side: THREE.DoubleSide // <--- FIX: Ensure sigil is visible from back
         });
         const glowMat = new THREE.MeshBasicMaterial({
-          map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff),
-          depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending
+          map: sigilGlowTex,
+          transparent: true,
+          opacity: 0.50,
+          color: new THREE.Color(0x00d4ff),
+          depthWrite: false,
+          depthTest: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide // <--- FIX: Ensure sigil is visible from back
         });
 
         sigilBase = new THREE.Mesh(plane, inkMat);
