@@ -15,12 +15,13 @@ import { RGBShiftShader } from "https://unpkg.com/three@0.160.0/examples/jsm/sha
 const canvas = document.getElementById("viz");
 const stageEl = canvas.closest(".stage");
 const srText = document.getElementById("srText");
-const palette = document.getElementById("palette");
 
-const micBtn = document.getElementById("micBtn");
-const fileBtn = document.getElementById("fileBtn");
-const demoBtn = document.getElementById("demoBtn");
-const fileInput = document.getElementById("fileInput");
+const fileInput = document.createElement("input");
+fileInput.id = "fileInput";
+fileInput.type = "file";
+fileInput.accept = "audio/*";
+fileInput.hidden = true;
+document.body.appendChild(fileInput);
 
 const sigilInput = document.createElement("input");
 sigilInput.type = "file";
@@ -75,8 +76,7 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
-// --- STATE: VJ Director & Fluid Nebula ---
-let currentCameraMode = 0; // 0: Front, 1: Inside, 2: Top Orbit, 3: Close-up
+let currentCameraMode = 0;
 const camTargetPos = new THREE.Vector3();
 const camTargetLook = new THREE.Vector3();
 
@@ -89,7 +89,10 @@ function applyMicMonitorGain() {
 
 /* ================= HUD & ENGINE PANEL ================= */
 
-function removeLegacyUI() { document.getElementById("si-hud")?.remove(); document.getElementById("si-enginePanel")?.remove(); }
+function removeLegacyUI() { 
+    document.getElementById("si-hud")?.remove(); 
+    document.getElementById("si-enginePanel")?.remove(); 
+}
 removeLegacyUI();
 
 const hud = document.createElement("div");
@@ -113,8 +116,8 @@ hud.appendChild(recBtn); hud.appendChild(hudRightControls); document.body.append
 const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
 
-// FIX: Force max-width and hidden overflow to physically stop sliders from pushing out.
-enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow: hidden;`;
+// FIX: Added the Audio controls directly into the Engine Panel HTML
+enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
@@ -124,7 +127,17 @@ enginePanel.innerHTML = `
     </div>
     <button id="si-engineClose" type="button" class="close-btn">✕</button>
   </div>
+  
   <div class="panel-grid" style="width: 100%; box-sizing: border-box; overflow-x: hidden;">
+    
+    <div style="display:flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
+        <button id="panel-demoBtn" type="button" style="background: rgba(0,212,255,0.2); border: 1px solid rgba(0,212,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">✨ Play Kasubo Demo</button>
+        <div style="display:flex; gap: 8px;">
+            <button id="panel-micBtn" type="button" style="flex:1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">🎙️ Mic</button>
+            <button id="panel-fileBtn" type="button" style="flex:1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">📁 File</button>
+        </div>
+    </div>
+
     <div class="chapter-box" style="width: 100%; box-sizing: border-box;">
       <div class="chapter-title">CHAPTER</div>
       <div class="chapter-btns">
@@ -143,6 +156,14 @@ enginePanel.innerHTML = `
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">COLOR MODE
+        <select id="palette-panel" style="width:100%; margin-top:6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2);">
+            <option value="hue" selected>Hue by pitch</option>
+            <option value="energy">Hue by energy</option>
+            <option value="grayscale">High-contrast grayscale</option>
+        </select>
+    </label>
+
     <label class="checkbox-row" style="max-width:100%;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
     
     <div class="mic-section" style="width: 100%; box-sizing: border-box;">
@@ -160,8 +181,10 @@ function setEngineOpen(open) {
   engineOpen = open; 
   if(open) {
       enginePanel.classList.add('open');
+      enginePanel.style.display = "block"; // Ensure it shows
   } else {
       enginePanel.classList.remove('open');
+      setTimeout(() => { if(!engineOpen) enginePanel.style.display = "none"; }, 400); // Hide after animation
   }
 }
 engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
@@ -180,6 +203,7 @@ const zoomEl = enginePanel.querySelector("#zoomInt");
 const hueEl  = enginePanel.querySelector("#hueShift");
 const midiStatusEl = enginePanel.querySelector("#midiStatus");
 const panelSensEl = enginePanel.querySelector("#sens-panel");
+const paletteEl = enginePanel.querySelector("#palette-panel"); // Link new palette selector
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
 const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
@@ -201,9 +225,8 @@ let isFullscreen = false;
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(err => { console.warn(`Error: ${err.message}`); });
-    document.querySelector('.controls').style.display = 'none'; 
-    document.querySelector('.site-header').style.display = 'none'; 
-    document.querySelector('.site-footer').style.display = 'none';
+    document.querySelector('.site-header')?.style.setProperty('display', 'none'); 
+    document.querySelector('.site-footer')?.style.setProperty('display', 'none');
     hud.style.display = 'none'; 
     setEngineOpen(false);
     
@@ -213,9 +236,8 @@ function toggleFullscreen() {
   } else { document.exitFullscreen(); resetUI(); }
 }
 function resetUI() {
-  document.querySelector('.controls').style.display = 'grid'; 
-  document.querySelector('.site-header').style.display = 'block'; 
-  document.querySelector('.site-footer').style.display = 'block';
+  document.querySelector('.site-header')?.style.setProperty('display', 'block'); 
+  document.querySelector('.site-footer')?.style.setProperty('display', 'block');
   hud.style.display = 'flex'; 
   
   stageEl.classList.remove('fullscreen-active');
@@ -250,7 +272,7 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 
 /* ================= PRESET SYSTEM ================= */
 function savePreset(slot) {
-    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: palette?.value, chapter: chapter };
+    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, chapter: chapter };
     localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Preset ${slot} Saved`);
 }
 function loadPreset(slot) {
@@ -259,7 +281,7 @@ function loadPreset(slot) {
     const data = JSON.parse(saved);
     if(panelSensEl) panelSensEl.value = data.sens; 
     if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
-    if(partEl) partEl.value = data.stars; if(palette) palette.value = data.palette; applyChapter(data.chapter);
+    if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
 }
 
@@ -551,12 +573,15 @@ async function initEngine() {
 overlay.style.cursor = "pointer";
 overlay.addEventListener("click", () => { initEngine(); });
 
-/* ================= CLEAN STOP / INPUTS ================= */
+/* ================= CLEAN STOP / INPUTS (MOVED TO PANEL) ================= */
 async function stopAll({ suspend = true } = {}) {
   if (bufferSrc) { try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {} bufferSrc = null; }
   if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
   if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
-  currentMode = "idle"; if (micBtn) micBtn.textContent = "🎙️ Use Microphone"; feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
+  currentMode = "idle"; 
+  const panelMicBtn = enginePanel.querySelector("#panel-micBtn");
+  if (panelMicBtn) panelMicBtn.textContent = "🎙️ Mic"; 
+  feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
   if (suspend) try { await engine.ctx.suspend(); } catch {}
 }
 
@@ -568,9 +593,16 @@ async function playDemo(path) {
   bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
   bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
 }
-demoBtn?.addEventListener("click", () => playDemo("media/kasubo hoerprobe.mp3"));
 
-fileBtn?.addEventListener("click", async () => { if(!engineInitialized) await initEngine(); fileInput?.click(); });
+enginePanel.querySelector("#panel-demoBtn").addEventListener("click", () => {
+    playDemo("media/kasubo hoerprobe.mp3");
+});
+
+enginePanel.querySelector("#panel-fileBtn").addEventListener("click", async () => { 
+    if(!engineInitialized) await initEngine(); 
+    fileInput?.click(); 
+});
+
 fileInput?.addEventListener("change", async (e) => {
   try { if(!engineInitialized) await initEngine(); const file = e.target.files?.[0]; if (!file) return; await stopAll({ suspend: false }); setStatus("⏳ Decoding file…");
     const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf); await engine.resume(); currentMode = "file"; if (monitorGain) monitorGain.gain.value = 1;
@@ -579,13 +611,13 @@ fileInput?.addEventListener("change", async (e) => {
   } catch { setStatus("❌ File error"); } finally { if (fileInput) fileInput.value = ""; }
 });
 
-micBtn?.addEventListener("click", async () => {
+enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) => {
   if(!engineInitialized) await initEngine();
   if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
   try { await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
     await engine.resume(); currentMode = "mic"; micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
-    micBtn.textContent = "⏹ Stop Microphone"; applyMicMonitorGain(); setStatus("🎙️ Mic active");
+    e.target.textContent = "⏹ Stop Mic"; applyMicMonitorGain(); setStatus("🎙️ Mic active");
   } catch { setStatus("❌ Mic error"); await stopAll({ suspend: true }); }
 });
 
@@ -608,7 +640,6 @@ let bassSm = 0, midSm = 0, snareSm = 0; let snareAvg = 0, snarePrev = 0, lastSna
 function loop() {
   raf = requestAnimationFrame(loop);
   
-  // WRAP EVERYTHING IN TRY/CATCH SO A MATH ERROR NEVER KILLS THE ANIMATION LOOP
   try {
       if (!renderer || !scene || !camera || !composer) return;
 
@@ -686,13 +717,13 @@ function loop() {
         const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
         morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, Math.max(0.1, targetScale), 0.2));
 
-        const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360); const mode = palette?.value || "hue";
+        const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360); const mode = paletteEl?.value || "hue";
         if (mode === "grayscale") { morphMesh.material.color.setHex(0xe6e6e6); } else if (mode === "energy") { morphMesh.material.color.setHSL((hue + bassSm * 0.2 + midSm * 0.1) % 1, 0.85, 0.5 + snareSm * 0.4); } else { morphMesh.material.color.setHSL((hue + Math.sin(time * 0.2) * 0.1) % 1, 0.75, 0.55); }
         morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
       }
 
       if (sigilGroup && sigilBase && sigilGlow) {
-        const mode = palette?.value || "hue"; 
+        const mode = paletteEl?.value || "hue"; 
         const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
         sigilBase.material.opacity = opacity; 
         
@@ -762,11 +793,9 @@ async function startRecording() {
       
       recBtn.classList.add('recording-pulse');
       
-      // FIX: Dropped to 30 FPS to stop mobile CPU/GPU from crashing
       const fps = 30; 
       const canvasStream = canvas.captureStream(fps); 
       
-      // FIX: Wrap audio track binding in a safe block so it won't crash the video capture
       try {
           const out = audioRecordDest?.stream; 
           if (out && out.getAudioTracks().length > 0) {
@@ -790,7 +819,6 @@ async function startRecording() {
       recBtn.textContent = "⏹ STOP"; 
       setStatus("⏺ Recording…");
       
-      // FIX: Force wake the audio context back up in case the browser muted it to start recording
       if (engine && engine.ctx && engine.ctx.state === 'suspended') {
           await engine.ctx.resume();
       }
