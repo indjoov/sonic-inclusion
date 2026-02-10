@@ -92,26 +92,25 @@ let scene = null;
 let camera = null;
 
 let composer = null;
-let renderPass = null;
 let bloomPass = null;
 
+// Visuals
 let starPoints = null;
-let sphere = null;
+let cage = null;
 
 // Sigil layers
 let sigilGroup = null;
 let sigilBase = null;
 let sigilGlow = null;
 
-// Textures to reuse for ghosts
 let sigilBaseTex = null;
 let sigilGlowTex = null;
 
-// Ritual rings pool
+// Rings pool
 let ringPool = [];
 let ringCursor = 0;
 
-// Ghost trails pool
+// Ghosts pool
 let ghostPool = [];
 let ghostCursor = 0;
 
@@ -147,8 +146,9 @@ const hud = document.createElement("div");
 hud.id = "si-hud";
 hud.style.cssText = `
   position: fixed;
-  left: 16px;
-  right: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(980px, calc(100% - 32px));
   bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 2000;
   display: flex;
@@ -156,6 +156,7 @@ hud.style.cssText = `
   align-items: center;
   justify-content: space-between;
   pointer-events: none;
+  box-sizing: border-box;
 `;
 
 const recBtn = document.createElement("button");
@@ -210,8 +211,9 @@ enginePanel.setAttribute("aria-label", "Engine controls");
 enginePanel.setAttribute("aria-hidden", "true");
 enginePanel.style.cssText = `
   position: fixed;
-  left: 16px;
-  right: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(980px, calc(100% - 32px));
   bottom: calc(74px + env(safe-area-inset-bottom));
   z-index: 2001;
   background: rgba(10,10,10,0.92);
@@ -223,6 +225,7 @@ enginePanel.style.cssText = `
   backdrop-filter: blur(12px);
   box-shadow: 0 18px 60px rgba(0,0,0,0.55);
   display: none;
+  box-sizing: border-box;
 `;
 
 enginePanel.innerHTML = `
@@ -262,7 +265,7 @@ enginePanel.innerHTML = `
     </label>
 
     <label style="font-size:12px; opacity:0.8;">
-      BASS ZOOM
+      BASS ZOOM (object)
       <input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; margin-top:6px;">
     </label>
 
@@ -277,9 +280,9 @@ enginePanel.innerHTML = `
     </label>
 
     <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.12);">
-      <label style="font-size:12px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
-        <span>Mic Monitor</span>
+      <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
         <input id="micMonitor" type="checkbox">
+        <span>Mic Monitor</span>
       </label>
 
       <label style="font-size:12px; opacity:0.8; display:block; margin-top:10px;">
@@ -356,11 +359,10 @@ micMonitorVolEl.addEventListener("input", (e) => {
 const CHAPTERS = {
   INVOCATION: {
     starsOpacity: 0.18,
-    sphereOpacityBase: 0.16,
-    sphereBreath: 0.06,
+    cageOpacityBase: 0.22,
     sigilInk: 0.90,
     glowBase: 0.30,
-    glowBass: 0.40,
+    glowBass: 0.35,
     glowSnap: 0.55,
     jitter: 0.010,
     ringStrength: 0.75,
@@ -368,42 +370,34 @@ const CHAPTERS = {
     bloomStrength: 0.85,
     bloomRadius: 0.55,
     bloomThreshold: 0.15,
-    camBass: 0.85,
-    camSnap: 0.24,
   },
   POSSESSION: {
     starsOpacity: 0.22,
-    sphereOpacityBase: 0.22,
-    sphereBreath: 0.09,
+    cageOpacityBase: 0.26,
     sigilInk: 0.88,
-    glowBase: 0.40,
-    glowBass: 0.60,
+    glowBase: 0.42,
+    glowBass: 0.55,
     glowSnap: 0.95,
-    jitter: 0.022,
+    jitter: 0.020,
     ringStrength: 1.00,
     ghostCount: 3,
     bloomStrength: 1.25,
     bloomRadius: 0.65,
     bloomThreshold: 0.10,
-    camBass: 1.00,
-    camSnap: 0.32,
   },
   ASCENSION: {
     starsOpacity: 0.26,
-    sphereOpacityBase: 0.26,
-    sphereBreath: 0.11,
+    cageOpacityBase: 0.30,
     sigilInk: 0.84,
-    glowBase: 0.52,
+    glowBase: 0.54,
     glowBass: 0.85,
     glowSnap: 1.05,
-    jitter: 0.018,
+    jitter: 0.016,
     ringStrength: 1.15,
     ghostCount: 4,
     bloomStrength: 1.75,
     bloomRadius: 0.78,
     bloomThreshold: 0.06,
-    camBass: 1.10,
-    camSnap: 0.36,
   },
 };
 
@@ -433,7 +427,8 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 function fitRendererToStage() {
   if (!renderer || !camera) return;
 
-  const dpr = Math.max(1, Math.min(2.0, window.devicePixelRatio || 1));
+  // IMPORTANT: higher DPR => sharper cage on mobile
+  const dpr = Math.max(1, Math.min(3.0, window.devicePixelRatio || 1));
   const rect = (stageEl || canvas).getBoundingClientRect();
 
   const w = Math.max(1, Math.floor(rect.width));
@@ -446,10 +441,7 @@ function fitRendererToStage() {
   camera.updateProjectionMatrix();
 
   composer?.setSize(w, h);
-
-  if (bloomPass) {
-    bloomPass.setSize(w, h);
-  }
+  bloomPass?.setSize(w, h);
 }
 
 const ro = new ResizeObserver(() => fitRendererToStage());
@@ -476,18 +468,14 @@ function initThree() {
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.65));
 
+  // Stars: attach to camera so they do NOT "move" with music/zoom
   starPoints = makeStars(1400, 80);
-  scene.add(starPoints);
+  camera.add(starPoints);
+  scene.add(camera);
 
-  const geo = new THREE.IcosahedronGeometry(5.1, 2);
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0x00d4ff,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.22
-  });
-  sphere = new THREE.Mesh(geo, mat);
-  scene.add(sphere);
+  // Cage: crisp LineSegments (sharper than wireframe mesh)
+  cage = makeCage();
+  scene.add(cage);
 
   initRings();
   initGhosts();
@@ -496,8 +484,7 @@ function initThree() {
 
   // Postprocessing
   composer = new EffectComposer(renderer);
-  renderPass = new RenderPass(scene, camera);
-  composer.addPass(renderPass);
+  composer.addPass(new RenderPass(scene, camera));
 
   const rect = (stageEl || canvas).getBoundingClientRect();
   bloomPass = new UnrealBloomPass(
@@ -518,7 +505,7 @@ function makeStars(count, spread) {
     const ix = i * 3;
     positions[ix + 0] = (Math.random() - 0.5) * spread;
     positions[ix + 1] = (Math.random() - 0.5) * spread;
-    positions[ix + 2] = (Math.random() - 0.5) * spread;
+    positions[ix + 2] = -Math.random() * spread; // push "into depth"
   }
 
   geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -529,6 +516,19 @@ function makeStars(count, spread) {
     opacity: 0.22
   });
   return new THREE.Points(geom, mat);
+}
+
+function makeCage() {
+  const geo = new THREE.IcosahedronGeometry(5.15, 3); // higher detail -> smoother cage
+  const wire = new THREE.WireframeGeometry(geo);
+  const mat = new THREE.LineBasicMaterial({
+    color: 0x00d4ff,
+    transparent: true,
+    opacity: 0.28
+  });
+  const lines = new THREE.LineSegments(wire, mat);
+  lines.position.set(0, 0, 0);
+  return lines;
 }
 
 /* ================= RITUAL RINGS ================= */
@@ -579,13 +579,11 @@ function triggerRingPulse(intensity = 1) {
 /* ================= GHOST TRAILS ================= */
 
 function initGhosts() {
-  // pool of ghost groups (each has glow+ink planes)
   ghostPool.forEach(g => {
     scene?.remove(g.group);
     g.group.traverse(o => {
       o.geometry?.dispose?.();
       if (o.material) {
-        o.material.map?.dispose?.();
         o.material.dispose?.();
       }
     });
@@ -600,7 +598,6 @@ function initGhosts() {
     group.rotation.x = -0.18;
     group.rotation.y = 0.22;
 
-    // temp materials (we will assign textures once loaded)
     const plane = new THREE.PlaneGeometry(6.9, 6.9);
 
     const inkMat = new THREE.MeshBasicMaterial({
@@ -631,14 +628,9 @@ function initGhosts() {
     scene?.add(group);
 
     ghostPool.push({
-      group,
-      glow,
-      ink,
-      t: 999,
-      life: 0.45,
-      vx: 0,
-      vy: 0,
-      spin: 0,
+      group, glow, ink,
+      t: 999, life: 0.45,
+      vx: 0, vy: 0, spin: 0,
       baseScale: 1
     });
   }
@@ -666,24 +658,18 @@ function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
     g.group.rotation.x = -0.18;
     g.group.rotation.y = 0.22;
 
-    // assign textures (reuse)
     g.ink.material.map = sigilBaseTex;
     g.glow.material.map = sigilGlowTex;
 
-    // color drift cyan->purple
     const cyan = new THREE.Color(0x00d4ff);
     const purple = new THREE.Color(0x7c4dff);
     const col = cyan.clone().lerp(purple, Math.min(1, 0.45 + snapFlash * 0.65));
     g.glow.material.color.copy(col);
 
-    // opacities
     g.ink.material.opacity = 0.22 + 0.20 * intensity;
     g.glow.material.opacity = 0.40 + 0.55 * snapFlash;
 
-    // slightly larger glow
     g.glow.scale.set(1.12, 1.12, 1.12);
-
-    // scale
     g.group.scale.set(g.baseScale, g.baseScale, g.baseScale);
   }
 }
@@ -695,10 +681,7 @@ function disposeSigilGroup() {
   scene.remove(sigilGroup);
   sigilGroup.traverse(o => {
     if (o.geometry) o.geometry.dispose?.();
-    if (o.material) {
-      if (o.material.map) o.material.map.dispose?.();
-      o.material.dispose?.();
-    }
+    if (o.material) o.material.dispose?.();
   });
   sigilGroup = null;
   sigilBase = null;
@@ -723,7 +706,6 @@ function loadSigilLayers(url) {
       img.onload = () => {
         const size = 1024;
 
-        // base canvas (ink + transparent bg)
         const base = document.createElement("canvas");
         base.width = size;
         base.height = size;
@@ -744,25 +726,11 @@ function loadSigilLayers(url) {
         const thr = 245;
 
         for (let i = 0; i < d.length; i += 4) {
-          const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
-
-          if (r >= thr && g >= thr && b >= thr) {
-            d[i + 3] = 0;
-            continue;
-          }
-
-          if (a > 0) {
-            // ink grain
-            const grain = 0.82 + Math.random() * 0.20;
-            d[i + 0] = Math.max(0, Math.min(255, d[i + 0] * grain));
-            d[i + 1] = Math.max(0, Math.min(255, d[i + 1] * grain));
-            d[i + 2] = Math.max(0, Math.min(255, d[i + 2] * grain));
-          }
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (r >= thr && g >= thr && b >= thr) d[i + 3] = 0;
         }
-
         ctx.putImageData(imgData, 0, 0);
 
-        // glow canvas (blurred pseudo bloom)
         const glow = document.createElement("canvas");
         glow.width = size;
         glow.height = size;
@@ -778,7 +746,6 @@ function loadSigilLayers(url) {
 
         gctx.filter = "none";
 
-        // textures
         sigilBaseTex = new THREE.CanvasTexture(base);
         sigilBaseTex.colorSpace = THREE.SRGBColorSpace;
         sigilBaseTex.needsUpdate = true;
@@ -821,7 +788,7 @@ function loadSigilLayers(url) {
         sigilGroup.rotation.y = 0.22;
 
         scene.add(sigilGroup);
-        setStatus("✅ Sigil loaded (ink grain + bloom glow)");
+        setStatus("✅ Sigil loaded (ink + glow)");
       };
 
       img.onerror = () => setStatus("⚠️ Sigil image decode failed");
@@ -834,6 +801,8 @@ function loadSigilLayers(url) {
 }
 
 /* ================= INIT AUDIO ENGINE ================= */
+
+let audioRecordDest = null;
 
 async function initEngine() {
   initThree();
@@ -860,6 +829,11 @@ async function initEngine() {
   inputGain.connect(analyser);
   inputGain.connect(monitorGain);
   monitorGain.connect(engine.master);
+
+  // for recording audio
+  audioRecordDest = engine.ctx.createMediaStreamDestination();
+  // tap master into recorder destination
+  try { engine.master.connect(audioRecordDest); } catch {}
 
   overlay.style.display = "none";
   setStatus("✅ Engine ready (Demo / File / Mic)");
@@ -1034,7 +1008,7 @@ window.addEventListener("keydown", async (e) => {
   if (e.key.toLowerCase() === "d") demoBtn?.click();
 });
 
-/* ================= AUDIO FEATURES ================= */
+/* ================= AUDIO HELPERS ================= */
 
 function hzToBin(hz) {
   if (!engine?.ctx || !analyser) return 0;
@@ -1107,53 +1081,40 @@ function loop() {
   snapFlash *= 0.86;
   if (snapFlash < 0.001) snapFlash = 0;
 
-  // Stars: SPACE (static) + tiny twinkle
+  // STARS: true "space" + only tiny twinkle (no movement!)
   if (starPoints) {
     const base = P.starsOpacity;
-    const tw = base + 0.04 * Math.sin(performance.now() * 0.0007);
+    const tw = base + 0.03 * Math.sin(performance.now() * 0.0007);
     const slider = partEl ? parseFloat(partEl.value) : 10; // 0..30
     const add = Math.max(0, Math.min(0.18, 0.006 * slider));
     starPoints.material.opacity = Math.max(0, Math.min(0.55, tw + add));
   }
 
-  // Sphere: slow drift + bass breathing
-  if (sphere) {
+  // Cage: slow drift + audio-driven opacity (not scaling the camera)
+  if (cage) {
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
     const hue = ((hueShift % 360) / 360);
-    const col = new THREE.Color().setHSL(hue, 0.75, 0.55);
-
     const mode = palette?.value || "hue";
     const energy = Math.min(1, (bassSm * 0.65 + midSm * 0.25 + snareSm * 0.55));
 
     if (mode === "grayscale") {
-      sphere.material.color.setHex(0xdadada);
-      sphere.material.opacity = P.sphereOpacityBase + bassSm * 0.08;
+      cage.material.color.setHex(0xdadada);
     } else if (mode === "energy") {
-      sphere.material.color.setHSL(hue, 0.85, 0.35 + energy * 0.35);
-      sphere.material.opacity = P.sphereOpacityBase + energy * 0.22;
+      cage.material.color.setHSL(hue, 0.85, 0.35 + energy * 0.35);
     } else {
-      sphere.material.color.copy(col);
-      sphere.material.opacity = P.sphereOpacityBase + bassSm * 0.18;
+      cage.material.color.setHSL(hue, 0.75, 0.55);
     }
 
-    const drift = reducedMotion ? 0 : 0.0009;
-    sphere.rotation.y += drift;
-    sphere.rotation.x += drift * 0.65;
+    cage.material.opacity = P.cageOpacityBase + bassSm * 0.16 + snapFlash * 0.08;
 
-    const breath = 1 + bassSm * P.sphereBreath;
-    sphere.scale.set(breath, breath, breath);
+    const drift = reducedMotion ? 0 : 0.0010;
+    cage.rotation.y += drift;
+    cage.rotation.x += drift * 0.65;
   }
 
-  // Camera: bass push + snare kick
-  if (camera) {
-    const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
-
-    const bassPush = bassSm * (0.9 * zoomInt) * P.camBass;
-    const kick = snapFlash * P.camSnap;
-
-    const targetZ = 16 - bassPush * 2.8 + kick * 0.65;
-    camera.position.z = camera.position.z * 0.92 + targetZ * 0.08;
-  }
+  // "Zoom" as object scale (not camera) => stars stay stable
+  const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
+  const objZoom = 1 + bassSm * (0.35 * zoomInt) + snapFlash * 0.04;
 
   // Sigil: ink readable + glow ritual
   if (sigilGroup && sigilBase && sigilGlow) {
@@ -1175,13 +1136,11 @@ function loop() {
     const flash = snapFlash * P.glowSnap;
     sigilGlow.material.opacity = Math.max(0.22, Math.min(0.98, aura + flash));
 
-    // micro jitter on snap
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
     sigilGroup.rotation.y = 0.22 + Math.sin(performance.now() * 0.0012) * 0.02 + (Math.random() - 0.5) * jitter;
     sigilGroup.rotation.x = -0.18 + Math.sin(performance.now() * 0.0010) * 0.015 + (Math.random() - 0.5) * jitter;
 
-    const s = 1 + bassSm * 0.10 + snapFlash * 0.04;
-    sigilGroup.scale.set(s, s, s);
+    sigilGroup.scale.set(objZoom, objZoom, objZoom);
   }
 
   // Rings animate
@@ -1204,7 +1163,7 @@ function loop() {
     }
   }
 
-  // Ghosts animate (afterimage)
+  // Ghosts animate
   for (const g of ghostPool) {
     if (g.t >= 999) continue;
     g.t += dt;
@@ -1228,19 +1187,86 @@ function loop() {
     }
   }
 
-  // Bloom reacts (subtle: bass aura + snap flash)
+  // Bloom reacts
   if (bloomPass) {
-    const b = P.bloomStrength + bassSm * 0.45 + snapFlash * 0.65;
-    bloomPass.strength = b;
+    bloomPass.strength = P.bloomStrength + bassSm * 0.45 + snapFlash * 0.65;
   }
 
   composer.render();
 }
 
-/* ================= RECORD BUTTON (placeholder) ================= */
-recBtn.addEventListener("click", () => {
-  const pressed = recBtn.getAttribute("aria-pressed") === "true";
-  recBtn.setAttribute("aria-pressed", pressed ? "false" : "true");
-  recBtn.textContent = pressed ? "⏺ RECORD" : "⏹ STOP";
-  setStatus(pressed ? "⏺ Record ready" : "⏹ Record (placeholder) stopped");
+/* ================= RECORD (REAL) ================= */
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let recording = false;
+
+function pickMime() {
+  const mimes = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp9",
+    "video/webm"
+  ];
+  for (const m of mimes) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return "";
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function startRecording() {
+  await initEngine();
+
+  const fps = 60;
+  const canvasStream = canvas.captureStream(fps);
+
+  // attach audio track (from master tap)
+  const out = audioRecordDest?.stream;
+  if (out && out.getAudioTracks().length) {
+    canvasStream.addTrack(out.getAudioTracks()[0]);
+  }
+
+  recordedChunks = [];
+  const mimeType = pickMime();
+
+  mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: mimeType || "video/webm" });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadBlob(blob, `sonic-inclusion-${stamp}.webm`);
+    setStatus("✅ Recording saved (.webm)");
+  };
+
+  mediaRecorder.start(250);
+  recording = true;
+  recBtn.setAttribute("aria-pressed", "true");
+  recBtn.textContent = "⏹ STOP";
+  setStatus("⏺ Recording…");
+}
+
+function stopRecording() {
+  if (!mediaRecorder) return;
+  try { mediaRecorder.stop(); } catch {}
+  recording = false;
+  recBtn.setAttribute("aria-pressed", "false");
+  recBtn.textContent = "⏺ RECORD";
+}
+
+recBtn.addEventListener("click", async () => {
+  if (!recording) await startRecording();
+  else stopRecording();
 });
