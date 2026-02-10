@@ -8,6 +8,11 @@ import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/po
 import { ShaderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js";
 import { FXAAShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/FXAAShader.js";
 
+// Performance Art Postprocessing
+import { AfterimagePass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/AfterimagePass.js";
+import { GlitchPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/GlitchPass.js";
+import { RGBShiftShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/RGBShiftShader.js";
+
 /* ================= BASIC SETUP ================= */
 
 const canvas = document.getElementById("viz");
@@ -97,25 +102,32 @@ let composer = null;
 let bloomPass = null;
 let fxaaPass = null;
 
-let world = null;       // cage/sigil/rings live here
-let starPoints = null;  // star field in scene space
-let morphMesh = null;   // THE MORPHING MESH
+let world = null;       
+let starPoints = null;  
+let morphMesh = null;   
+
+// Performance Art State
+let coreLight = null;       
+let afterimagePass = null;  
+let rgbShiftPass = null;    
+let glitchPass = null;      
+let sparkPool = [];         
+let sparkCursor = 0;
+let baseFov = 55;           
 
 // Sigil layers
 let sigilGroup = null;
 let sigilBase = null;
 let sigilGlow = null;
-let sigilBaseBack = null; // Back side
-let sigilGlowBack = null; // Back side
+let sigilBaseBack = null; 
+let sigilGlowBack = null; 
 
 let sigilBaseTex = null;
 let sigilGlowTex = null;
 
-// Rings pool
+// Pools
 let ringPool = [];
 let ringCursor = 0;
-
-// Ghosts pool
 let ghostPool = [];
 let ghostCursor = 0;
 
@@ -290,7 +302,6 @@ enginePanel.innerHTML = `
 `;
 document.body.appendChild(enginePanel);
 
-// Panel logic
 let engineOpen = false;
 function setEngineOpen(open) {
   engineOpen = open;
@@ -299,7 +310,6 @@ function setEngineOpen(open) {
 engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
 enginePanel.querySelector("#si-engineClose").addEventListener("click", () => setEngineOpen(false));
 
-// Swipe-down close (mobile)
 let touchStartY = null;
 enginePanel.addEventListener("touchstart", (e) => {
   touchStartY = e.touches?.[0]?.clientY ?? null;
@@ -313,7 +323,6 @@ enginePanel.addEventListener("touchmove", (e) => {
   }
 }, { passive: true });
 
-// Panel Hooks
 const partEl = enginePanel.querySelector("#partAmount");
 const zoomEl = enginePanel.querySelector("#zoomInt");
 const hueEl  = enginePanel.querySelector("#hueShift");
@@ -413,29 +422,34 @@ function initThree() {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   scene = new THREE.Scene();
-  scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.4)); 
 
-  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 260);
+  camera = new THREE.PerspectiveCamera(baseFov, 1, 0.1, 260);
   camera.position.set(0, 0, 18);
 
-  // World group -> moves in "space"
+  coreLight = new THREE.PointLight(0x00d4ff, 0, 50); 
+  coreLight.position.set(0, 0, 0);
+  scene.add(coreLight);
+
   world = new THREE.Group();
   scene.add(world);
 
-  // Stars in scene space (Deep Space)
   starPoints = makeStars(1900, 120);
   scene.add(starPoints);
 
-  // Cage + sigil etc inside world
   makeMorphingCage();
-
   initRings();
   initGhosts();
+  initSparks();
   loadSigilLayers("media/indjoov-sigil.svg");
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
+
+  afterimagePass = new AfterimagePass();
+  afterimagePass.uniforms["damp"].value = 0.85; 
+  composer.addPass(afterimagePass);
 
   const rect = (stageEl || canvas).getBoundingClientRect();
   bloomPass = new UnrealBloomPass(
@@ -443,6 +457,15 @@ function initThree() {
     1.0, 0.55, 0.12
   );
   composer.addPass(bloomPass);
+
+  rgbShiftPass = new ShaderPass(RGBShiftShader);
+  rgbShiftPass.uniforms['amount'].value = 0.0015; 
+  composer.addPass(rgbShiftPass);
+
+  glitchPass = new GlitchPass();
+  glitchPass.goWild = false; 
+  glitchPass.enabled = false; 
+  composer.addPass(glitchPass);
 
   fxaaPass = new ShaderPass(FXAAShader);
   composer.addPass(fxaaPass);
@@ -458,31 +481,27 @@ let starGeo = null;
 function makeStars(count, spread) {
   starGeo = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
-  const velocities = []; // Store speed per star for parallax
+  const velocities = []; 
 
   for (let i = 0; i < count; i++) {
     const ix = i * 3;
-    // Spread X/Y widely, place Z deep into the screen
     positions[ix] = (Math.random() - 0.5) * spread * 1.5; 
     positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
-    positions[ix + 2] = (Math.random() - 0.5) * spread * 2; // Depth
-    // Random speed between 0.05 and 0.3
+    positions[ix + 2] = (Math.random() - 0.5) * spread * 2; 
     velocities.push(0.05 + Math.random() * 0.25);
   }
 
   starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   
-  // Use a slightly brighter material for the warp effect
   const mat = new THREE.PointsMaterial({
-    color: 0x8feaff, // Slight cyan tint
-    size: 0.08,      // Slightly larger
+    color: 0x8feaff, 
+    size: 0.08,      
     transparent: true,
     opacity: 0.6,
     depthWrite: false,
     blending: THREE.AdditiveBlending
   });
   
-  // Save velocities for the loop
   starGeo.userData = { velocities: velocities, spread: spread };
   return new THREE.Points(starGeo, mat);
 }
@@ -494,18 +513,14 @@ function updateStars(delta) {
   const vels = starGeo.userData.velocities;
   const spread = starGeo.userData.spread;
   
-  // Speed multiplier based on Bass energy (Warp drive effect)
   const warpSpeed = 1 + (bassSm * 8); 
 
   for (let i = 0; i < vels.length; i++) {
     const ix = i * 3;
-    // Move Z towards camera
     positions[ix + 2] += vels[i] * warpSpeed * delta * 20;
 
-    // If star passes camera (Z > 20), reset to far background
     if (positions[ix + 2] > 20) {
-      positions[ix + 2] = -150; // Send back to deep space
-      // Randomize X/Y again for variety
+      positions[ix + 2] = -150; 
       positions[ix] = (Math.random() - 0.5) * spread * 1.5;
       positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
     }
@@ -522,52 +537,41 @@ function makeMorphingCage() {
     morphMesh.geometry.dispose();
   }
 
-  // 1. BASE GEOMETRY (Sphere/Icosahedron)
-  const baseGeo = new THREE.IcosahedronGeometry(5.0, 5); // High detail for smooth morph
+  const baseGeo = new THREE.IcosahedronGeometry(5.0, 5); 
   const posAttribute = baseGeo.attributes.position;
   
-  // 2. CREATE MORPH TARGETS (Different Shapes)
   const cubePositions = [];
   const spikePositions = [];
-
   const vec = new THREE.Vector3();
 
   for (let i = 0; i < posAttribute.count; i++) {
     vec.fromBufferAttribute(posAttribute, i);
     
-    // --- Target A: CUBE (Bass) ---
-    // Project sphere vertices onto a cube surface
     const norm = vec.clone().normalize();
-    // A point on a cube is derived by dividing vector by its max component
     const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
-    const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5); // Cube Radius
+    const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5); 
     cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
 
-    // --- Target B: SPIKES (Highs) ---
-    // Push vertices out randomly to form crystal spikes
-    // Use position based noise to keep it deterministic (spikes don't jitter, they morph)
     const noise = Math.sin(vec.x * 0.5) * Math.cos(vec.y * 0.5) * Math.sin(vec.z * 0.5);
-    const spikeScale = 1.0 + Math.abs(noise) * 1.5; // Up to 2.5x size
+    const spikeScale = 1.0 + Math.abs(noise) * 1.5; 
     const spikeVec = vec.clone().multiplyScalar(spikeScale);
     spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
   }
 
-  // 3. ADD ATTRIBUTES TO GEOMETRY
   baseGeo.morphAttributes.position = [
-    new THREE.Float32BufferAttribute(cubePositions, 3),  // Index 0: Cube
-    new THREE.Float32BufferAttribute(spikePositions, 3)  // Index 1: Spikes
+    new THREE.Float32BufferAttribute(cubePositions, 3),  
+    new THREE.Float32BufferAttribute(spikePositions, 3)  
   ];
 
-  // 4. MATERIAL
   const mat = new THREE.MeshBasicMaterial({
     color: 0x00d4ff,
-    wireframe: true, // WIREFRAME MODE
+    wireframe: true, 
     transparent: true,
     opacity: 0.35,
-    morphTargets: true, // Enable morphing
+    morphTargets: true, 
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
-    depthWrite: false // FIX: Don't write to depth buffer (Hologram Mode)
+    depthWrite: false 
   });
 
   morphMesh = new THREE.Mesh(baseGeo, mat);
@@ -677,6 +681,63 @@ function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
   }
 }
 
+/* ================= EMISSIVE SPARKS ================= */
+
+function initSparks() {
+  const sparkGeo = new THREE.TetrahedronGeometry(0.15, 0);
+  const sparkMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending
+  });
+
+  for (let i = 0; i < 60; i++) {
+    const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone());
+    mesh.visible = false;
+    scene.add(mesh);
+    sparkPool.push({
+      mesh: mesh,
+      active: false,
+      life: 0,
+      maxLife: 0,
+      velocity: new THREE.Vector3(),
+      spin: new THREE.Vector3()
+    });
+  }
+}
+
+function fireSparks(intensity) {
+  if (!sparkPool.length) return;
+  const count = Math.floor(intensity * 10); 
+  
+  for (let i = 0; i < count; i++) {
+    const s = sparkPool[sparkCursor % sparkPool.length];
+    sparkCursor++;
+
+    s.active = true;
+    s.life = 0;
+    s.maxLife = 0.5 + Math.random() * 0.5; 
+    
+    s.mesh.position.set((Math.random()-0.5), (Math.random()-0.5), 0);
+    s.mesh.scale.set(1, 1, 1);
+    s.mesh.visible = true;
+    s.mesh.material.opacity = 1.0;
+    
+    const col = intensity > 0.8 ? 0xffffff : (Math.random() > 0.5 ? 0xff2b5a : 0x00d4ff);
+    s.mesh.material.color.setHex(col);
+
+    const speed = 5 + intensity * 15;
+    s.velocity.set(
+      (Math.random() - 0.5) * speed,
+      (Math.random() - 0.5) * speed,
+      (Math.random() - 0.5) * speed + 5 
+    );
+    
+    s.spin.set(Math.random(), Math.random(), Math.random()).multiplyScalar(0.2);
+  }
+}
+
 /* ================= SIGIL LAYERS ================= */
 
 function loadSigilLayers(url) {
@@ -721,36 +782,34 @@ function loadSigilLayers(url) {
 
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         
-        // --- FRONT SIDE MATERIAL ---
         const inkMat = new THREE.MeshBasicMaterial({
           map: sigilBaseTex, transparent: true, opacity: 0.90,
           depthWrite: false, depthTest: false,
           blending: THREE.NormalBlending,
-          side: THREE.DoubleSide
+          side: THREE.DoubleSide 
         });
         const glowMat = new THREE.MeshBasicMaterial({
           map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff),
           depthWrite: false, depthTest: false,
           blending: THREE.AdditiveBlending,
-          side: THREE.DoubleSide
+          side: THREE.DoubleSide 
         });
 
         sigilBase = new THREE.Mesh(plane, inkMat);
         sigilGlow = new THREE.Mesh(plane, glowMat);
         sigilGlow.scale.set(1.08, 1.08, 1.08);
 
-        // --- BACK SIDE MESH (GUARANTEED VISIBILITY) ---
         sigilBaseBack = sigilBase.clone();
-        sigilBaseBack.rotation.y = Math.PI; // Flip 180
+        sigilBaseBack.rotation.y = Math.PI; 
         
         sigilGlowBack = sigilGlow.clone();
-        sigilGlowBack.rotation.y = Math.PI; // Flip 180
+        sigilGlowBack.rotation.y = Math.PI; 
 
         sigilGroup = new THREE.Group();
         sigilGroup.add(sigilGlow);
         sigilGroup.add(sigilBase);
-        sigilGroup.add(sigilGlowBack); // Add Back
-        sigilGroup.add(sigilBaseBack); // Add Back
+        sigilGroup.add(sigilGlowBack); 
+        sigilGroup.add(sigilBaseBack); 
 
         sigilGroup.position.set(0, 0, 0.22);
         sigilGroup.rotation.x = -0.18; sigilGroup.rotation.y = 0.22;
@@ -913,7 +972,9 @@ function loop() {
   raf = requestAnimationFrame(loop);
   if (!renderer || !scene || !camera || !composer) return;
 
-  // Audio Data
+  const dt = 1/60;
+  const time = performance.now() * 0.001;
+
   if (analyser && dataFreq) {
     analyser.getByteFrequencyData(dataFreq);
     const sensitivity = sens ? parseFloat(sens.value) : 1;
@@ -928,69 +989,101 @@ function loop() {
     snareAvg = snareAvg * 0.965 + snareSm * 0.035;
     const rise = snareSm - snarePrev;
     snarePrev = snareSm;
-    const now = performance.now() / 1000;
+    
     const isHit = (snareSm > snareAvg * 1.45) && (rise > 0.055);
-    if (isHit && (now - lastSnareTrig) > 0.14) {
-      lastSnareTrig = now;
+    if (isHit && (time - lastSnareTrig) > 0.14) {
+      lastSnareTrig = time;
       snapFlash = 1.0;
       triggerRingPulse(Math.min(1, snareSm * 1.6));
       spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
+      
+      if (snareSm > 0.4 || bassSm > 0.6) {
+         fireSparks(Math.max(snareSm, bassSm));
+      }
     }
   } else {
     bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97;
   }
   snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
-  // 1. STARS: Warp Field (Drift + Acceleration)
+  // 1. DYNAMIC CAMERA CHOREOGRAPHY
+  if (!reducedMotion) {
+    const targetFov = baseFov - (bassSm * 15);
+    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1);
+    
+    const shake = snapFlash * 0.3;
+    camera.position.x = (Math.random() - 0.5) * shake;
+    camera.position.y = (Math.random() - 0.5) * shake;
+    camera.position.z = THREE.MathUtils.lerp(camera.position.z, 18 - bassSm * 2, 0.1);
+    
+    camera.rotation.z = Math.sin(time * 0.2) * 0.02; 
+    camera.updateProjectionMatrix();
+  }
+
+  // 2. AUDIO REACTIVE LIGHTING
+  if (coreLight) {
+    coreLight.intensity = (bassSm * 200) + (snapFlash * 500);
+    const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
+    const hue = ((hueShift % 360) / 360);
+    if (snapFlash > 0.5) {
+      coreLight.color.setHex(0xffffff); 
+    } else {
+      coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5);
+    }
+  }
+
+  // 3. POST-PROCESSING CHAOS
+  if (rgbShiftPass) {
+    const shiftAmount = 0.0015 + (bassSm * 0.01) + (snapFlash * 0.02);
+    rgbShiftPass.uniforms['amount'].value = THREE.MathUtils.lerp(rgbShiftPass.uniforms['amount'].value, shiftAmount, 0.1);
+  }
+  
+  if (glitchPass) {
+    const totalEnergy = bassSm + midSm + snareSm;
+    if (totalEnergy > 2.2 && Math.random() > 0.8) {
+        glitchPass.enabled = true;
+    } else {
+        glitchPass.enabled = false;
+    }
+  }
+
+  // 4. AFTERIMAGE TRAIL CONTROL
+  if (afterimagePass) {
+    const dampTarget = bassSm > 0.6 ? 0.6 : 0.85 + (midSm * 0.1);
+    afterimagePass.uniforms["damp"].value = THREE.MathUtils.lerp(afterimagePass.uniforms["damp"].value, dampTarget, 0.05);
+  }
+
+  // Stars: Warp Field
   if (starPoints) {
-    updateStars(1/60); // Drift logic
+    updateStars(dt); 
     const base = P.starsOpacity;
-    const tw = base + 0.03 * Math.sin(performance.now() * 0.0007);
+    const tw = base + 0.03 * Math.sin(time * 0.7);
     const slider = partEl ? parseFloat(partEl.value) : 10; 
     const add = Math.max(0, Math.min(0.20, 0.0065 * slider));
     starPoints.material.opacity = Math.max(0, Math.min(0.8, tw + add + bassSm * 0.2));
   }
 
-  // 2. WORLD MOVEMENT (Rotation)
+  // World Rotation
   if (world && !reducedMotion) {
-    const t = performance.now() * 0.00025;
-    world.rotation.y = t * 0.45;
-    world.rotation.x = Math.sin(t * 0.8) * 0.10;
-    world.position.x = Math.sin(t * 1.2) * 0.55;
-    world.position.y = Math.cos(t * 0.9) * 0.35;
+    world.rotation.y = time * 0.45;
+    world.rotation.x = Math.sin(time * 0.8) * 0.10;
+    world.position.x = Math.sin(time * 1.2) * 0.55;
+    world.position.y = Math.cos(time * 0.9) * 0.35;
   }
 
-  // 3. MORPHING LOGIC (Single Shape -> Many Forms)
+  // Morphing Logic
   if (morphMesh) {
-    // Morph Target Influences: 0-1 range
-    // Index 0: Cube (Bass driven)
-    // Index 1: Spikes (Highs driven)
-    
-    // Smoothly apply bass influence to Morph Target 0 (Cube)
-    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(
-      morphMesh.morphTargetInfluences[0], 
-      bassSm * 1.2, // Strength
-      0.1
-    );
+    morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassSm * 1.2, 0.1);
+    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], snareSm * 1.5, 0.2);
 
-    // Smoothly apply treble influence to Morph Target 1 (Spikes)
-    morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(
-      morphMesh.morphTargetInfluences[1], 
-      snareSm * 1.5, // Strength
-      0.2
-    );
-
-    // Rotation (Twist effect via rotation speed)
     const drift = reducedMotion ? 0 : 0.002;
-    morphMesh.rotation.y += drift + midSm * 0.01; // Spin faster on vocals
+    morphMesh.rotation.y += drift + midSm * 0.01;
     morphMesh.rotation.x += drift;
 
-    // Pulse Scale (Beat zoom)
     const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
     const scale = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
     morphMesh.scale.set(scale, scale, scale);
 
-    // Color
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
     const hue = ((hueShift % 360) / 360);
     const mode = palette?.value || "hue";
@@ -998,22 +1091,18 @@ function loop() {
     if (mode === "grayscale") {
       morphMesh.material.color.setHex(0xe6e6e6);
     } else if (mode === "energy") {
-       // Shift color from Blue (calm) to Red (Bass) to White (Highs)
        const energyHue = (hue + bassSm * 0.2) % 1;
        morphMesh.material.color.setHSL(energyHue, 0.85, 0.5 + snareSm * 0.4);
     } else {
        morphMesh.material.color.setHSL(hue, 0.75, 0.55);
     }
     
-    // Opacity pulse
     morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.2 + snapFlash * 0.2;
   }
 
-  // Sigil
+  // Sigil 
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue";
-    
-    // 1. ANCHOR OPACITY: Ensure it never drops below 0.35
     const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
     sigilBase.material.opacity = opacity;
     if (sigilBaseBack) sigilBaseBack.material.opacity = opacity;
@@ -1029,7 +1118,6 @@ function loop() {
     sigilGlow.material.color.copy(glowColor);
     if (sigilGlowBack) sigilGlowBack.material.color.copy(glowColor);
     
-    // 2. GLOW ANCHOR
     const aura = P.glowBase + bassSm * P.glowBass;
     const flash = snapFlash * P.glowSnap;
     const glowOp = Math.max(0.30, Math.min(0.98, aura + flash));
@@ -1037,22 +1125,16 @@ function loop() {
     if (sigilGlowBack) sigilGlowBack.material.opacity = glowOp;
     
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
-    sigilGroup.rotation.y = 0.22 + Math.sin(performance.now() * 0.0012) * 0.02 + (Math.random() - 0.5) * jitter;
-    sigilGroup.rotation.x = -0.18 + Math.sin(performance.now() * 0.0010) * 0.015 + (Math.random() - 0.5) * jitter;
+    sigilGroup.rotation.y = 0.22 + Math.sin(time * 1.2) * 0.02 + (Math.random() - 0.5) * jitter;
+    sigilGroup.rotation.x = -0.18 + Math.sin(time * 1.0) * 0.015 + (Math.random() - 0.5) * jitter;
 
-    // 3. SCALE WITH CAGE: Prevent the 3D shapes from swallowing the 2D sigil
     const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
     const scale = 1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04;
     sigilGroup.scale.set(scale, scale, scale);
-
-    // 4. FLOATING ANIMATION (Levitation)
-    // Sine wave motion independent of music
-    const time = performance.now() * 0.001;
     sigilGroup.position.y = Math.sin(time * 1.5) * 0.08;
   }
 
-  // Rings & Ghosts Animation
-  const dt = 1/60;
+  // Rings & Ghosts 
   for (const r of ringPool) {
     if (r.t >= 999) continue;
     r.t += dt;
@@ -1060,10 +1142,11 @@ function loop() {
     const ease = 1 - Math.pow(1 - p, 3);
     const scale = r.baseScale + ease * 1.35;
     r.mesh.scale.set(scale, scale, scale);
-    const flick = 0.92 + 0.08 * Math.sin(performance.now() * 0.02);
+    const flick = 0.92 + 0.08 * Math.sin(time * 20);
     r.mesh.material.opacity = (1 - p) * 0.85 * flick * P.ringStrength;
     if (p >= 1) { r.t = 999; r.mesh.material.opacity = 0; }
   }
+  
   for (const g of ghostPool) {
     if (g.t >= 999) continue;
     g.t += dt;
@@ -1079,7 +1162,30 @@ function loop() {
     if (p >= 1) { g.t = 999; g.group.visible = false; }
   }
 
-  // Bloom
+  // Update Sparks
+  for (let i = 0; i < sparkPool.length; i++) {
+    const s = sparkPool[i];
+    if (!s.active) continue;
+    
+    s.life += dt;
+    if (s.life >= s.maxLife) {
+        s.active = false;
+        s.mesh.visible = false;
+        continue;
+    }
+
+    s.mesh.position.addScaledVector(s.velocity, dt);
+    s.velocity.multiplyScalar(0.95);
+    s.mesh.rotation.x += s.spin.x;
+    s.mesh.rotation.y += s.spin.y;
+    s.mesh.rotation.z += s.spin.z;
+
+    const percent = s.life / s.maxLife;
+    s.mesh.material.opacity = 1.0 - Math.pow(percent, 2);
+    const scale = 1.0 - percent;
+    s.mesh.scale.set(scale, scale, scale);
+  }
+
   if (bloomPass) bloomPass.strength = P.bloomStrength + bassSm * 0.35 + snapFlash * 0.55;
 
   composer.render();
@@ -1101,7 +1207,6 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function startRecording() {
-  // Safe init: only initialize if NOT already running
   if (currentMode === "idle") {
     await initEngine();
   }
