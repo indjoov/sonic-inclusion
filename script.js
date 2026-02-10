@@ -61,7 +61,7 @@ const engine = new AudioEngine();
 let raf = null; let analyser = null; let dataFreq = null;
 let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
-let audioRecordDest = null; 
+let audioRecordDest = null;
 
 /* ================= THREE STATE ================= */
 
@@ -415,10 +415,14 @@ function makeResponsiveMorphingCage() {
     vec.fromBufferAttribute(posAttribute, i);
     const norm = vec.clone().normalize(); const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
     const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5); cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
+    
     const waveScale = 1.0 + 0.45 * (Math.sin(vec.x * 3.0) + Math.cos(vec.y * 3.0) + Math.sin(vec.z * 3.0));
     const waveVec = vec.clone().multiplyScalar(waveScale); wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
-    const noise = Math.sin(vec.x * 8.0) * Math.cos(vec.y * 8.0) * Math.sin(vec.z * 8.0);
-    const spikeScale = 1.0 + Math.max(0, noise) * 2.5; const spikeVec = vec.clone().multiplyScalar(spikeScale); spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
+    
+    // Create highly aggressive spikes
+    const noise = Math.sin(vec.x * 12.0) * Math.cos(vec.y * 12.0) * Math.sin(vec.z * 12.0);
+    const spikeScale = 1.0 + Math.max(0, noise) * 5.0; 
+    const spikeVec = vec.clone().multiplyScalar(spikeScale); spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
   }
 
   baseGeo.morphAttributes.position = [ new THREE.Float32BufferAttribute(cubePositions, 3), new THREE.Float32BufferAttribute(wavePositions, 3), new THREE.Float32BufferAttribute(spikePositions, 3) ];
@@ -449,10 +453,7 @@ function initGhosts() {
     const group = new THREE.Group(); group.visible = false; group.position.set(0, 0, 0.2); group.rotation.set(-0.18, 0.22, 0);
     const plane = new THREE.PlaneGeometry(6.9, 6.9);
     const inkMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
-    
-    // FIX: Re-added the missing "THREE." that was causing the crash
     const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
-    
     const glow = new THREE.Mesh(plane, glowMat); glow.scale.setScalar(1.08); const ink = new THREE.Mesh(plane, inkMat);
     group.add(glow, ink); world?.add(group); ghostPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
   }
@@ -472,21 +473,40 @@ function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
 /* ================= EMISSIVE SPARKS ================= */
 function initSparks() {
   const sparkGeo = new THREE.TetrahedronGeometry(0.15, 0); const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
-  for (let i = 0; i < 60; i++) {
+  
+  // Expanded pool for bigger bursts
+  for (let i = 0; i < 150; i++) {
     const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone()); mesh.visible = false; scene.add(mesh);
     sparkPool.push({ mesh: mesh, active: false, life: 0, maxLife: 0, velocity: new THREE.Vector3(), spin: new THREE.Vector3() });
   }
 }
-function fireSparks(intensity) {
+function fireSparks(intensity, sourceMesh) {
   if (!sparkPool.length || isNaN(intensity)) return; 
-  const count = Math.floor(intensity * 10); 
+  const count = Math.floor(intensity * 15); 
+  
   for (let i = 0; i < count; i++) {
     const s = sparkPool[sparkCursor % sparkPool.length]; sparkCursor++;
-    s.active = true; s.life = 0; s.maxLife = 0.5 + Math.random() * 0.5; 
-    s.mesh.position.set((Math.random()-0.5), (Math.random()-0.5), 0); s.mesh.scale.setScalar(1); s.mesh.visible = true; s.mesh.material.opacity = 1.0;
+    s.active = true; s.life = 0; s.maxLife = 0.4 + Math.random() * 0.4; 
+    
+    if (sourceMesh) {
+        // Calculate emission directly from the tips of the 3D spikes
+        const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+        const spikeInf = sourceMesh.morphTargetInfluences[2] || 0;
+        const currentRadius = 5.0 * sourceMesh.scale.x * (1.0 + (spikeInf * 0.85)); 
+        
+        s.mesh.position.copy(sourceMesh.position).add(dir.clone().multiplyScalar(currentRadius));
+        const speed = 25 + (intensity * 40); 
+        s.velocity.copy(dir).multiplyScalar(speed);
+        s.velocity.z += 5; 
+    } else {
+        s.mesh.position.set((Math.random()-0.5), (Math.random()-0.5), 0); 
+        const speed = 5 + Math.min(intensity * 15, 50); 
+        s.velocity.set((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed + 5);
+    }
+
+    s.mesh.scale.setScalar(1.5); s.mesh.visible = true; s.mesh.material.opacity = 1.0;
     s.mesh.material.color.setHex(intensity > 0.8 ? 0xffffff : (Math.random() > 0.5 ? 0xff2b5a : 0x00d4ff));
-    const speed = 5 + Math.min(intensity * 15, 50); s.velocity.set((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed + 5);
-    s.spin.set(Math.random(), Math.random(), Math.random()).multiplyScalar(0.2);
+    s.spin.set(Math.random(), Math.random(), Math.random()).multiplyScalar(0.4);
   }
 }
 
@@ -671,7 +691,7 @@ function loop() {
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
-          if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm));
+          if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
         }
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
@@ -718,15 +738,17 @@ function loop() {
       }
 
       if (morphMesh) {
-        const bassPunch = Math.pow(bassSm, 1.5) * 2.0; morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.15); 
-        morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.12); 
-        const spikePunch = (snareSm * 2.0) + (snapFlash * 1.5); morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.25); 
+        const bassPunch = Math.pow(bassSm, 1.5) * 2.5; 
+        morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.4); 
+        morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.2); 
+        const spikePunch = (snareSm * 3.5) + (snapFlash * 3.0); 
+        morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.6); 
 
         const drift = reducedMotion ? 0 : 0.001; morphMesh.rotation.y += drift + midSm * 0.015; morphMesh.rotation.x += drift; morphMesh.rotation.z += Math.sin(time * 0.5) * 0.005;
         
         let zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; if (isNaN(zoomInt)) zoomInt = 0.18;
         const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
-        morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, Math.max(0.1, targetScale), 0.2));
+        morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, Math.max(0.1, targetScale), 0.3));
 
         const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360); const mode = paletteEl?.value || "hue";
         if (mode === "grayscale") { morphMesh.material.color.setHex(0xe6e6e6); } else if (mode === "energy") { morphMesh.material.color.setHSL((hue + bassSm * 0.2 + midSm * 0.1) % 1, 0.85, 0.5 + snareSm * 0.4); } else { morphMesh.material.color.setHSL((hue + Math.sin(time * 0.2) * 0.1) % 1, 0.75, 0.55); }
