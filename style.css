@@ -244,3 +244,6 @@ kbd{
   height:1px;
   overflow:hidden;
 }
+/* === Fix: canvas fills stage reliably on mobile === */
+.stage { height: min(62vh, 720px); }
+#viz { height: 100%; }
