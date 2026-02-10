@@ -95,71 +95,70 @@ removeLegacyUI();
 
 const hud = document.createElement("div");
 hud.id = "si-hud";
-hud.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 2000; display: flex; gap: 12px; align-items: center; justify-content: space-between; pointer-events: none; box-sizing: border-box; max-width: 980px; margin: 0 auto;`;
 
 const recBtn = document.createElement("button");
-recBtn.id = "si-recBtn"; recBtn.type = "button"; recBtn.textContent = "⏺ RECORD";
-recBtn.style.cssText = `pointer-events: auto; background: #ff2b5a; color: #111; border: 1px solid rgba(255,255,255,0.15); padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 0.5px; box-shadow: 0 12px 30px rgba(255,43,90,0.25); display: inline-flex; align-items: center; gap: 10px; cursor: pointer;`;
+recBtn.id = "si-recBtn"; recBtn.className = "hud-btn"; recBtn.type = "button"; recBtn.innerHTML = "⏺ RECORD";
 
 const hudRightControls = document.createElement("div");
 hudRightControls.style.cssText = "display: flex; gap: 10px; pointer-events: auto;";
 
 const fsBtn = document.createElement("button");
-fsBtn.type = "button"; fsBtn.textContent = "📺 PROJECTION";
-fsBtn.style.cssText = `background: rgba(10,10,10,0.85); color: #fff; border: 1px solid rgba(255,255,255,0.3); padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 1px; cursor: pointer;`;
+fsBtn.id = "si-fsBtn"; fsBtn.className = "hud-btn"; fsBtn.type = "button"; fsBtn.textContent = "📺 PROJECTION";
 
 const engineToggle = document.createElement("button");
-engineToggle.id = "si-engineToggle"; engineToggle.type = "button"; engineToggle.textContent = "⚙️ ENGINE";
-engineToggle.style.cssText = `background: rgba(10,10,10,0.85); color: #8feaff; border: 1px solid rgba(0,212,255,0.65); padding: 12px 16px; border-radius: 999px; font-weight: 900; letter-spacing: 2px; box-shadow: 0 0 0 1px rgba(0,212,255,0.15), 0 16px 40px rgba(0,212,255,0.12); cursor: pointer;`;
+engineToggle.id = "si-engineToggle"; engineToggle.className = "hud-btn"; engineToggle.type = "button"; engineToggle.textContent = "⚙️ ENGINE";
 
 hudRightControls.appendChild(fsBtn); hudRightControls.appendChild(engineToggle);
 hud.appendChild(recBtn); hud.appendChild(hudRightControls); document.body.appendChild(hud);
 
 const enginePanel = document.createElement("div");
 enginePanel.id = "si-enginePanel";
-enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: 980px; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box;`;
 
-// NOTE: Changed default value of the sensitivity slider to 0.2 to prevent overdosing the screen
 enginePanel.innerHTML = `
-  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
+  <div class="panel-header">
     <div style="display:flex; align-items:center; gap:10px;">
-      <div style="width:36px; height:36px; border-radius:12px; border:1px solid rgba(0,212,255,0.5); display:flex; align-items:center; justify-content:center; color:#8feaff;">⚙️</div>
-      <div><div style="font-weight:900; letter-spacing:3px; color:#8feaff;">ENGINE</div><div style="font-size:12px; opacity:0.65;">Swipe down to close</div></div>
+      <div class="panel-icon-wrap">⚙️</div>
+      <div><div class="panel-title">ENGINE</div><div class="panel-subtitle">Swipe down to close</div></div>
     </div>
-    <button id="si-engineClose" type="button" style="background: transparent; border: 1px solid rgba(255,255,255,0.18); color: #fff; border-radius: 12px; padding: 8px 10px; cursor: pointer; font-weight: 900;">✕</button>
+    <button id="si-engineClose" type="button" class="close-btn">✕</button>
   </div>
-  <div style="display:grid; gap:10px;">
-    <div style="display:grid; gap:8px; padding:10px; border:1px solid rgba(255,255,255,0.10); border-radius:14px;">
-      <div style="font-weight:900; letter-spacing:2px; font-size:12px; opacity:0.85;">CHAPTER</div>
-      <div style="display:flex; gap:8px;">
-        <button id="chapInv" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">INVOCATION</button>
-        <button id="chapPos" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">POSSESSION</button>
-        <button id="chapAsc" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">ASCENSION</button>
+  <div class="panel-grid">
+    <div class="chapter-box">
+      <div class="chapter-title">CHAPTER</div>
+      <div class="chapter-btns">
+        <button id="chapInv" type="button" class="chap-btn">INVOCATION</button>
+        <button id="chapPos" type="button" class="chap-btn">POSSESSION</button>
+        <button id="chapAsc" type="button" class="chap-btn">ASCENSION</button>
       </div>
     </div>
-    <div style="display:flex; gap:10px;">
-        <button id="customSigilBtn" type="button" style="flex:1; background: rgba(124,77,255,0.2); border: 1px solid rgba(124,77,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">Upload Sigil</button>
-        <div style="flex:1; font-size:11px; color:#aaa; text-align:center; display:flex; flex-direction:column; justify-content:center; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;">
-            <b>PRESETS</b> Save: Shift+1..4 | Load: 1..4
-        </div>
+    <div class="sigil-preset-row">
+        <button id="customSigilBtn" type="button" class="sigil-btn">Upload Sigil</button>
+        <div class="preset-info"><b>PRESETS</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
-    <label style="font-size:12px; opacity:0.8;">SENSITIVITY<input id="sens" type="range" min="0.1" max="3" step="0.1" value="0.2" style="width:100%; margin-top:6px;"></label>
-    <label style="font-size:12px; opacity:0.8;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;"></label>
-    <label style="font-size:12px; opacity:0.8;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; margin-top:6px;"></label>
-    <label style="font-size:12px; opacity:0.8;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; margin-top:6px;"></label>
-    <label style="font-size:12px; display:flex; align-items:center; gap:10px;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
-    <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.12);">
-      <label style="font-size:12px; display:flex; align-items:center; gap:10px;"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
-      <label style="font-size:12px; opacity:0.8; display:block; margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; margin-top:6px;"></label>
-      <div id="feedbackWarn" style="display:none; margin-top:10px; font-size:12px; color:#ff2b5a; font-weight:900;">🔇 Feedback risk detected — mic monitor muted</div>
+    <label class="panel-label">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.2"></label>
+    <label class="panel-label">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10"></label>
+    <label class="panel-label">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18"></label>
+    <label class="panel-label">HUE<input id="hueShift" type="range" min="0" max="360" value="280"></label>
+    <label class="checkbox-row"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
+    <div class="mic-section">
+      <label class="checkbox-row"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
+      <label class="panel-label" style="margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35"></label>
+      <div id="feedbackWarn">🔇 Feedback risk detected — mic monitor muted</div>
     </div>
-    <div id="midiStatus" style="font-size:11px; color:#8feaff; text-align:center; padding: 4px; border-top: 1px solid rgba(255,255,255,0.1);">🎹 MIDI: Waiting for connection...</div>
+    <div id="midiStatus">🎹 MIDI: Waiting for connection...</div>
   </div>
 `;
 document.body.appendChild(enginePanel);
 
 let engineOpen = false;
-function setEngineOpen(open) { engineOpen = open; enginePanel.style.display = open ? "block" : "none"; }
+function setEngineOpen(open) { 
+  engineOpen = open; 
+  if(open) {
+      enginePanel.classList.add('open');
+  } else {
+      enginePanel.classList.remove('open');
+  }
+}
 engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
 enginePanel.querySelector("#si-engineClose").addEventListener("click", () => setEngineOpen(false));
 
@@ -174,11 +173,22 @@ enginePanel.addEventListener("touchmove", (e) => {
 const partEl = enginePanel.querySelector("#partAmount"); 
 const zoomEl = enginePanel.querySelector("#zoomInt"); 
 const hueEl  = enginePanel.querySelector("#hueShift");
-const sensEl = enginePanel.querySelector("#sens"); // Map the new sens slider
 const midiStatusEl = enginePanel.querySelector("#midiStatus");
 
+// Sync both sensitivity sliders
+const panelSensEl = enginePanel.querySelector("#sens-panel");
+if (sens && panelSensEl) {
+    sens.value = "0.2";
+    panelSensEl.value = "0.2";
+    sens.addEventListener("input", (e) => { panelSensEl.value = e.target.value; });
+    panelSensEl.addEventListener("input", (e) => { sens.value = e.target.value; });
+}
+
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
-const micMonitorEl = enginePanel.querySelector("#micMonitor"); const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol"); const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
+const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
+const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol"); 
+const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
+
 micMonitorEl.checked = micMonitor; micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
 micMonitorEl.addEventListener("change", (e) => {
   micMonitor = !!e.target.checked; feedbackMuted = false; feedbackWarnEl.style.display = "none";
@@ -194,16 +204,26 @@ let isFullscreen = false;
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(err => { console.warn(`Error: ${err.message}`); });
-    document.querySelector('.controls').style.display = 'none'; document.querySelector('.site-header').style.display = 'none'; document.querySelector('.site-footer').style.display = 'none';
-    hud.style.display = 'none'; enginePanel.style.display = 'none';
-    canvas.closest(".stage").style.height = "100vh"; canvas.closest(".stage").style.border = "none"; canvas.closest(".stage").style.borderRadius = "0";
-    document.body.style.overflow = "hidden"; isFullscreen = true; setStatus("📺 Entered projection mode");
+    document.querySelector('.controls').style.display = 'none'; 
+    document.querySelector('.site-header').style.display = 'none'; 
+    document.querySelector('.site-footer').style.display = 'none';
+    hud.style.display = 'none'; 
+    setEngineOpen(false);
+    
+    stageEl.classList.add('fullscreen-active');
+    document.body.style.overflow = "hidden"; 
+    isFullscreen = true; setStatus("📺 Entered projection mode");
   } else { document.exitFullscreen(); resetUI(); }
 }
 function resetUI() {
-  document.querySelector('.controls').style.display = 'grid'; document.querySelector('.site-header').style.display = 'block'; document.querySelector('.site-footer').style.display = 'block';
-  hud.style.display = 'flex'; canvas.closest(".stage").style.height = "min(62vh, 720px)"; canvas.closest(".stage").style.border = "1px solid rgba(255,255,255,.08)"; canvas.closest(".stage").style.borderRadius = "22px";
-  document.body.style.overflow = "auto"; isFullscreen = false; fitRendererToStage();
+  document.querySelector('.controls').style.display = 'grid'; 
+  document.querySelector('.site-header').style.display = 'block'; 
+  document.querySelector('.site-footer').style.display = 'block';
+  hud.style.display = 'flex'; 
+  
+  stageEl.classList.remove('fullscreen-active');
+  document.body.style.overflow = "auto"; 
+  isFullscreen = false; fitRendererToStage();
 }
 fsBtn.addEventListener("click", toggleFullscreen);
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) resetUI(); setTimeout(fitRendererToStage, 100); });
@@ -233,14 +253,16 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 
 /* ================= PRESET SYSTEM ================= */
 function savePreset(slot) {
-    const data = { sens: sensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: palette?.value, chapter: chapter };
+    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: palette?.value, chapter: chapter };
     localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Preset ${slot} Saved`);
 }
 function loadPreset(slot) {
     const saved = localStorage.getItem(`sonicPreset_${slot}`);
     if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
     const data = JSON.parse(saved);
-    if(sensEl) sensEl.value = data.sens; if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
+    if(panelSensEl) panelSensEl.value = data.sens;
+    if(sens) sens.value = data.sens; 
+    if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
     if(partEl) partEl.value = data.stars; if(palette) palette.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
 }
@@ -250,13 +272,11 @@ window.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") { setEngineOpen(false); if(isFullscreen) toggleFullscreen(); }
   if (e.key.toLowerCase() === "p") toggleFullscreen();
   
-  // VJ Camera Cuts
   if (e.key.toLowerCase() === "c") {
       currentCameraMode = (currentCameraMode + 1) % 4;
       setStatus(`🎥 Camera Mode: ${currentCameraMode + 1}`);
   }
 
-  // Preset Manager
   if (["1", "2", "3", "4"].includes(e.key)) {
       if (e.shiftKey) { savePreset(e.key); } else { loadPreset(e.key); }
   }
@@ -461,7 +481,6 @@ function loadSigilLayers(url, isCustom = false) {
         sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         
-        // Only ONE mesh, NO clones. It will billboard to face the camera.
         const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
         
@@ -470,7 +489,6 @@ function loadSigilLayers(url, isCustom = false) {
         sigilGroup = new THREE.Group(); 
         sigilGroup.add(sigilGlow, sigilBase); 
         
-        // Add to SCENE (not world) so it can easily billboard independently of the cage spin
         scene.add(sigilGroup); 
         setStatus("✅ Sigil loaded");
         if(isCustom) URL.revokeObjectURL(url);
@@ -583,7 +601,7 @@ function loop() {
 
   if (analyser && dataFreq) {
     analyser.getByteFrequencyData(dataFreq);
-    const sensitivity = sensEl ? parseFloat(sensEl.value) : 0.2; // Default to 0.2 to prevent overdose
+    const sensitivity = panelSensEl ? parseFloat(panelSensEl.value) : 0.2; 
     const bass = bandEnergy(dataFreq, 30, 140) * sensitivity; const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity; const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
     bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
     snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
@@ -612,7 +630,6 @@ function loop() {
     camera.updateProjectionMatrix();
   }
 
-  // FIX: Cap internal lighting so it never overdoses the screen
   if (coreLight) {
     coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
@@ -646,7 +663,6 @@ function loop() {
     morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
   }
 
-  // FIX: Billboarding to ensure sigil NEVER disappears
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue"; 
     const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
@@ -659,10 +675,7 @@ function loop() {
     const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
     sigilGlow.material.opacity = glowOp; 
     
-    // Copy the camera's exact rotation so it is ALWAYS perfectly flat to the screen
     sigilGroup.quaternion.copy(camera.quaternion);
-
-    // Apply a tiny 2D roll (wobble) so it feels alive without turning sideways
     const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); 
     sigilGroup.rotateZ(Math.sin(time * 1.0) * 0.05 + (Math.random() - 0.5) * jitter);
     
@@ -693,7 +706,6 @@ function loop() {
     const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
   }
 
-  // FIX: Toned down bloom slightly to prevent washout
   if (bloomPass) bloomPass.strength = P.bloomStrength + (bassSm * 0.15) + (snapFlash * 0.3);
   composer.render();
 }
@@ -704,11 +716,20 @@ function pickMime() { const mimes = ["video/webm;codecs=vp9,opus", "video/webm;c
 function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 async function startRecording() {
   if (!engineInitialized) await initEngine();
+  
+  recBtn.classList.add('recording-pulse');
+  
   const fps = 60; const canvasStream = canvas.captureStream(fps); const out = audioRecordDest?.stream; if (out && out.getAudioTracks().length) canvasStream.addTrack(out.getAudioTracks()[0]);
   recordedChunks = []; const mimeType = pickMime(); mediaRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
   mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
   mediaRecorder.onstop = () => { downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); setStatus("✅ Recording saved"); };
   mediaRecorder.start(250); recording = true; recBtn.textContent = "⏹ STOP"; setStatus("⏺ Recording…");
 }
-function stopRecording() { if (!mediaRecorder) return; try { mediaRecorder.stop(); } catch {} recording = false; recBtn.textContent = "⏺ RECORD"; }
+function stopRecording() { 
+    if (!mediaRecorder) return; 
+    try { mediaRecorder.stop(); } catch {} 
+    recording = false; 
+    recBtn.textContent = "⏺ RECORD"; 
+    recBtn.classList.remove('recording-pulse');
+}
 recBtn.addEventListener("click", async () => { if (!recording) await startRecording(); else stopRecording(); });
