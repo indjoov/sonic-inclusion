@@ -1,6 +1,11 @@
 import * as THREE from "three";
 import { AudioEngine } from "./audio/AudioEngine.js";
 
+// Postprocessing (no bundler)
+import { EffectComposer } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
+
 /* ================= BASIC SETUP ================= */
 
 const canvas = document.getElementById("viz");
@@ -69,16 +74,12 @@ document.body.appendChild(overlay);
 const engine = new AudioEngine();
 let raf = null;
 
-// analyser routing (mic/file/demo all feed this)
 let analyser = null;
 let dataFreq = null;
-let dataTime = null;
 
-// routing nodes
 let inputGain = null;
 let monitorGain = null;
 
-// input nodes
 let currentMode = "idle";
 let bufferSrc = null;
 let micStream = null;
@@ -90,23 +91,35 @@ let renderer = null;
 let scene = null;
 let camera = null;
 
+let composer = null;
+let renderPass = null;
+let bloomPass = null;
+
 let starPoints = null;
 let sphere = null;
 
 // Sigil layers
 let sigilGroup = null;
-let sigilBase = null; // ink plane
-let sigilGlow = null; // glow plane
+let sigilBase = null;
+let sigilGlow = null;
+
+// Textures to reuse for ghosts
+let sigilBaseTex = null;
+let sigilGlowTex = null;
 
 // Ritual rings pool
 let ringPool = [];
 let ringCursor = 0;
 
+// Ghost trails pool
+let ghostPool = [];
+let ghostCursor = 0;
+
 /* ================= A11Y / REDUCED MOTION ================= */
 
 let reducedMotion = false;
 
-/* ================= MIC MONITOR + FEEDBACK GUARD ================= */
+/* ================= MIC MONITOR ================= */
 
 let micMonitor = false;
 let micMonitorVol = 0.35;
@@ -128,7 +141,7 @@ function removeLegacyUI() {
 }
 removeLegacyUI();
 
-/* ================= MODERN HUD (ENGINE + RECORD) ================= */
+/* ================= MODERN HUD ================= */
 
 const hud = document.createElement("div");
 hud.id = "si-hud";
@@ -234,6 +247,15 @@ enginePanel.innerHTML = `
   </div>
 
   <div style="display:grid; gap:10px;">
+    <div style="display:grid; gap:8px; padding:10px; border:1px solid rgba(255,255,255,0.10); border-radius:14px;">
+      <div style="font-weight:900; letter-spacing:2px; font-size:12px; opacity:0.85;">CHAPTER</div>
+      <div style="display:flex; gap:8px;">
+        <button id="chapInv" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">INVOCATION</button>
+        <button id="chapPos" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">POSSESSION</button>
+        <button id="chapAsc" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">ASCENSION</button>
+      </div>
+    </div>
+
     <label style="font-size:12px; opacity:0.8;">
       STARS (amount)
       <input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; margin-top:6px;">
@@ -248,12 +270,6 @@ enginePanel.innerHTML = `
       HUE
       <input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; margin-top:6px;">
     </label>
-
-    <div style="display:flex; gap:8px;">
-      <button id="presetCalm" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">CALM</button>
-      <button id="presetBass" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">BASS</button>
-      <button id="presetRitual" type="button" style="flex:1; border-radius:12px; padding:10px; cursor:pointer;">RITUAL</button>
-    </div>
 
     <label style="font-size:12px; display:flex; align-items:center; gap:10px;">
       <input id="reducedMotion" type="checkbox">
@@ -305,20 +321,11 @@ enginePanel.addEventListener("touchmove", (e) => {
   }
 }, { passive: true });
 
-/* ================= ENGINE PANEL CONTROL HOOKS ================= */
+/* ================= PANEL HOOKS ================= */
 
 const partEl = enginePanel.querySelector("#partAmount");
 const zoomEl = enginePanel.querySelector("#zoomInt");
 const hueEl  = enginePanel.querySelector("#hueShift");
-
-function preset(p, z, h) {
-  partEl.value = String(p);
-  zoomEl.value = String(z);
-  hueEl.value  = String(h);
-}
-enginePanel.querySelector("#presetCalm").addEventListener("click", () => preset(6, 8, 210));
-enginePanel.querySelector("#presetBass").addEventListener("click", () => preset(16, 28, 340));
-enginePanel.querySelector("#presetRitual").addEventListener("click", () => preset(10, 18, 285));
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => {
   reducedMotion = !!e.target.checked;
@@ -344,7 +351,84 @@ micMonitorVolEl.addEventListener("input", (e) => {
   applyMicMonitorGain();
 });
 
-/* ================= CANVAS/RENDER SIZE (HiDPI-safe) ================= */
+/* ================= CHAPTER SYSTEM ================= */
+
+const CHAPTERS = {
+  INVOCATION: {
+    starsOpacity: 0.18,
+    sphereOpacityBase: 0.16,
+    sphereBreath: 0.06,
+    sigilInk: 0.90,
+    glowBase: 0.30,
+    glowBass: 0.40,
+    glowSnap: 0.55,
+    jitter: 0.010,
+    ringStrength: 0.75,
+    ghostCount: 2,
+    bloomStrength: 0.85,
+    bloomRadius: 0.55,
+    bloomThreshold: 0.15,
+    camBass: 0.85,
+    camSnap: 0.24,
+  },
+  POSSESSION: {
+    starsOpacity: 0.22,
+    sphereOpacityBase: 0.22,
+    sphereBreath: 0.09,
+    sigilInk: 0.88,
+    glowBase: 0.40,
+    glowBass: 0.60,
+    glowSnap: 0.95,
+    jitter: 0.022,
+    ringStrength: 1.00,
+    ghostCount: 3,
+    bloomStrength: 1.25,
+    bloomRadius: 0.65,
+    bloomThreshold: 0.10,
+    camBass: 1.00,
+    camSnap: 0.32,
+  },
+  ASCENSION: {
+    starsOpacity: 0.26,
+    sphereOpacityBase: 0.26,
+    sphereBreath: 0.11,
+    sigilInk: 0.84,
+    glowBase: 0.52,
+    glowBass: 0.85,
+    glowSnap: 1.05,
+    jitter: 0.018,
+    ringStrength: 1.15,
+    ghostCount: 4,
+    bloomStrength: 1.75,
+    bloomRadius: 0.78,
+    bloomThreshold: 0.06,
+    camBass: 1.10,
+    camSnap: 0.36,
+  },
+};
+
+let chapter = "POSSESSION";
+let P = CHAPTERS[chapter];
+
+function applyChapter(name) {
+  if (!CHAPTERS[name]) return;
+  chapter = name;
+  P = CHAPTERS[chapter];
+
+  if (bloomPass) {
+    bloomPass.strength = P.bloomStrength;
+    bloomPass.radius = P.bloomRadius;
+    bloomPass.threshold = P.bloomThreshold;
+  }
+
+  setStatus(`🔮 Chapter: ${chapter}`);
+}
+
+enginePanel.querySelector("#chapInv").addEventListener("click", () => applyChapter("INVOCATION"));
+enginePanel.querySelector("#chapPos").addEventListener("click", () => applyChapter("POSSESSION"));
+enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapter("ASCENSION"));
+
+/* ================= RESIZE ================= */
 
 function fitRendererToStage() {
   if (!renderer || !camera) return;
@@ -360,6 +444,12 @@ function fitRendererToStage() {
 
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+
+  composer?.setSize(w, h);
+
+  if (bloomPass) {
+    bloomPass.setSize(w, h);
+  }
 }
 
 const ro = new ResizeObserver(() => fitRendererToStage());
@@ -384,31 +474,40 @@ function initThree() {
   camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
   camera.position.set(0, 0, 16);
 
-  // subtle ambient (mostly BasicMaterials)
   scene.add(new THREE.AmbientLight(0xffffff, 0.65));
 
-  // Stars (static space)
   starPoints = makeStars(1400, 80);
   scene.add(starPoints);
 
-  // Wireframe sphere
   const geo = new THREE.IcosahedronGeometry(5.1, 2);
   const mat = new THREE.MeshBasicMaterial({
     color: 0x00d4ff,
     wireframe: true,
     transparent: true,
-    opacity: 0.26
+    opacity: 0.22
   });
   sphere = new THREE.Mesh(geo, mat);
   scene.add(sphere);
 
-  // Ritual ring pool
   initRings();
+  initGhosts();
 
-  // Sigil layers (ink + glow)
   loadSigilLayers("media/indjoov-sigil.svg");
 
+  // Postprocessing
+  composer = new EffectComposer(renderer);
+  renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
+
+  const rect = (stageEl || canvas).getBoundingClientRect();
+  bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(Math.max(1, rect.width), Math.max(1, rect.height)),
+    1.2, 0.6, 0.1
+  );
+  composer.addPass(bloomPass);
+
   fitRendererToStage();
+  applyChapter(chapter);
 }
 
 function makeStars(count, spread) {
@@ -421,30 +520,29 @@ function makeStars(count, spread) {
     positions[ix + 1] = (Math.random() - 0.5) * spread;
     positions[ix + 2] = (Math.random() - 0.5) * spread;
   }
+
   geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.PointsMaterial({
     color: 0xffffff,
     size: 0.06,
     transparent: true,
-    opacity: 0.28
+    opacity: 0.22
   });
   return new THREE.Points(geom, mat);
 }
 
-/* ================= RITUAL RINGS (snare pulses) ================= */
+/* ================= RITUAL RINGS ================= */
 
 function initRings() {
-  // cleanup old
   ringPool.forEach(r => {
-    scene.remove(r.mesh);
+    scene?.remove(r.mesh);
     r.mesh.geometry.dispose();
     r.mesh.material.dispose();
   });
   ringPool = [];
   ringCursor = 0;
 
-  const count = 8;
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < 8; i++) {
     const g = new THREE.RingGeometry(2.6, 2.9, 96);
     const m = new THREE.MeshBasicMaterial({
       color: 0x8feaff,
@@ -458,15 +556,9 @@ function initRings() {
     mesh.position.set(0, 0, 0.25);
     mesh.rotation.x = -0.18;
     mesh.rotation.y = 0.22;
-    mesh.scale.set(1, 1, 1);
-    scene.add(mesh);
+    scene?.add(mesh);
 
-    ringPool.push({
-      mesh,
-      t: 999,
-      life: 0.55,
-      baseScale: 1.0
-    });
+    ringPool.push({ mesh, t: 999, life: 0.55, baseScale: 1.0 });
   }
 }
 
@@ -479,13 +571,124 @@ function triggerRingPulse(intensity = 1) {
   r.life = 0.48;
   r.baseScale = 0.92 + 0.22 * intensity;
 
-  // alternate cyan/purple for ritual vibe
   const col = (Math.random() < 0.5) ? 0x00d4ff : 0x7c4dff;
   r.mesh.material.color.setHex(col);
-  r.mesh.material.opacity = 0.85;
+  r.mesh.material.opacity = 0.85 * P.ringStrength;
 }
 
-/* ================= SIGIL (SVG -> Canvas baked ink grain + glow layer) ================= */
+/* ================= GHOST TRAILS ================= */
+
+function initGhosts() {
+  // pool of ghost groups (each has glow+ink planes)
+  ghostPool.forEach(g => {
+    scene?.remove(g.group);
+    g.group.traverse(o => {
+      o.geometry?.dispose?.();
+      if (o.material) {
+        o.material.map?.dispose?.();
+        o.material.dispose?.();
+      }
+    });
+  });
+  ghostPool = [];
+  ghostCursor = 0;
+
+  for (let i = 0; i < 18; i++) {
+    const group = new THREE.Group();
+    group.visible = false;
+    group.position.set(0, 0, 0.2);
+    group.rotation.x = -0.18;
+    group.rotation.y = 0.22;
+
+    // temp materials (we will assign textures once loaded)
+    const plane = new THREE.PlaneGeometry(6.9, 6.9);
+
+    const inkMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.NormalBlending
+    });
+
+    const glowMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      color: new THREE.Color(0x00d4ff),
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    const glow = new THREE.Mesh(plane, glowMat);
+    glow.scale.set(1.08, 1.08, 1.08);
+
+    const ink = new THREE.Mesh(plane, inkMat);
+
+    group.add(glow);
+    group.add(ink);
+
+    scene?.add(group);
+
+    ghostPool.push({
+      group,
+      glow,
+      ink,
+      t: 999,
+      life: 0.45,
+      vx: 0,
+      vy: 0,
+      spin: 0,
+      baseScale: 1
+    });
+  }
+}
+
+function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
+  if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex) return;
+
+  const useCount = Math.max(1, Math.min(6, count));
+  for (let k = 0; k < useCount; k++) {
+    const g = ghostPool[ghostCursor % ghostPool.length];
+    ghostCursor++;
+
+    g.t = 0;
+    g.life = 0.28 + Math.random() * 0.25;
+
+    g.vx = (Math.random() - 0.5) * (0.22 + intensity * 0.25);
+    g.vy = (Math.random() - 0.5) * (0.18 + intensity * 0.22);
+    g.spin = (Math.random() - 0.5) * (0.12 + intensity * 0.18);
+
+    g.baseScale = 1.02 + k * 0.04;
+
+    g.group.visible = true;
+    g.group.position.set(0, 0, 0.21 + 0.01 * k);
+    g.group.rotation.x = -0.18;
+    g.group.rotation.y = 0.22;
+
+    // assign textures (reuse)
+    g.ink.material.map = sigilBaseTex;
+    g.glow.material.map = sigilGlowTex;
+
+    // color drift cyan->purple
+    const cyan = new THREE.Color(0x00d4ff);
+    const purple = new THREE.Color(0x7c4dff);
+    const col = cyan.clone().lerp(purple, Math.min(1, 0.45 + snapFlash * 0.65));
+    g.glow.material.color.copy(col);
+
+    // opacities
+    g.ink.material.opacity = 0.22 + 0.20 * intensity;
+    g.glow.material.opacity = 0.40 + 0.55 * snapFlash;
+
+    // slightly larger glow
+    g.glow.scale.set(1.12, 1.12, 1.12);
+
+    // scale
+    g.group.scale.set(g.baseScale, g.baseScale, g.baseScale);
+  }
+}
+
+/* ================= SIGIL LAYERS ================= */
 
 function disposeSigilGroup() {
   if (!sigilGroup) return;
@@ -500,6 +703,8 @@ function disposeSigilGroup() {
   sigilGroup = null;
   sigilBase = null;
   sigilGlow = null;
+  sigilBaseTex = null;
+  sigilGlowTex = null;
 }
 
 function loadSigilLayers(url) {
@@ -512,19 +717,18 @@ function loadSigilLayers(url) {
     })
     .then(svgText => {
       const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
-
       const img = new Image();
       img.crossOrigin = "anonymous";
+
       img.onload = () => {
         const size = 1024;
 
-        // --- base canvas (ink + transparent bg)
+        // base canvas (ink + transparent bg)
         const base = document.createElement("canvas");
         base.width = size;
         base.height = size;
         const ctx = base.getContext("2d");
 
-        // paint white, draw, then key out white -> alpha
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, size, size);
 
@@ -537,70 +741,67 @@ function loadSigilLayers(url) {
 
         const imgData = ctx.getImageData(0, 0, size, size);
         const d = imgData.data;
-
-        // Key out near-white, and bake ink grain into the strokes
         const thr = 245;
+
         for (let i = 0; i < d.length; i += 4) {
           const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
 
-          // remove background
           if (r >= thr && g >= thr && b >= thr) {
             d[i + 3] = 0;
             continue;
           }
 
-          // ink grain on visible pixels
           if (a > 0) {
-            const grain = 0.82 + Math.random() * 0.20; // 0.82..1.02
+            // ink grain
+            const grain = 0.82 + Math.random() * 0.20;
             d[i + 0] = Math.max(0, Math.min(255, d[i + 0] * grain));
             d[i + 1] = Math.max(0, Math.min(255, d[i + 1] * grain));
             d[i + 2] = Math.max(0, Math.min(255, d[i + 2] * grain));
           }
         }
+
         ctx.putImageData(imgData, 0, 0);
 
-        // --- glow canvas (blurred version)
+        // glow canvas (blurred pseudo bloom)
         const glow = document.createElement("canvas");
         glow.width = size;
         glow.height = size;
         const gctx = glow.getContext("2d");
-        gctx.clearRect(0, 0, size, size);
 
-        // draw base then blur (pseudo bloom)
         gctx.filter = "blur(10px)";
         gctx.globalAlpha = 1;
         gctx.drawImage(base, 0, 0);
+
         gctx.filter = "blur(22px)";
         gctx.globalAlpha = 0.85;
         gctx.drawImage(base, 0, 0);
+
         gctx.filter = "none";
 
-        // three textures
-        const baseTex = new THREE.CanvasTexture(base);
-        baseTex.colorSpace = THREE.SRGBColorSpace;
-        baseTex.needsUpdate = true;
+        // textures
+        sigilBaseTex = new THREE.CanvasTexture(base);
+        sigilBaseTex.colorSpace = THREE.SRGBColorSpace;
+        sigilBaseTex.needsUpdate = true;
 
-        const glowTex = new THREE.CanvasTexture(glow);
-        glowTex.colorSpace = THREE.SRGBColorSpace;
-        glowTex.needsUpdate = true;
+        sigilGlowTex = new THREE.CanvasTexture(glow);
+        sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
+        sigilGlowTex.needsUpdate = true;
 
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
 
-        // Ink plane: normal blending, stays readable
         const inkMat = new THREE.MeshBasicMaterial({
-          map: baseTex,
+          map: sigilBaseTex,
           transparent: true,
-          opacity: 0.92,
+          opacity: 0.90,
           depthWrite: false,
           depthTest: false,
           blending: THREE.NormalBlending
         });
 
-        // Glow plane: additive, colored
         const glowMat = new THREE.MeshBasicMaterial({
-          map: glowTex,
+          map: sigilGlowTex,
           transparent: true,
-          opacity: 0.55,
+          opacity: 0.50,
           color: new THREE.Color(0x00d4ff),
           depthWrite: false,
           depthTest: false,
@@ -609,20 +810,18 @@ function loadSigilLayers(url) {
 
         sigilBase = new THREE.Mesh(plane, inkMat);
         sigilGlow = new THREE.Mesh(plane, glowMat);
-
-        // glow slightly larger, centered (NOT offset)
         sigilGlow.scale.set(1.08, 1.08, 1.08);
 
         sigilGroup = new THREE.Group();
         sigilGroup.add(sigilGlow);
         sigilGroup.add(sigilBase);
 
-        sigilGroup.position.set(0, 0, 0.22); // in front
+        sigilGroup.position.set(0, 0, 0.22);
         sigilGroup.rotation.x = -0.18;
         sigilGroup.rotation.y = 0.22;
 
         scene.add(sigilGroup);
-        setStatus("✅ Sigil loaded (ink grain + dual glow)");
+        setStatus("✅ Sigil loaded (ink grain + bloom glow)");
       };
 
       img.onerror = () => setStatus("⚠️ Sigil image decode failed");
@@ -651,7 +850,6 @@ async function initEngine() {
   analyser.smoothingTimeConstant = 0.85;
 
   dataFreq = new Uint8Array(analyser.frequencyBinCount);
-  dataTime = new Uint8Array(analyser.fftSize);
 
   inputGain = engine.ctx.createGain();
   inputGain.gain.value = 1;
@@ -809,9 +1007,7 @@ micBtn?.addEventListener("click", async () => {
 
     micBtn.textContent = "⏹ Stop Microphone";
 
-    // monitor defaults OFF (avoid feedback)
     applyMicMonitorGain();
-
     setStatus("🎙️ Mic active");
   } catch (err) {
     console.error(err);
@@ -825,9 +1021,8 @@ micBtn?.addEventListener("click", async () => {
 window.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") setEngineOpen(false);
 
-  if (e.key === " "){
+  if (e.key === " ") {
     e.preventDefault();
-    // space: stop current playback
     if (currentMode !== "idle") {
       await stopAll({ suspend: true });
       setStatus("⏹ Stopped");
@@ -839,9 +1034,8 @@ window.addEventListener("keydown", async (e) => {
   if (e.key.toLowerCase() === "d") demoBtn?.click();
 });
 
-/* ================= AUDIO FEATURE EXTRACTION ================= */
+/* ================= AUDIO FEATURES ================= */
 
-// Helper mapping from Hz to analyser bin
 function hzToBin(hz) {
   if (!engine?.ctx || !analyser) return 0;
   const nyquist = engine.ctx.sampleRate / 2;
@@ -855,19 +1049,17 @@ function bandEnergy(freqData, hzLo, hzHi) {
   let sum = 0;
   const n = Math.max(1, b - a + 1);
   for (let i = a; i <= b; i++) sum += freqData[i];
-  return (sum / n) / 255; // normalize 0..1
+  return (sum / n) / 255;
 }
 
 let bassSm = 0;
 let midSm = 0;
 let snareSm = 0;
 
-// transient detection for snare "snap"
 let snareAvg = 0;
 let snarePrev = 0;
 let lastSnareTrig = 0;
 
-// global pulse for extra flash
 let snapFlash = 0;
 
 /* ================= MAIN LOOP ================= */
@@ -875,38 +1067,36 @@ let snapFlash = 0;
 function loop() {
   raf = requestAnimationFrame(loop);
 
-  if (!renderer || !scene || !camera) return;
+  if (!renderer || !scene || !camera || !composer) return;
 
-  // If no analyser yet, render idle subtly
   let bass = 0, mid = 0, snare = 0;
 
   if (analyser && dataFreq) {
     analyser.getByteFrequencyData(dataFreq);
-
     const sensitivity = sens ? parseFloat(sens.value) : 1;
 
     bass = bandEnergy(dataFreq, 30, 140) * sensitivity;
     mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity;
     snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
 
-    // smooth (more ritual, less jitter)
     bassSm = bassSm * 0.88 + bass * 0.12;
-    midSm = midSm * 0.90 + mid * 0.10;
+    midSm  = midSm  * 0.90 + mid  * 0.10;
     snareSm = snareSm * 0.78 + snare * 0.22;
 
-    // transient detect (snap)
     snareAvg = snareAvg * 0.965 + snareSm * 0.035;
     const rise = snareSm - snarePrev;
     snarePrev = snareSm;
 
     const now = performance.now() / 1000;
-    const cooldown = 0.14; // seconds
-    const isHit = (snareSm > snareAvg * 1.55) && (rise > 0.06);
+    const cooldown = 0.14;
+    const isHit = (snareSm > snareAvg * 1.45) && (rise > 0.055);
 
     if (isHit && (now - lastSnareTrig) > cooldown) {
       lastSnareTrig = now;
       snapFlash = 1.0;
+
       triggerRingPulse(Math.min(1, snareSm * 1.6));
+      spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
     }
   } else {
     bassSm *= 0.97;
@@ -914,107 +1104,99 @@ function loop() {
     snareSm *= 0.97;
   }
 
-  // decay flash
   snapFlash *= 0.86;
   if (snapFlash < 0.001) snapFlash = 0;
 
-  // ===== VISUALS =====
-
-  // Stars: keep SPACE (static), only tiny twinkle (not music)
+  // Stars: SPACE (static) + tiny twinkle
   if (starPoints) {
-    const tw = 0.22 + 0.06 * Math.sin(performance.now() * 0.0007);
-    starPoints.material.opacity = tw;
+    const base = P.starsOpacity;
+    const tw = base + 0.04 * Math.sin(performance.now() * 0.0007);
+    const slider = partEl ? parseFloat(partEl.value) : 10; // 0..30
+    const add = Math.max(0, Math.min(0.18, 0.006 * slider));
+    starPoints.material.opacity = Math.max(0, Math.min(0.55, tw + add));
   }
 
-  // Sphere: slow drift + small bass breathing (not crazy)
+  // Sphere: slow drift + bass breathing
   if (sphere) {
     const hueShift = hueEl ? parseFloat(hueEl.value) : 280;
     const hue = ((hueShift % 360) / 360);
     const col = new THREE.Color().setHSL(hue, 0.75, 0.55);
 
-    // palette mode
     const mode = palette?.value || "hue";
+    const energy = Math.min(1, (bassSm * 0.65 + midSm * 0.25 + snareSm * 0.55));
+
     if (mode === "grayscale") {
       sphere.material.color.setHex(0xdadada);
-      sphere.material.opacity = 0.18 + bassSm * 0.10;
+      sphere.material.opacity = P.sphereOpacityBase + bassSm * 0.08;
     } else if (mode === "energy") {
-      const energy = Math.min(1, (bassSm * 0.65 + midSm * 0.25 + snareSm * 0.55));
       sphere.material.color.setHSL(hue, 0.85, 0.35 + energy * 0.35);
-      sphere.material.opacity = 0.14 + energy * 0.24;
+      sphere.material.opacity = P.sphereOpacityBase + energy * 0.22;
     } else {
       sphere.material.color.copy(col);
-      sphere.material.opacity = 0.18 + bassSm * 0.18;
+      sphere.material.opacity = P.sphereOpacityBase + bassSm * 0.18;
     }
 
     const drift = reducedMotion ? 0 : 0.0009;
     sphere.rotation.y += drift;
     sphere.rotation.x += drift * 0.65;
 
-    const breath = 1 + bassSm * 0.08;
+    const breath = 1 + bassSm * P.sphereBreath;
     sphere.scale.set(breath, breath, breath);
   }
 
-  // Camera: cinematic bass push + snare kickback
+  // Camera: bass push + snare kick
   if (camera) {
     const zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18;
-    const bassPush = bassSm * (0.9 * zoomInt);
-    const kick = snapFlash * 0.28;
+
+    const bassPush = bassSm * (0.9 * zoomInt) * P.camBass;
+    const kick = snapFlash * P.camSnap;
 
     const targetZ = 16 - bassPush * 2.8 + kick * 0.65;
     camera.position.z = camera.position.z * 0.92 + targetZ * 0.08;
   }
 
-  // Sigil: Ink stays readable, Glow reacts (cyan bass + purple snap)
+  // Sigil: ink readable + glow ritual
   if (sigilGroup && sigilBase && sigilGlow) {
     const mode = palette?.value || "hue";
 
-    // base ink opacity gently breathes, never disappears
-    sigilBase.material.opacity = 0.86 + bassSm * 0.08;
+    sigilBase.material.opacity = P.sigilInk + bassSm * 0.06;
 
-    // glow color logic
     let glowColor = new THREE.Color(0x00d4ff);
-
     if (mode === "grayscale") {
       glowColor = new THREE.Color(0xffffff);
     } else {
       const cyan = new THREE.Color(0x00d4ff);
       const purple = new THREE.Color(0x7c4dff);
-      glowColor = cyan.clone().lerp(purple, Math.min(1, snapFlash * 1.15));
+      glowColor = cyan.clone().lerp(purple, Math.min(1, snapFlash * 1.1));
     }
-
     sigilGlow.material.color.copy(glowColor);
 
-    // glow opacity = bass aura + snare flash, clamped
-    const aura = 0.36 + bassSm * 0.55;
-    const flash = snapFlash * 0.95;
-    sigilGlow.material.opacity = Math.max(0.28, Math.min(0.95, aura + flash));
+    const aura = P.glowBase + bassSm * P.glowBass;
+    const flash = snapFlash * P.glowSnap;
+    sigilGlow.material.opacity = Math.max(0.22, Math.min(0.98, aura + flash));
 
-    // ritual snap = micro jitter (very short)
-    const jitter = reducedMotion ? 0 : snapFlash * 0.02;
+    // micro jitter on snap
+    const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
     sigilGroup.rotation.y = 0.22 + Math.sin(performance.now() * 0.0012) * 0.02 + (Math.random() - 0.5) * jitter;
     sigilGroup.rotation.x = -0.18 + Math.sin(performance.now() * 0.0010) * 0.015 + (Math.random() - 0.5) * jitter;
 
-    // breathing scale (bass)
     const s = 1 + bassSm * 0.10 + snapFlash * 0.04;
     sigilGroup.scale.set(s, s, s);
   }
 
-  // Ritual rings animate
+  // Rings animate
   const dt = 1 / 60;
   for (const r of ringPool) {
     if (r.t >= 999) continue;
     r.t += dt;
     const p = Math.min(1, r.t / r.life);
-
-    // ease out
     const ease = 1 - Math.pow(1 - p, 3);
 
     const scale = r.baseScale + ease * 1.35;
     r.mesh.scale.set(scale, scale, scale);
 
-    // fade + slight flicker
     const flick = 0.92 + 0.08 * Math.sin(performance.now() * 0.02);
-    r.mesh.material.opacity = (1 - p) * 0.85 * flick;
+    r.mesh.material.opacity = (1 - p) * 0.85 * flick * P.ringStrength;
 
     if (p >= 1) {
       r.t = 999;
@@ -1022,19 +1204,41 @@ function loop() {
     }
   }
 
-  // Stars amount (UI) — but not music-reactive movement
-  if (starPoints && partEl) {
-    // Map slider to opacity rather than motion
-    const val = parseFloat(partEl.value); // 0..30
-    starPoints.material.opacity = Math.max(0, Math.min(0.55, 0.12 + val * 0.012));
+  // Ghosts animate (afterimage)
+  for (const g of ghostPool) {
+    if (g.t >= 999) continue;
+    g.t += dt;
+    const p = Math.min(1, g.t / g.life);
+
+    const ease = 1 - Math.pow(1 - p, 2);
+    g.group.position.x += g.vx * 0.14;
+    g.group.position.y += g.vy * 0.14;
+    g.group.rotation.y += g.spin * 0.04;
+
+    const s = g.baseScale + ease * 0.28;
+    g.group.scale.set(s, s, s);
+
+    const fade = (1 - p);
+    g.ink.material.opacity = Math.max(0, g.ink.material.opacity * 0.90) * fade;
+    g.glow.material.opacity = Math.max(0, g.glow.material.opacity * 0.88) * fade;
+
+    if (p >= 1) {
+      g.t = 999;
+      g.group.visible = false;
+    }
   }
 
-  renderer.render(scene, camera);
+  // Bloom reacts (subtle: bass aura + snap flash)
+  if (bloomPass) {
+    const b = P.bloomStrength + bassSm * 0.45 + snapFlash * 0.65;
+    bloomPass.strength = b;
+  }
+
+  composer.render();
 }
 
 /* ================= RECORD BUTTON (placeholder) ================= */
 recBtn.addEventListener("click", () => {
-  // Placeholder: later you can plug MediaRecorder or CCapture
   const pressed = recBtn.getAttribute("aria-pressed") === "true";
   recBtn.setAttribute("aria-pressed", pressed ? "false" : "true");
   recBtn.textContent = pressed ? "⏺ RECORD" : "⏹ STOP";
