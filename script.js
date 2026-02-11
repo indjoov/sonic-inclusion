@@ -10,7 +10,6 @@ import { FXAAShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders
 import { GlitchPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/GlitchPass.js";
 import { RGBShiftShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/RGBShiftShader.js";
 import { AfterimagePass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/AfterimagePass.js";
-// NEW: Import the Cinematic Depth of Field (Bokeh) Pass
 import { BokehPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/BokehPass.js";
 
 /* ================= BASIC SETUP ================= */
@@ -72,7 +71,7 @@ let renderer = null; let scene = null; let camera = null; let composer = null;
 let bloomPass = null; let fxaaPass = null; let world = null; let starPoints = null;  
 let morphMesh = null; let coreLight = null; let rgbShiftPass = null; let glitchPass = null;      
 let afterimagePass = null; 
-let bokehPass = null; // NEW: The Bokeh/DoF effect
+let bokehPass = null; 
 
 let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 
@@ -125,7 +124,7 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-// FIX: Added CINEMATIC BLUR slider
+// FIX: Set CINEMATIC BLUR default value to 0
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -158,7 +157,7 @@ enginePanel.innerHTML = `
         <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
     
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#ff2d55; font-weight:bold;">CINEMATIC BLUR<input id="bokehAmount" type="range" min="0" max="0.03" step="0.001" value="0.015" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#ff2d55; font-weight:bold;">CINEMATIC BLUR<input id="bokehAmount" type="range" min="0" max="0.03" step="0.001" value="0" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0.30" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
@@ -215,7 +214,7 @@ const midiStatusEl = enginePanel.querySelector("#midiStatus");
 const panelSensEl = enginePanel.querySelector("#sens-panel");
 const paletteEl = enginePanel.querySelector("#palette-panel");
 const trailsEl = enginePanel.querySelector("#trailsAmount"); 
-const bokehAmountEl = enginePanel.querySelector("#bokehAmount"); // Reference new Bokeh slider
+const bokehAmountEl = enginePanel.querySelector("#bokehAmount");
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
 const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
@@ -267,10 +266,11 @@ sigilInput.addEventListener("change", (e) => {
 });
 
 /* ================= CHAPTER SYSTEM ================= */
+// FIX: INVOCATION and POSSESSION now start with 0 blur. 
 const CHAPTERS = {
-  INVOCATION: { bokeh: 0.010, trails: 0.15, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
-  POSSESSION: { bokeh: 0.015, trails: 0.30, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
-  ASCENSION:  { bokeh: 0.025, trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
+  INVOCATION: { bokeh: 0, trails: 0.15, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
+  POSSESSION: { bokeh: 0, trails: 0.30, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
+  ASCENSION:  { bokeh: 0.015, trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
 };
 let chapter = "POSSESSION"; let P = CHAPTERS[chapter];
 function applyChapter(name) {
@@ -295,7 +295,7 @@ function loadPreset(slot) {
     const data = JSON.parse(saved);
     if(panelSensEl) panelSensEl.value = data.sens || "0.1"; 
     if(trailsEl) trailsEl.value = data.trails || "0.30";
-    if(bokehAmountEl) bokehAmountEl.value = data.bokeh || "0.015";
+    if(bokehAmountEl) bokehAmountEl.value = data.bokeh || "0";
     if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
     if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
@@ -386,10 +386,9 @@ function initThree() {
   
   const rect = (stageEl || canvas).getBoundingClientRect();
 
-  // NEW: Add the Cinematic Depth of Field Pass right after the raw render
   bokehPass = new BokehPass(scene, camera, {
       focus: 18.0, 
-      aperture: 0.015,
+      aperture: 0.0,
       maxblur: 0.01,
       width: rect.width,
       height: rect.height
@@ -753,15 +752,12 @@ function loop() {
         if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
       }
       
-      // NEW: Cinematic Depth of Field (Bokeh) audio-reactivity
       if (bokehPass && world) {
-          let baseAperture = bokehAmountEl ? parseFloat(bokehAmountEl.value) : 0.015;
-          if (isNaN(baseAperture)) baseAperture = 0.015;
+          // FIX: Added safe fallback to 0
+          let baseAperture = bokehAmountEl ? parseFloat(bokehAmountEl.value) : 0;
+          if (isNaN(baseAperture)) baseAperture = 0;
           
-          // Mathematically calculate the true distance from the camera to the Cage
           const dist = camera.position.distanceTo(world.position);
-          
-          // Lock focus onto the Cage, but make the blur breathe violently with the bass and snare
           bokehPass.uniforms['focus'].value = THREE.MathUtils.lerp(bokehPass.uniforms['focus'].value, dist, 0.1);
           bokehPass.uniforms['aperture'].value = baseAperture + (snapFlash * 0.02) + (bassSm * 0.01);
           bokehPass.uniforms['maxblur'].value = 0.01 + (bassSm * 0.005);
