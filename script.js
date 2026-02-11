@@ -82,7 +82,7 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
-// NEW: Auto-VJ Variables
+// Auto-VJ Variables
 let currentCameraMode = 0; 
 let vjShot = 0; 
 let vjLastCut = 0;
@@ -310,7 +310,6 @@ window.addEventListener("keydown", async (e) => {
   
   if (e.key.toLowerCase() === "c") {
       currentCameraMode = (currentCameraMode + 1) % 4;
-      // FIX: Notify user if Auto-VJ is active
       setStatus(`🎥 Camera Mode: ${currentCameraMode === 0 ? "Auto-VJ (Dynamic)" : "Manual " + currentCameraMode}`);
   }
 
@@ -459,7 +458,8 @@ function makeResponsiveMorphingCage() {
   }
 
   baseGeo.morphAttributes.position = [ new THREE.Float32BufferAttribute(cubePositions, 3), new THREE.Float32BufferAttribute(wavePositions, 3), new THREE.Float32BufferAttribute(spikePositions, 3) ];
-  const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  // FIX: depthWrite set to TRUE so the camera can focus perfectly on the Cage!
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: true, side: THREE.DoubleSide });
   morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
 }
 
@@ -559,7 +559,8 @@ function loadSigilLayers(url, isCustom = false) {
         sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         
-        const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
+        // FIX: depthWrite AND depthTest set to TRUE so the ink stays perfectly in focus!
+        const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: true, depthTest: true, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
         
         sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
@@ -725,7 +726,6 @@ function loop() {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
           if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
           
-          // FIX: Auto-VJ Camera Cut Logic
           if (currentCameraMode === 0 && Math.random() > 0.6 && (time - vjLastCut) > 2.5) {
               vjShot = Math.floor(Math.random() * 5);
               vjLastCut = time;
@@ -743,7 +743,6 @@ function loop() {
       if (!reducedMotion) {
         let targetFov = baseFov - (bassSm * 15);
         
-        // FIX: The new Auto-VJ Camera Director
         if (currentCameraMode === 0) {
             const tSinceCut = time - vjLastCut;
             if (vjShot === 0) { 
@@ -773,7 +772,6 @@ function loop() {
         else if (currentCameraMode === 2) { camTargetPos.set(Math.sin(time*0.5)*15, 15, Math.cos(time*0.5)*15); camTargetLook.set(0,0,0); } 
         else if (currentCameraMode === 3) { camTargetPos.set(Math.sin(time)*3, Math.cos(time)*3, 5); camTargetLook.set(0,0,0); }
         
-        // Dynamic camera panning speed (fast whip-pan on cuts, slow drift otherwise)
         const lerpSpeed = (currentCameraMode === 0 && (time - vjLastCut) < 0.3) ? 0.15 : 0.05;
         camera.position.lerp(camTargetPos, lerpSpeed); 
         
