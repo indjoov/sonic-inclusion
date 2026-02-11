@@ -82,7 +82,11 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
-let currentCameraMode = 0;
+// NEW: Auto-VJ Variables
+let currentCameraMode = 0; 
+let vjShot = 0; 
+let vjLastCut = 0;
+
 const camTargetPos = new THREE.Vector3();
 const camTargetLook = new THREE.Vector3();
 
@@ -124,7 +128,6 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-// FIX: Set CINEMATIC BLUR default value to 0
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -266,7 +269,6 @@ sigilInput.addEventListener("change", (e) => {
 });
 
 /* ================= CHAPTER SYSTEM ================= */
-// FIX: INVOCATION and POSSESSION now start with 0 blur. 
 const CHAPTERS = {
   INVOCATION: { bokeh: 0, trails: 0.15, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
   POSSESSION: { bokeh: 0, trails: 0.30, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
@@ -308,7 +310,8 @@ window.addEventListener("keydown", async (e) => {
   
   if (e.key.toLowerCase() === "c") {
       currentCameraMode = (currentCameraMode + 1) % 4;
-      setStatus(`🎥 Camera Mode: ${currentCameraMode + 1}`);
+      // FIX: Notify user if Auto-VJ is active
+      setStatus(`🎥 Camera Mode: ${currentCameraMode === 0 ? "Auto-VJ (Dynamic)" : "Manual " + currentCameraMode}`);
   }
 
   if (["1", "2", "3", "4"].includes(e.key)) {
@@ -717,9 +720,16 @@ function loop() {
         
         bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
+        
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
           if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
+          
+          // FIX: Auto-VJ Camera Cut Logic
+          if (currentCameraMode === 0 && Math.random() > 0.6 && (time - vjLastCut) > 2.5) {
+              vjShot = Math.floor(Math.random() * 5);
+              vjLastCut = time;
+          }
         }
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
@@ -731,18 +741,50 @@ function loop() {
       }
 
       if (!reducedMotion) {
-        if (currentCameraMode === 0) { camTargetPos.set(0, 0, 18 - bassSm * 2); camTargetLook.set(0,0,0); } 
+        let targetFov = baseFov - (bassSm * 15);
+        
+        // FIX: The new Auto-VJ Camera Director
+        if (currentCameraMode === 0) {
+            const tSinceCut = time - vjLastCut;
+            if (vjShot === 0) { 
+                camTargetPos.set(Math.sin(time*0.3)*18, Math.cos(time*0.2)*6, Math.cos(time*0.3)*18); 
+                camTargetLook.set(0,0,0); 
+            }
+            else if (vjShot === 1) { 
+                camTargetPos.set(8, -10, 12); 
+                camTargetLook.set(0, 2, 0); 
+            }
+            else if (vjShot === 2) { 
+                camTargetPos.set(Math.sin(time*0.5)*5, 22, Math.cos(time*0.5)*5); 
+                camTargetLook.set(0,0,0); 
+            }
+            else if (vjShot === 3) { 
+                camTargetPos.set(Math.sin(time*0.8)*6.5, 0, Math.cos(time*0.8)*6.5); 
+                camTargetLook.set(0,0,0); 
+            }
+            else if (vjShot === 4) { 
+                const dollyDist = 12 + (tSinceCut * 8); 
+                camTargetPos.set(0, 0, dollyDist); 
+                camTargetLook.set(0,0,0); 
+                targetFov = Math.max(20, 85 - (tSinceCut * 20)); 
+            }
+        } 
         else if (currentCameraMode === 1) { camTargetPos.set(0, 0, 0); camTargetLook.set(Math.sin(time)*5, Math.cos(time*0.8)*5, -10); } 
         else if (currentCameraMode === 2) { camTargetPos.set(Math.sin(time*0.5)*15, 15, Math.cos(time*0.5)*15); camTargetLook.set(0,0,0); } 
         else if (currentCameraMode === 3) { camTargetPos.set(Math.sin(time)*3, Math.cos(time)*3, 5); camTargetLook.set(0,0,0); }
-        camera.position.lerp(camTargetPos, 0.05); const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
-        currentLook.lerp(camTargetLook, 0.1); camera.lookAt(currentLook);
         
-        let nextFov = baseFov - (bassSm * 15);
-        if(isNaN(nextFov)) nextFov = baseFov;
-        camera.fov = THREE.MathUtils.lerp(camera.fov, Math.max(10, Math.min(nextFov, 120)), 0.1);
+        // Dynamic camera panning speed (fast whip-pan on cuts, slow drift otherwise)
+        const lerpSpeed = (currentCameraMode === 0 && (time - vjLastCut) < 0.3) ? 0.15 : 0.05;
+        camera.position.lerp(camTargetPos, lerpSpeed); 
         
-        const shake = snapFlash * 0.3; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
+        const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
+        currentLook.lerp(camTargetLook, lerpSpeed * 2); 
+        camera.lookAt(currentLook);
+        
+        if(isNaN(targetFov)) targetFov = baseFov;
+        camera.fov = THREE.MathUtils.lerp(camera.fov, Math.max(10, Math.min(targetFov, 120)), 0.1);
+        
+        const shake = snapFlash * 0.4; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
         camera.updateProjectionMatrix();
       }
 
@@ -753,7 +795,6 @@ function loop() {
       }
       
       if (bokehPass && world) {
-          // FIX: Added safe fallback to 0
           let baseAperture = bokehAmountEl ? parseFloat(bokehAmountEl.value) : 0;
           if (isNaN(baseAperture)) baseAperture = 0;
           
