@@ -154,7 +154,7 @@ enginePanel.innerHTML = `
         <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
     
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0.30" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
@@ -262,8 +262,8 @@ sigilInput.addEventListener("change", (e) => {
 
 /* ================= CHAPTER SYSTEM ================= */
 const CHAPTERS = {
-  INVOCATION: { trails: 0.15, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
-  POSSESSION: { trails: 0.30, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
+  INVOCATION: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
+  POSSESSION: { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
   ASCENSION:  { trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
 };
 let chapter = "POSSESSION"; let P = CHAPTERS[chapter];
@@ -287,7 +287,7 @@ function loadPreset(slot) {
     if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
     const data = JSON.parse(saved);
     if(panelSensEl) panelSensEl.value = data.sens || "0.1"; 
-    if(trailsEl) trailsEl.value = data.trails || "0.30";
+    if(trailsEl) trailsEl.value = data.trails || "0";
     if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
     if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
@@ -741,8 +741,8 @@ function loop() {
       }
       
       if (afterimagePass) {
-          let dampValue = trailsEl ? parseFloat(trailsEl.value) : 0.30;
-          if (isNaN(dampValue)) dampValue = 0.30;
+          let dampValue = trailsEl ? parseFloat(trailsEl.value) : 0;
+          if (isNaN(dampValue)) dampValue = 0;
           afterimagePass.uniforms['damp'].value = Math.max(0, dampValue - (snapFlash * 0.1));
       }
 
@@ -820,7 +820,6 @@ function loop() {
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
       }
 
-      // FIX: Massive Audio-Reactive Strobe Bloom Logic added here!
       if (bloomPass) {
           const explosiveBass = Math.pow(bassSm, 1.5) * 1.5; 
           const strobeFlash = snapFlash * 2.0; 
