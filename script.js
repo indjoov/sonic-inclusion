@@ -439,7 +439,6 @@ function makeResponsiveMorphingCage() {
 
   baseGeo.morphAttributes.position = [ new THREE.Float32BufferAttribute(cubePositions, 3), new THREE.Float32BufferAttribute(wavePositions, 3), new THREE.Float32BufferAttribute(spikePositions, 3) ];
   
-  // FIX: depthWrite restored to FALSE to completely remove black square occlusion artifacts
   const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
 }
@@ -540,7 +539,6 @@ function loadSigilLayers(url, isCustom = false) {
         sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         
-        // FIX: depthWrite and depthTest restored to FALSE to remove the black box behind the sigil
         const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
         
@@ -716,7 +714,6 @@ function loop() {
           nebulaMaterial.uniforms.color1.value.setHSL(hue, 0.6, 0.08); nebulaMaterial.uniforms.color2.value.setHSL((hue + 0.1)%1, 0.8, 0.2); 
       }
 
-      // FIX: Restored original beautiful camera math. No Auto-VJ whip pans.
       if (!reducedMotion) {
         if (currentCameraMode === 0) { camTargetPos.set(0, 0, 18 - bassSm * 2); camTargetLook.set(0,0,0); } 
         else if (currentCameraMode === 1) { camTargetPos.set(0, 0, 0); camTargetLook.set(Math.sin(time)*5, Math.cos(time*0.8)*5, -10); } 
@@ -823,9 +820,16 @@ function loop() {
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
       }
 
+      // FIX: Massive Audio-Reactive Strobe Bloom Logic added here!
       if (bloomPass) {
-          const targetBloom = P.bloomStrength + (bassSm * 0.15) + (snapFlash * 0.3);
-          bloomPass.strength = isNaN(targetBloom) ? 1.0 : Math.min(targetBloom, 3.0); 
+          const explosiveBass = Math.pow(bassSm, 1.5) * 1.5; 
+          const strobeFlash = snapFlash * 2.0; 
+          
+          const targetBloom = P.bloomStrength + explosiveBass + strobeFlash;
+          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 5.0); 
+
+          const targetRadius = P.bloomRadius + (bassSm * 0.4) + (snapFlash * 0.5);
+          bloomPass.radius = isNaN(targetRadius) ? P.bloomRadius : Math.min(targetRadius, 1.5);
       }
       
       composer.render();
