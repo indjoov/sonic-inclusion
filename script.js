@@ -9,6 +9,8 @@ import { ShaderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postpro
 import { FXAAShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/FXAAShader.js";
 import { GlitchPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/GlitchPass.js";
 import { RGBShiftShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/RGBShiftShader.js";
+// NEW: Import the Afterimage Pass for cinematic Light Trails
+import { AfterimagePass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/AfterimagePass.js";
 
 /* ================= BASIC SETUP ================= */
 
@@ -68,6 +70,8 @@ let audioRecordDest = null;
 let renderer = null; let scene = null; let camera = null; let composer = null;
 let bloomPass = null; let fxaaPass = null; let world = null; let starPoints = null;  
 let morphMesh = null; let coreLight = null; let rgbShiftPass = null; let glitchPass = null;      
+let afterimagePass = null; // NEW: The Light Trails effect
+
 let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 
 let sigilGroup = null; let sigilBase = null; let sigilGlow = null;
@@ -151,6 +155,8 @@ enginePanel.innerHTML = `
         <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
     
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0.85" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
@@ -204,6 +210,7 @@ const hueEl  = enginePanel.querySelector("#hueShift");
 const midiStatusEl = enginePanel.querySelector("#midiStatus");
 const panelSensEl = enginePanel.querySelector("#sens-panel");
 const paletteEl = enginePanel.querySelector("#palette-panel");
+const trailsEl = enginePanel.querySelector("#trailsAmount"); // Reference new slider
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
 const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
@@ -255,15 +262,17 @@ sigilInput.addEventListener("change", (e) => {
 });
 
 /* ================= CHAPTER SYSTEM ================= */
+// NEW: Added trail defaults to chapters
 const CHAPTERS = {
-  INVOCATION: { starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
-  POSSESSION: { starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
-  ASCENSION:  { starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
+  INVOCATION: { trails: 0.65, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
+  POSSESSION: { trails: 0.85, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
+  ASCENSION:  { trails: 0.95, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
 };
 let chapter = "POSSESSION"; let P = CHAPTERS[chapter];
 function applyChapter(name) {
   if (!CHAPTERS[name]) return; chapter = name; P = CHAPTERS[chapter];
   if (bloomPass) { bloomPass.strength = P.bloomStrength; bloomPass.radius = P.bloomRadius; bloomPass.threshold = P.bloomThreshold; }
+  if (trailsEl) trailsEl.value = P.trails; // Apply trail setting for chapter
   setStatus(`🔮 Chapter: ${chapter}`);
 }
 enginePanel.querySelector("#chapInv").addEventListener("click", () => applyChapter("INVOCATION"));
@@ -272,7 +281,7 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 
 /* ================= PRESET SYSTEM ================= */
 function savePreset(slot) {
-    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, chapter: chapter };
+    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, chapter: chapter, trails: trailsEl?.value };
     localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Preset ${slot} Saved`);
 }
 function loadPreset(slot) {
@@ -280,6 +289,7 @@ function loadPreset(slot) {
     if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
     const data = JSON.parse(saved);
     if(panelSensEl) panelSensEl.value = data.sens || "0.1"; 
+    if(trailsEl) trailsEl.value = data.trails || "0.85";
     if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
     if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
@@ -365,7 +375,13 @@ function initThree() {
   initRings(); initGhosts(); initSparks(); loadSigilLayers("media/indjoov-sigil.svg", false);
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
-  composer = new EffectComposer(renderer, rt); composer.addPass(new RenderPass(scene, camera));
+  composer = new EffectComposer(renderer, rt); 
+  composer.addPass(new RenderPass(scene, camera));
+  
+  // NEW: Add the Afterimage Pass right after rendering the raw scene to create cinematic light streaks
+  afterimagePass = new AfterimagePass();
+  composer.addPass(afterimagePass);
+
   const rect = (stageEl || canvas).getBoundingClientRect();
   bloomPass = new UnrealBloomPass(new THREE.Vector2(Math.max(1, rect.width), Math.max(1, rect.height)), 1.0, 0.55, 0.12);
   composer.addPass(bloomPass);
@@ -719,6 +735,14 @@ function loop() {
         coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
         const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
         if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
+      }
+      
+      // NEW: Update the Afterimage Pass dynamically based on the slider
+      if (afterimagePass) {
+          let dampValue = trailsEl ? parseFloat(trailsEl.value) : 0.85;
+          if (isNaN(dampValue)) dampValue = 0.85;
+          // Temporarily drop dampening on massive snare hits to prevent pure white-outs
+          afterimagePass.uniforms['damp'].value = Math.max(0, dampValue - (snapFlash * 0.1));
       }
 
       if (rgbShiftPass) rgbShiftPass.uniforms['amount'].value = THREE.MathUtils.lerp(rgbShiftPass.uniforms['amount'].value, 0.0015 + (bassSm * 0.01) + (snapFlash * 0.02), 0.1);
