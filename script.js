@@ -10,7 +10,6 @@ import { FXAAShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders
 import { GlitchPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/GlitchPass.js";
 import { RGBShiftShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/RGBShiftShader.js";
 import { AfterimagePass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/AfterimagePass.js";
-import { BokehPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/BokehPass.js";
 
 /* ================= BASIC SETUP ================= */
 
@@ -71,7 +70,6 @@ let renderer = null; let scene = null; let camera = null; let composer = null;
 let bloomPass = null; let fxaaPass = null; let world = null; let starPoints = null;  
 let morphMesh = null; let coreLight = null; let rgbShiftPass = null; let glitchPass = null;      
 let afterimagePass = null; 
-let bokehPass = null; 
 
 let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 
@@ -82,11 +80,7 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
-// Auto-VJ Variables
-let currentCameraMode = 0; 
-let vjShot = 0; 
-let vjLastCut = 0;
-
+let currentCameraMode = 0;
 const camTargetPos = new THREE.Vector3();
 const camTargetLook = new THREE.Vector3();
 
@@ -160,7 +154,6 @@ enginePanel.innerHTML = `
         <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
     
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#ff2d55; font-weight:bold;">CINEMATIC BLUR<input id="bokehAmount" type="range" min="0" max="0.03" step="0.001" value="0" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0.30" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
@@ -217,7 +210,6 @@ const midiStatusEl = enginePanel.querySelector("#midiStatus");
 const panelSensEl = enginePanel.querySelector("#sens-panel");
 const paletteEl = enginePanel.querySelector("#palette-panel");
 const trailsEl = enginePanel.querySelector("#trailsAmount"); 
-const bokehAmountEl = enginePanel.querySelector("#bokehAmount");
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
 const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
@@ -270,16 +262,15 @@ sigilInput.addEventListener("change", (e) => {
 
 /* ================= CHAPTER SYSTEM ================= */
 const CHAPTERS = {
-  INVOCATION: { bokeh: 0, trails: 0.15, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
-  POSSESSION: { bokeh: 0, trails: 0.30, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
-  ASCENSION:  { bokeh: 0.015, trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
+  INVOCATION: { trails: 0.15, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
+  POSSESSION: { trails: 0.30, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
+  ASCENSION:  { trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
 };
 let chapter = "POSSESSION"; let P = CHAPTERS[chapter];
 function applyChapter(name) {
   if (!CHAPTERS[name]) return; chapter = name; P = CHAPTERS[chapter];
   if (bloomPass) { bloomPass.strength = P.bloomStrength; bloomPass.radius = P.bloomRadius; bloomPass.threshold = P.bloomThreshold; }
   if (trailsEl) trailsEl.value = P.trails; 
-  if (bokehAmountEl) bokehAmountEl.value = P.bokeh;
   setStatus(`🔮 Chapter: ${chapter}`);
 }
 enginePanel.querySelector("#chapInv").addEventListener("click", () => applyChapter("INVOCATION"));
@@ -288,7 +279,7 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 
 /* ================= PRESET SYSTEM ================= */
 function savePreset(slot) {
-    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, chapter: chapter, trails: trailsEl?.value, bokeh: bokehAmountEl?.value };
+    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, chapter: chapter, trails: trailsEl?.value };
     localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Preset ${slot} Saved`);
 }
 function loadPreset(slot) {
@@ -297,7 +288,6 @@ function loadPreset(slot) {
     const data = JSON.parse(saved);
     if(panelSensEl) panelSensEl.value = data.sens || "0.1"; 
     if(trailsEl) trailsEl.value = data.trails || "0.30";
-    if(bokehAmountEl) bokehAmountEl.value = data.bokeh || "0";
     if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
     if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
@@ -310,7 +300,7 @@ window.addEventListener("keydown", async (e) => {
   
   if (e.key.toLowerCase() === "c") {
       currentCameraMode = (currentCameraMode + 1) % 4;
-      setStatus(`🎥 Camera Mode: ${currentCameraMode === 0 ? "Auto-VJ (Dynamic)" : "Manual " + currentCameraMode}`);
+      setStatus(`🎥 Camera Mode: ${currentCameraMode + 1}`);
   }
 
   if (["1", "2", "3", "4"].includes(e.key)) {
@@ -386,20 +376,10 @@ function initThree() {
   composer = new EffectComposer(renderer, rt); 
   composer.addPass(new RenderPass(scene, camera));
   
-  const rect = (stageEl || canvas).getBoundingClientRect();
-
-  bokehPass = new BokehPass(scene, camera, {
-      focus: 18.0, 
-      aperture: 0.0,
-      maxblur: 0.01,
-      width: rect.width,
-      height: rect.height
-  });
-  composer.addPass(bokehPass);
-  
   afterimagePass = new AfterimagePass();
   composer.addPass(afterimagePass);
 
+  const rect = (stageEl || canvas).getBoundingClientRect();
   bloomPass = new UnrealBloomPass(new THREE.Vector2(Math.max(1, rect.width), Math.max(1, rect.height)), 1.0, 0.55, 0.12);
   composer.addPass(bloomPass);
 
@@ -458,8 +438,9 @@ function makeResponsiveMorphingCage() {
   }
 
   baseGeo.morphAttributes.position = [ new THREE.Float32BufferAttribute(cubePositions, 3), new THREE.Float32BufferAttribute(wavePositions, 3), new THREE.Float32BufferAttribute(spikePositions, 3) ];
-  // FIX: depthWrite set to TRUE so the camera can focus perfectly on the Cage!
-  const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: true, side: THREE.DoubleSide });
+  
+  // FIX: depthWrite restored to FALSE to completely remove black square occlusion artifacts
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
 }
 
@@ -559,8 +540,8 @@ function loadSigilLayers(url, isCustom = false) {
         sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         
-        // FIX: depthWrite AND depthTest set to TRUE so the ink stays perfectly in focus!
-        const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: true, depthTest: true, blending: THREE.NormalBlending, side: THREE.DoubleSide });
+        // FIX: depthWrite and depthTest restored to FALSE to remove the black box behind the sigil
+        const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
         
         sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
@@ -725,11 +706,6 @@ function loop() {
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
           if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
-          
-          if (currentCameraMode === 0 && Math.random() > 0.6 && (time - vjLastCut) > 2.5) {
-              vjShot = Math.floor(Math.random() * 5);
-              vjLastCut = time;
-          }
         }
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
@@ -740,45 +716,20 @@ function loop() {
           nebulaMaterial.uniforms.color1.value.setHSL(hue, 0.6, 0.08); nebulaMaterial.uniforms.color2.value.setHSL((hue + 0.1)%1, 0.8, 0.2); 
       }
 
+      // FIX: Restored original beautiful camera math. No Auto-VJ whip pans.
       if (!reducedMotion) {
-        let targetFov = baseFov - (bassSm * 15);
-        
-        if (currentCameraMode === 0) {
-            const tSinceCut = time - vjLastCut;
-            if (vjShot === 0) { 
-                camTargetPos.set(Math.sin(time*0.3)*18, Math.cos(time*0.2)*6, Math.cos(time*0.3)*18); 
-                camTargetLook.set(0,0,0); 
-            }
-            else if (vjShot === 1) { 
-                camTargetPos.set(8, -10, 12); 
-                camTargetLook.set(0, 2, 0); 
-            }
-            else if (vjShot === 2) { 
-                camTargetPos.set(Math.sin(time*0.5)*5, 22, Math.cos(time*0.5)*5); 
-                camTargetLook.set(0,0,0); 
-            }
-            else if (vjShot === 3) { 
-                camTargetPos.set(Math.sin(time*0.8)*6.5, 0, Math.cos(time*0.8)*6.5); 
-                camTargetLook.set(0,0,0); 
-            }
-            else if (vjShot === 4) { 
-                const dollyDist = 12 + (tSinceCut * 8); 
-                camTargetPos.set(0, 0, dollyDist); 
-                camTargetLook.set(0,0,0); 
-                targetFov = Math.max(20, 85 - (tSinceCut * 20)); 
-            }
-        } 
+        if (currentCameraMode === 0) { camTargetPos.set(0, 0, 18 - bassSm * 2); camTargetLook.set(0,0,0); } 
         else if (currentCameraMode === 1) { camTargetPos.set(0, 0, 0); camTargetLook.set(Math.sin(time)*5, Math.cos(time*0.8)*5, -10); } 
         else if (currentCameraMode === 2) { camTargetPos.set(Math.sin(time*0.5)*15, 15, Math.cos(time*0.5)*15); camTargetLook.set(0,0,0); } 
         else if (currentCameraMode === 3) { camTargetPos.set(Math.sin(time)*3, Math.cos(time)*3, 5); camTargetLook.set(0,0,0); }
         
-        const lerpSpeed = (currentCameraMode === 0 && (time - vjLastCut) < 0.3) ? 0.15 : 0.05;
-        camera.position.lerp(camTargetPos, lerpSpeed); 
+        camera.position.lerp(camTargetPos, 0.05); 
         
         const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
-        currentLook.lerp(camTargetLook, lerpSpeed * 2); 
+        currentLook.lerp(camTargetLook, 0.1); 
         camera.lookAt(currentLook);
         
+        let targetFov = baseFov - (bassSm * 15);
         if(isNaN(targetFov)) targetFov = baseFov;
         camera.fov = THREE.MathUtils.lerp(camera.fov, Math.max(10, Math.min(targetFov, 120)), 0.1);
         
@@ -790,16 +741,6 @@ function loop() {
         coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
         const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
         if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
-      }
-      
-      if (bokehPass && world) {
-          let baseAperture = bokehAmountEl ? parseFloat(bokehAmountEl.value) : 0;
-          if (isNaN(baseAperture)) baseAperture = 0;
-          
-          const dist = camera.position.distanceTo(world.position);
-          bokehPass.uniforms['focus'].value = THREE.MathUtils.lerp(bokehPass.uniforms['focus'].value, dist, 0.1);
-          bokehPass.uniforms['aperture'].value = baseAperture + (snapFlash * 0.02) + (bassSm * 0.01);
-          bokehPass.uniforms['maxblur'].value = 0.01 + (bassSm * 0.005);
       }
       
       if (afterimagePass) {
