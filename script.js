@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { AudioEngine } from "./audio/AudioEngine.js";
-// NEW: Import TensorFlow.js for Audio
+
+// AI Imports (TensorFlow.js)
 import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.es2017.js';
 import * as speechCommands from 'https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.es2017.js';
 
@@ -69,13 +70,13 @@ let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
 let audioRecordDest = null;
 
-// NEW: AI State
+// AI State
 let recognizer = null;
 let isAiListening = false;
 let aiLabel = "--";
-let aiConfidence = 0;
+let aiEnabled = false;
 
-// Analysis State
+// Pitch Detection State
 const NOTE_STRINGS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 let frameCounter = 0; 
 
@@ -87,14 +88,14 @@ let afterimagePass = null;
 let nebulaMaterial = null;
 
 let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
-let starGeo = null; 
+let starGeo = null; // Defined globally to prevent crash
 let sigilGroup = null; let sigilBase = null; let sigilGlow = null;
+let sigilBaseTex = null; let sigilGlowTex = null;
 let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 let hapticsEnabled = false;
 let tunerEnabled = false; 
-let aiEnabled = false; // Toggle for TensorFlow
 let lastVibration = 0;
 
 let currentCameraMode = 0;
@@ -145,7 +146,7 @@ async function initEngine() {
     audioRecordDest = engine.ctx.createMediaStreamDestination();
     try { engine.master.connect(audioRecordDest); } catch (e) {}
 
-    // Initialize TensorFlow (Async background load)
+    // Load AI in background
     initTensorFlow();
 
     setStatus("✅ Ready");
@@ -158,12 +159,11 @@ async function initEngine() {
 
 overlay.addEventListener("click", () => { initEngine(); });
 
-/* ================= TENSORFLOW.JS (THE BRAIN) ================= */
+/* ================= TENSORFLOW AI ================= */
 
 async function initTensorFlow() {
     console.log("Loading AI Model...");
     try {
-        // Load the speech commands model (LIGHTWEIGHT VERSION)
         recognizer = speechCommands.create('BROWSER_FFT');
         await recognizer.ensureModelLoaded();
         console.log("AI Model Loaded");
@@ -176,30 +176,23 @@ async function startAiListening() {
     if (!recognizer) return;
     if (isAiListening) return;
     
-    // Start listening. This will run in the background.
+    setStatus("🧠 AI Listening...");
     recognizer.listen(result => {
-        const scores = result.scores; // Probability array
-        const labels = recognizer.wordLabels(); // ["background_noise", "unknown", "down", "eight", ...]
-        
-        // Find the highest score
+        const scores = result.scores; 
+        const labels = recognizer.wordLabels();
         const maxScoreIndex = scores.indexOf(Math.max(...scores));
         const label = labels[maxScoreIndex];
         
-        // Simple logic: Is it noise or speech?
         if (label === '_background_noise_') {
             aiLabel = "NOISE";
-            aiConfidence = scores[maxScoreIndex];
         } else {
-            // Any recognized word (one, two, yes, no) or "unknown" counts as speech
-            aiLabel = "SPEECH";
-            aiConfidence = scores[maxScoreIndex];
+            aiLabel = "SPEECH DETECTED"; // Any word triggers speech
         }
-        
     }, {
         includeSpectrogram: false,
-        probabilityThreshold: 0.75, // Only trigger if 75% sure
+        probabilityThreshold: 0.75,
         invokeCallbackOnNoiseAndUnknown: true,
-        overlapFactor: 0.50 // Tradeoff: Higher = faster but heavier CPU
+        overlapFactor: 0.50
     });
     isAiListening = true;
 }
@@ -209,9 +202,9 @@ function stopAiListening() {
         recognizer.stopListening();
         isAiListening = false;
         aiLabel = "--";
+        setStatus("🧠 AI Stopped");
     }
 }
-
 
 /* ================= UI CREATION ================= */
 
@@ -223,7 +216,7 @@ function createTunerUI() {
     tunerEl.id = "si-tuner";
     tunerEl.style.cssText = `
         position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%);
-        width: 220px; text-align: center;
+        width: 260px; text-align: center;
         z-index: 1000; pointer-events: none;
         font-family: 'Rajdhani', sans-serif; 
         opacity: 0; transition: opacity 0.3s ease;
@@ -240,7 +233,7 @@ function createTunerUI() {
             <div style="position: absolute; left: 50%; top:0; bottom:0; width: 1px; background: #fff; opacity: 0.3;"></div>
         </div>
 
-        <div id="ai-display" style="margin-top: 15px; font-size: 14px; font-weight: bold; color: #ffeb3b; text-shadow: 0 0 10px #ffeb3b; display:none;">
+        <div id="ai-display" style="margin-top: 15px; font-size: 16px; font-weight: bold; color: #ffeb3b; text-shadow: 0 0 10px #ffeb3b; display:none; border-top: 1px solid rgba(255,235,59,0.3); padding-top: 8px;">
             AI: <span id="ai-text">--</span>
         </div>
     `;
@@ -302,7 +295,6 @@ function createEnginePanel() {
     enginePanel.id = "si-enginePanel";
     enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-    // Added AI Checkbox
     enginePanel.innerHTML = `
       <div class="panel-header" style="width: 100%; box-sizing: border-box;">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -621,7 +613,7 @@ function fireSparks(intensity, sourceMesh) {
   }
 }
 
-/* ================= AUDIO ANALYSIS (TUNER) ================= */
+/* ================= AUDIO ANALYSIS (OPTIMIZED AUTOCORRELATION) ================= */
 function autoCorrelate(buf, sampleRate) {
   const SIZE = buf.length; const MIN_SAMPLES = 0; const MAX_SAMPLES = Math.floor(SIZE / 2);
   let best_offset = -1; let best_correlation = 0; let rms = 0;
@@ -709,7 +701,7 @@ function loop() {
         const aiTextEl = document.getElementById("ai-text");
         if(aiEnabled && aiTextEl) {
             aiTextEl.textContent = aiLabel;
-            if(aiLabel === "SPEECH") aiTextEl.style.color = "#00ff88";
+            if(aiLabel === "SPEECH DETECTED") aiTextEl.style.color = "#00ff88";
             else aiTextEl.style.color = "#ffeb3b";
         }
 
@@ -874,81 +866,7 @@ function loop() {
   }
 }
 
-/* ================= UTILS ================= */
-async function stopAll({ suspend = true } = {}) {
-  if (bufferSrc) { try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {} bufferSrc = null; }
-  if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
-  if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
-  currentMode = "idle"; 
-  const panelMicBtn = document.getElementById("panel-micBtn");
-  if (panelMicBtn) { panelMicBtn.style.background = ""; panelMicBtn.style.borderColor = ""; }
-  feedbackMuted = false; 
-  if (monitorGain) monitorGain.gain.value = 0;
-  if (suspend && engine && engine.ctx) try { await engine.ctx.suspend(); } catch {}
-}
-
-/* ================= HELPERS ================= */
-function loadSigilLayers(url, isCustom = false) {
-  if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; } 
-  fetch(url).then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); }).then(data => {
-      const img = new Image(); img.crossOrigin = "anonymous";
-      img.onload = () => {
-        const size = 1024; const base = document.createElement("canvas"); base.width = size; base.height = size;
-        const ctx = base.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, size, size);
-        const scale = Math.min(size / img.width, size / img.height); const w = img.width * scale, h = img.height * scale;
-        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        const imgData = ctx.getImageData(0, 0, size, size); const d = imgData.data; const thr = 245;
-        for (let i = 0; i < d.length; i += 4) { if (d[i] >= thr && d[i + 1] >= thr && d[i + 2] >= thr) d[i + 3] = 0; }
-        ctx.putImageData(imgData, 0, 0);
-        const glow = document.createElement("canvas"); glow.width = size; glow.height = size; const gctx = glow.getContext("2d");
-        gctx.filter = "blur(10px)"; gctx.globalAlpha = 1; gctx.drawImage(base, 0, 0); gctx.filter = "blur(22px)"; gctx.globalAlpha = 0.85; gctx.drawImage(base, 0, 0); gctx.filter = "none";
-        sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
-        const plane = new THREE.PlaneGeometry(6.9, 6.9);
-        
-        const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
-        const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-        
-        sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
-        
-        sigilGroup = new THREE.Group(); 
-        sigilGroup.add(sigilGlow, sigilBase); 
-        
-        scene.add(sigilGroup); 
-        setStatus("✅ Sigil loaded");
-        if(isCustom) URL.revokeObjectURL(url);
-      };
-      if (isCustom) { img.src = URL.createObjectURL(data); } else { img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`; }
-    }).catch(() => setStatus("⚠️ Sigil fetch failed"));
-}
-
-function initNebulaBackground() {
-    const geo = new THREE.PlaneGeometry(500, 500);
-    nebulaMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-            time: { value: 0 }, bass: { value: 0 }, color1: { value: new THREE.Color(0x0a001a) }, color2: { value: new THREE.Color(0x002233) }  
-        },
-        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-        fragmentShader: `
-            uniform float time; uniform float bass; uniform vec3 color1; uniform vec3 color2; varying vec2 vUv;
-            float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
-            float noise(vec2 st) {
-                vec2 i = floor(st); vec2 f = fract(st); float a = random(i); float b = random(i + vec2(1.0, 0.0)); float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
-                vec2 u = f * f * (3.0 - 2.0 * f); return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-            }
-            float fbm(vec2 st) { float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(st); st *= 2.0; a *= 0.5; } return v; }
-            void main() {
-                vec2 st = vUv * 3.0; vec2 q = vec2(0.); q.x = fbm( st + 0.00 * time); q.y = fbm( st + vec2(1.0));
-                vec2 r = vec2(0.); r.x = fbm( st + 1.0*q + vec2(1.7,9.2)+ 0.15*time ); r.y = fbm( st + 1.0*q + vec2(8.3,2.8)+ 0.126*time);
-                float f = fbm(st+r); vec3 finalColor = mix(color1, color2, clamp(f*f*4.0,0.0,1.0));
-                gl_FragColor = vec4((f*f*f+.6*f*f+.5*f)*finalColor, 1.0);
-            }
-        `,
-        depthWrite: false
-    });
-    const mesh = new THREE.Mesh(geo, nebulaMaterial); mesh.position.z = -100; scene.add(mesh);
-}
-
-// Media Recording logic
+/* ================= RECORDING ================= */
 let mediaRecorder = null, recordedChunks = [], recording = false;
 function pickMime() { const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]; for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ""; }
 function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -998,5 +916,4 @@ function stopRecording() {
 
 fileInput.addEventListener("change", async (e) => {
   if (!engine) await initEngine();
-  // logic handled in createEnginePanel listener now
 });
