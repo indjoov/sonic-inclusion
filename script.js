@@ -59,14 +59,13 @@ document.body.appendChild(overlay);
 /* ================= ENGINE (AUDIO) ================= */
 
 const engine = new AudioEngine();
-let raf = null; let analyser = null; let dataFreq = null; let dataTime = null;
+let raf = null; let analyser = null; let dataFreq = null;
 let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
 let audioRecordDest = null;
 
-// Synesthesia State (Kept for HUD, but detached from visuals by default)
-const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-let detectedNoteName = "--";
+// Lightweight Analysis State
+let brightness = 0; 
 
 /* ================= THREE STATE ================= */
 
@@ -127,7 +126,7 @@ function createHUD() {
             <div id="hud-texture" style="font-weight:bold; letter-spacing:1px; color:#fff;">--</div>
         </div>
         <div style="text-align:right;">
-            <div style="opacity:0.5; font-size:9px;">PITCH</div>
+            <div style="opacity:0.5; font-size:9px;">TONE</div>
             <div id="hud-pitch" style="font-weight:bold; color:#ff2d55;">--</div>
         </div>
     `;
@@ -170,7 +169,6 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-// FIX: Set default Color Mode back to "hue" (Single Color)
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -213,7 +211,6 @@ enginePanel.innerHTML = `
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">COLOR MODE
         <select id="palette-panel" style="width:100%; margin-top:6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2);">
             <option value="hue" selected>Hue (Single Color)</option>
-            <option value="synesthesia">Synesthesia (Pitch)</option>
             <option value="energy">Hue by energy</option>
             <option value="grayscale">High-contrast grayscale</option>
         </select>
@@ -321,7 +318,7 @@ sigilInput.addEventListener("change", (e) => {
 });
 
 /* ================= CHAPTER SYSTEM ================= */
-// FIX: Dramatically reduced bloom/glow defaults for clarity
+// FIX: Restored the sharp, clean, low-bloom settings
 const CHAPTERS = {
   INVOCATION: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.25, glowBass: 0.20, glowSnap: 0.40, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.40, bloomRadius: 0.35, bloomThreshold: 0.25 },
   POSSESSION: { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.35, glowBass: 0.35, glowSnap: 0.60, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.20 },
@@ -405,7 +402,7 @@ function initNebulaBackground() {
                 vec2 r = vec2(0.); r.x = fbm( st + 1.0*q + vec2(1.7,9.2)+ 0.15*time ); r.y = fbm( st + 1.0*q + vec2(8.3,2.8)+ 0.126*time);
                 float f = fbm(st+r); vec3 finalColor = mix(color1, color2, clamp(f*f*4.0,0.0,1.0));
                 
-                // FIX: Removed bass impact from background color to keep it dark
+                // FIX: Restored Dark Void Background
                 gl_FragColor = vec4((f*f*f+.6*f*f+.5*f)*finalColor, 1.0);
             }
         `,
@@ -651,7 +648,6 @@ async function initEngine() {
 
     analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     dataFreq = new Uint8Array(analyser.frequencyBinCount);
-    dataTime = new Float32Array(analyser.fftSize);
 
     inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
     inputGain.connect(analyser); inputGain.connect(monitorGain); monitorGain.connect(engine.master);
@@ -727,33 +723,23 @@ enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) =
   } catch (err) { setStatus("❌ Mic error"); console.error(err); await stopAll({ suspend: true }); }
 });
 
-/* ================= AUDIO ANALYSIS (PITCH DETECTION) ================= */
-function autoCorrelate(buf, sampleRate) {
-  let SIZE = buf.length; let MAX_SAMPLES = Math.floor(SIZE/2);
-  let best_offset = -1; let best_correlation = 0; let rms = 0; let foundGoodCorrelation = false;
-  let correlations = new Array(MAX_SAMPLES);
-
-  for (let i=0; i<SIZE; i++) { let val = buf[i]; rms += val*val; }
-  rms = Math.sqrt(rms/SIZE);
-  if (rms < 0.01) return -1; // Signal too quiet
-
-  let lastCorrelation = 1;
-  for (let offset = 0; offset < MAX_SAMPLES; offset++) {
-    let correlation = 0;
-    for (let i=0; i<MAX_SAMPLES; i++) { correlation += Math.abs((buf[i])-(buf[i+offset])); }
-    correlation = 1 - (correlation/MAX_SAMPLES);
-    correlations[offset] = correlation; 
-    if ((correlation>0.9) && (correlation > lastCorrelation)) {
-      foundGoodCorrelation = true;
-      if (correlation > best_correlation) { best_correlation = correlation; best_offset = offset; }
-    } else if (foundGoodCorrelation) {
-      let shift = (correlations[best_offset+1] - correlations[best_offset-1])/correlations[best_offset];  
-      return sampleRate/(best_offset+(8*shift));
+/* ================= AUDIO ANALYSIS ================= */
+// REPLACED HEAVY PITCH DETECTION WITH LIGHTWEIGHT FREQUENCY CENTROID
+function getSpectralCentroid(freqData, sampleRate, fftSize) {
+    let numerator = 0;
+    let denominator = 0;
+    const binSize = sampleRate / fftSize;
+    
+    // Only analyze the relevant range (0 - 5kHz)
+    const maxBin = Math.floor(5000 / binSize);
+    
+    for (let i = 0; i < maxBin; i++) {
+        numerator += i * freqData[i];
+        denominator += freqData[i];
     }
-    lastCorrelation = correlation;
-  }
-  if (best_correlation > 0.01) return sampleRate/best_offset;
-  return -1;
+    
+    if (denominator === 0) return 0;
+    return (numerator / denominator) * binSize;
 }
 
 function hzToBin(hz) { if (!engine?.ctx || !analyser) return 0; const nyquist = engine.ctx.sampleRate / 2; const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1)); return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx)); }
@@ -780,7 +766,6 @@ function loop() {
 
       if (analyser && dataFreq) {
         analyser.getByteFrequencyData(dataFreq);
-        analyser.getFloatTimeDomainData(dataTime);
         
         let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.1;
         if (isNaN(rawSens)) rawSens = 0.1;
@@ -793,20 +778,11 @@ function loop() {
         bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
         
-        // PITCH & NOTE DETECTION
-        const pitch = autoCorrelate(dataTime, engine.ctx.sampleRate);
-        if (pitch !== -1 && pitch > 50 && pitch < 2000) {
-            const noteNum = 12 * (Math.log(pitch / 440) / Math.log(2)) + 69;
-            const noteIndex = Math.round(noteNum) % 12;
-            currentHueTarget = noteIndex / 12.0; 
-            detectedNoteName = NOTE_NAMES[noteIndex] || "--"; // Store note name
-        } else {
-            detectedNoteName = "--";
+        // Lightweight brightness detection
+        const centroid = getSpectralCentroid(dataFreq, engine.ctx.sampleRate, analyser.fftSize);
+        if (centroid > 0) {
+            brightness = brightness * 0.9 + centroid * 0.1; // Smooth it out
         }
-        
-        const hueDiff = currentHueTarget - currentHue;
-        if (Math.abs(hueDiff) > 0.5) { currentHue += (hueDiff > 0 ? 1 : -1) * 0.02; } else { currentHue += hueDiff * 0.05; }
-        currentHue = (currentHue + 1) % 1; 
 
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
@@ -818,16 +794,14 @@ function loop() {
           }
         }
         
-        // UPDATE HUD TEXT
+        // UPDATE HUD TEXT (Optimized)
         if (hudSignal) {
             let signalText = "SILENCE";
             let signalColor = "#555";
             if (bassSm > 0.8) { signalText = "PEAKING"; signalColor = "#ff2d55"; }
             else if (bassSm > 0.2) { signalText = "OPTIMAL"; signalColor = "#00d4ff"; }
             else if (bassSm > 0.01) { signalText = "LOW"; signalColor = "#00d4ff"; }
-            
             if (snapFlash > 0.5) { signalText = "IMPULSE"; signalColor = "#fff"; }
-            
             hudSignal.textContent = signalText;
             hudSignal.style.color = signalColor;
         }
@@ -842,28 +816,31 @@ function loop() {
         }
         
         if (hudPitch) {
-            hudPitch.textContent = detectedNoteName === "--" ? "--" : `DETECTED [${detectedNoteName}]`;
-            hudPitch.style.color = detectedNoteName === "--" ? "#555" : `hsl(${currentHue * 360}, 100%, 70%)`;
+            // Mapping "Brightness" to descriptive words instead of musical notes (faster)
+            let tone = "--";
+            if (brightness > 2000) tone = "HIGH";
+            else if (brightness > 500) tone = "MID";
+            else if (brightness > 100) tone = "LOW";
+            hudPitch.textContent = tone;
+            hudPitch.style.color = "#00d4ff";
         }
 
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
-      // FIX: Default mode back to "hue" (Single Color Slow Drift)
+      // RESTORED: Beautiful Single Color Slow Drift
       const mode = paletteEl?.value || "hue";
       let finalHue = 0; let finalSat = 0.75; let finalLum = 0.55;
 
       if (mode === "grayscale") { finalHue = 0; finalSat = 0; finalLum = 0.8; } 
       else if (mode === "energy") { finalHue = (0.6 + bassSm * 0.4) % 1; finalSat = 0.9; } 
-      else if (mode === "synesthesia") { finalHue = currentHue; finalSat = 0.85; finalLum = 0.6; } 
-      else { const sliderHue = hueEl ? parseFloat(hueEl.value) : 280; finalHue = ((sliderHue % 360) / 360) + (Math.sin(time * 0.05) * 0.05); } // Slower drift
+      else { const sliderHue = hueEl ? parseFloat(hueEl.value) : 280; finalHue = ((sliderHue % 360) / 360) + (Math.sin(time * 0.05) * 0.05); } 
 
       if (nebulaMaterial) {
           nebulaMaterial.uniforms.time.value = time * 0.2; nebulaMaterial.uniforms.bass.value = bassSm;
-          // FIX: Detached nebula color from pitch so it stays dark/moody
-          const fogHue = (time * 0.02) % 1; 
-          nebulaMaterial.uniforms.color1.value.setHSL(fogHue, 0.6, 0.05); 
-          nebulaMaterial.uniforms.color2.value.setHSL((fogHue + 0.1)%1, 0.5, 0.15); 
+          // RESTORED: Dark Void Background
+          nebulaMaterial.uniforms.color1.value.setHSL(finalHue, 0.6, 0.02); // Almost black
+          nebulaMaterial.uniforms.color2.value.setHSL((finalHue + 0.1)%1, 0.5, 0.12); // Very dark blue
       }
 
       if (!reducedMotion) {
@@ -884,7 +861,7 @@ function loop() {
       }
 
       if (coreLight) {
-        // FIX: Reduced intensity so it doesn't wash out the wireframe
+        // RESTORED: Gentle lighting intensity
         coreLight.intensity = Math.min((bassSm * 30) + (snapFlash * 50), 120); 
         if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL(finalHue, 0.9, 0.5); }
       }
@@ -983,12 +960,10 @@ function loop() {
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
       }
 
-      // FIX: Heavily Tamed Audio-Reactive Bloom
-      // Removed "explosiveBass" and "strobeFlash" multipliers to stop the whiteout.
+      // RESTORED: Subtle bloom settings from previous version
       if (bloomPass) {
-          const targetBloom = P.bloomStrength + (bassSm * 0.5); // Much gentler reaction
-          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 2.0); // Cap at 2.0 max
-
+          const targetBloom = P.bloomStrength + (bassSm * 0.5); 
+          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 2.0); 
           const targetRadius = P.bloomRadius + (bassSm * 0.2);
           bloomPass.radius = isNaN(targetRadius) ? P.bloomRadius : Math.min(targetRadius, 1.0);
       }
