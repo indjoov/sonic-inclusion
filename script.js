@@ -64,10 +64,8 @@ let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
 let audioRecordDest = null;
 
-// Synesthesia State
+// Synesthesia State (Kept for HUD, but detached from visuals by default)
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-let currentHueTarget = 0;
-let currentHue = 0;
 let detectedNoteName = "--";
 
 /* ================= THREE STATE ================= */
@@ -119,7 +117,6 @@ function createHUD() {
         pointer-events: none; backdrop-filter: blur(4px); box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     `;
     
-    // Three columns: Signal, Texture, Pitch
     hudEl.innerHTML = `
         <div style="text-align:left;">
             <div style="opacity:0.5; font-size:9px;">SIGNAL</div>
@@ -136,7 +133,6 @@ function createHUD() {
     `;
     document.body.appendChild(hudEl);
 }
-// Initialize HUD immediately
 createHUD();
 
 const hudSignal = document.getElementById("hud-signal");
@@ -174,6 +170,7 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
+// FIX: Set default Color Mode back to "hue" (Single Color)
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -215,8 +212,8 @@ enginePanel.innerHTML = `
     
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">COLOR MODE
         <select id="palette-panel" style="width:100%; margin-top:6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2);">
-            <option value="synesthesia" selected>Synesthesia (Pitch)</option>
-            <option value="hue">Hue by pitch</option>
+            <option value="hue" selected>Hue (Single Color)</option>
+            <option value="synesthesia">Synesthesia (Pitch)</option>
             <option value="energy">Hue by energy</option>
             <option value="grayscale">High-contrast grayscale</option>
         </select>
@@ -295,7 +292,7 @@ function toggleFullscreen() {
     document.querySelector('.site-header')?.style.setProperty('display', 'none'); 
     document.querySelector('.site-footer')?.style.setProperty('display', 'none');
     hud.style.display = 'none'; 
-    document.getElementById("si-semantic-hud").style.bottom = "12px"; // Lower HUD in fullscreen
+    document.getElementById("si-semantic-hud").style.bottom = "12px"; 
     setEngineOpen(false);
     
     stageEl.classList.add('fullscreen-active');
@@ -307,7 +304,7 @@ function resetUI() {
   document.querySelector('.site-header')?.style.setProperty('display', 'block'); 
   document.querySelector('.site-footer')?.style.setProperty('display', 'block');
   hud.style.display = 'flex'; 
-  document.getElementById("si-semantic-hud").style.bottom = "24px"; // Raise HUD
+  document.getElementById("si-semantic-hud").style.bottom = "24px"; 
   
   stageEl.classList.remove('fullscreen-active');
   document.body.style.overflow = "auto"; 
@@ -324,10 +321,11 @@ sigilInput.addEventListener("change", (e) => {
 });
 
 /* ================= CHAPTER SYSTEM ================= */
+// FIX: Dramatically reduced bloom/glow defaults for clarity
 const CHAPTERS = {
-  INVOCATION: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
-  POSSESSION: { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
-  ASCENSION:  { trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
+  INVOCATION: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.25, glowBass: 0.20, glowSnap: 0.40, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.40, bloomRadius: 0.35, bloomThreshold: 0.25 },
+  POSSESSION: { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.35, glowBass: 0.35, glowSnap: 0.60, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.20 },
+  ASCENSION:  { trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.45, glowBass: 0.55, glowSnap: 0.75, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 0.85, bloomRadius: 0.55, bloomThreshold: 0.15 },
 };
 let chapter = "POSSESSION"; let P = CHAPTERS[chapter];
 function applyChapter(name) {
@@ -406,7 +404,8 @@ function initNebulaBackground() {
                 vec2 st = vUv * 3.0; vec2 q = vec2(0.); q.x = fbm( st + 0.00 * time); q.y = fbm( st + vec2(1.0));
                 vec2 r = vec2(0.); r.x = fbm( st + 1.0*q + vec2(1.7,9.2)+ 0.15*time ); r.y = fbm( st + 1.0*q + vec2(8.3,2.8)+ 0.126*time);
                 float f = fbm(st+r); vec3 finalColor = mix(color1, color2, clamp(f*f*4.0,0.0,1.0));
-                finalColor += (bass * 0.4) * color2 * f; 
+                
+                // FIX: Removed bass impact from background color to keep it dark
                 gl_FragColor = vec4((f*f*f+.6*f*f+.5*f)*finalColor, 1.0);
             }
         `,
@@ -850,18 +849,21 @@ function loop() {
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
-      const mode = paletteEl?.value || "synesthesia";
+      // FIX: Default mode back to "hue" (Single Color Slow Drift)
+      const mode = paletteEl?.value || "hue";
       let finalHue = 0; let finalSat = 0.75; let finalLum = 0.55;
 
       if (mode === "grayscale") { finalHue = 0; finalSat = 0; finalLum = 0.8; } 
       else if (mode === "energy") { finalHue = (0.6 + bassSm * 0.4) % 1; finalSat = 0.9; } 
       else if (mode === "synesthesia") { finalHue = currentHue; finalSat = 0.85; finalLum = 0.6; } 
-      else { const sliderHue = hueEl ? parseFloat(hueEl.value) : 280; finalHue = ((sliderHue % 360) / 360) + (Math.sin(time * 0.2) * 0.1); }
+      else { const sliderHue = hueEl ? parseFloat(hueEl.value) : 280; finalHue = ((sliderHue % 360) / 360) + (Math.sin(time * 0.05) * 0.05); } // Slower drift
 
       if (nebulaMaterial) {
           nebulaMaterial.uniforms.time.value = time * 0.2; nebulaMaterial.uniforms.bass.value = bassSm;
-          nebulaMaterial.uniforms.color1.value.setHSL(finalHue, 0.6, 0.08); 
-          nebulaMaterial.uniforms.color2.value.setHSL((finalHue + 0.1)%1, 0.8, 0.2); 
+          // FIX: Detached nebula color from pitch so it stays dark/moody
+          const fogHue = (time * 0.02) % 1; 
+          nebulaMaterial.uniforms.color1.value.setHSL(fogHue, 0.6, 0.05); 
+          nebulaMaterial.uniforms.color2.value.setHSL((fogHue + 0.1)%1, 0.5, 0.15); 
       }
 
       if (!reducedMotion) {
@@ -882,7 +884,8 @@ function loop() {
       }
 
       if (coreLight) {
-        coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
+        // FIX: Reduced intensity so it doesn't wash out the wireframe
+        coreLight.intensity = Math.min((bassSm * 30) + (snapFlash * 50), 120); 
         if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL(finalHue, 0.9, 0.5); }
       }
       
@@ -980,13 +983,14 @@ function loop() {
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
       }
 
+      // FIX: Heavily Tamed Audio-Reactive Bloom
+      // Removed "explosiveBass" and "strobeFlash" multipliers to stop the whiteout.
       if (bloomPass) {
-          const explosiveBass = Math.pow(bassSm, 1.5) * 1.5; 
-          const strobeFlash = snapFlash * 2.0; 
-          const targetBloom = P.bloomStrength + explosiveBass + strobeFlash;
-          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 5.0); 
-          const targetRadius = P.bloomRadius + (bassSm * 0.4) + (snapFlash * 0.5);
-          bloomPass.radius = isNaN(targetRadius) ? P.bloomRadius : Math.min(targetRadius, 1.5);
+          const targetBloom = P.bloomStrength + (bassSm * 0.5); // Much gentler reaction
+          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 2.0); // Cap at 2.0 max
+
+          const targetRadius = P.bloomRadius + (bassSm * 0.2);
+          bloomPass.radius = isNaN(targetRadius) ? P.bloomRadius : Math.min(targetRadius, 1.0);
       }
       
       composer.render();
