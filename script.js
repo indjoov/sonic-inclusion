@@ -92,7 +92,7 @@ let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let
 
 // Haptics & Tools State
 let hapticsEnabled = false;
-let tunerEnabled = false; // Hidden by default
+let tunerEnabled = false; 
 let lastVibration = 0;
 
 let currentCameraMode = 0;
@@ -115,7 +115,6 @@ function createTuner() {
     const tunerEl = document.createElement("div");
     tunerEl.id = "si-tuner";
     
-    // Minimalist, high-tech tuner centered on screen
     tunerEl.style.cssText = `
         position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%);
         width: 200px; text-align: center;
@@ -129,13 +128,8 @@ function createTuner() {
             <span id="tuner-note">--</span><span id="tuner-octave" style="font-size: 18px; opacity: 0.6; vertical-align: top;"></span>
         </div>
         <div style="font-size: 12px; color: rgba(255,255,255,0.5); letter-spacing: 2px; margin-top: 4px;">PITCH DETECT</div>
-        
         <div style="margin-top: 10px; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; position: relative; overflow: hidden;">
-            <div id="tuner-bar" style="
-                position: absolute; left: 50%; top: 0; bottom: 0; width: 4px; 
-                background: #00d4ff; box-shadow: 0 0 10px #00d4ff;
-                transform: translateX(-50%); transition: transform 0.1s linear;
-            "></div>
+            <div id="tuner-bar" style="position: absolute; left: 50%; top: 0; bottom: 0; width: 4px; background: #00d4ff; box-shadow: 0 0 10px #00d4ff; transform: translateX(-50%); transition: transform 0.1s linear;"></div>
             <div style="position: absolute; left: 50%; top:0; bottom:0; width: 1px; background: #fff; opacity: 0.3;"></div>
         </div>
     `;
@@ -179,7 +173,6 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-// FIX: New "ANALYSIS TOOLS" Section with hidden Tuner toggle
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -263,20 +256,18 @@ enginePanel.querySelector("#hapticsToggle").addEventListener("change", (e) => {
     if (hapticsEnabled && navigator.vibrate) navigator.vibrate(20); 
 });
 
-// FIX: Tuner Logic Toggle
 enginePanel.querySelector("#tunerToggle").addEventListener("change", (e) => {
     tunerEnabled = !!e.target.checked;
     if(tunerContainer) tunerContainer.style.opacity = tunerEnabled ? 1 : 0;
 });
 
 const micMonitorEl = enginePanel.querySelector("#panel-micBtn"); 
-// Re-hook mic button logic simplified in new layout
 micMonitorEl.addEventListener("click", async (e) => {
   if(!engineInitialized) await initEngine();
   if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
   try { 
     await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); // Raw audio for tuner
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); 
     if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
     currentMode = "mic"; micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
     e.target.style.background = "rgba(255, 45, 85, 0.4)";
@@ -577,142 +568,10 @@ function fireSparks(intensity, sourceMesh) {
   }
 }
 
-/* ================= SIGIL FIX ================= */
-function loadSigilLayers(url, isCustom = false) {
-  if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; } 
-  fetch(url).then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); }).then(data => {
-      const img = new Image(); img.crossOrigin = "anonymous";
-      img.onload = () => {
-        const size = 1024; const base = document.createElement("canvas"); base.width = size; base.height = size;
-        const ctx = base.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, size, size);
-        const scale = Math.min(size / img.width, size / img.height); const w = img.width * scale, h = img.height * scale;
-        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        const imgData = ctx.getImageData(0, 0, size, size); const d = imgData.data; const thr = 245;
-        for (let i = 0; i < d.length; i += 4) { if (d[i] >= thr && d[i + 1] >= thr && d[i + 2] >= thr) d[i + 3] = 0; }
-        ctx.putImageData(imgData, 0, 0);
-        const glow = document.createElement("canvas"); glow.width = size; glow.height = size; const gctx = glow.getContext("2d");
-        gctx.filter = "blur(10px)"; gctx.globalAlpha = 1; gctx.drawImage(base, 0, 0); gctx.filter = "blur(22px)"; gctx.globalAlpha = 0.85; gctx.drawImage(base, 0, 0); gctx.filter = "none";
-        sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
-        const plane = new THREE.PlaneGeometry(6.9, 6.9);
-        
-        const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
-        const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-        
-        sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
-        
-        sigilGroup = new THREE.Group(); 
-        sigilGroup.add(sigilGlow, sigilBase); 
-        
-        scene.add(sigilGroup); 
-        setStatus("✅ Sigil loaded");
-        if(isCustom) URL.revokeObjectURL(url);
-      };
-      if (isCustom) { img.src = URL.createObjectURL(data); } else { img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`; }
-    }).catch(() => setStatus("⚠️ Sigil fetch failed"));
-}
-
-/* ================= MIDI INTEGRATION ================= */
-function initMIDI() {
-  if (navigator.requestMIDIAccess) { navigator.requestMIDIAccess().then(onMIDISuccess, () => { midiStatusEl.textContent = "🎹 MIDI: Access Denied";}); }
-}
-function onMIDISuccess(midiAccess) {
-  midiStatusEl.textContent = "🎹 MIDI: Active";
-  for (let input of midiAccess.inputs.values()) input.onmidimessage = getMIDIMessage;
-  midiAccess.onstatechange = (e) => { if (e.port.state === 'connected') { midiStatusEl.textContent = `🎹 MIDI: Connected`; e.port.onmidimessage = getMIDIMessage; } };
-}
-function getMIDIMessage(message) {
-  const command = message.data[0]; const note = message.data[1]; const velocity = (message.data.length > 2) ? message.data[2] : 0;
-  console.log(`MIDI Command: ${command}, Note: ${note}, Vel: ${velocity}`);
-  if (command === 176 && note === 1) { if(zoomEl) zoomEl.value = Math.round((velocity / 127) * 100); }
-}
-
-/* ================= AUDIO ENGINE INIT ================= */
-let engineInitialized = false;
-
-async function initEngine() {
-  if (engineInitialized) return;
-  overlay.style.display = "none"; 
-  setStatus("⏳ Initializing engine…");
-
-  try {
-    initThree();
-    if (!raf) loop();
-  } catch (err) { console.error("Three.js failed to start:", err); }
-
-  try {
-    await engine.init();
-    if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
-
-    analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
-    dataFreq = new Uint8Array(analyser.frequencyBinCount);
-    dataTime = new Float32Array(analyser.fftSize);
-
-    inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
-    inputGain.connect(analyser); inputGain.connect(monitorGain); monitorGain.connect(engine.master);
-
-    audioRecordDest = engine.ctx.createMediaStreamDestination();
-    try { engine.master.connect(audioRecordDest); } catch (e) {}
-
-    engineInitialized = true;
-    setStatus("✅ Engine ready");
-  } catch (e) {
-    console.error("Audio Engine blocked or failed:", e);
-    setStatus("⚠️ Audio blocked by browser, but visuals are running.");
-  }
-}
-
-overlay.style.cursor = "pointer";
-overlay.addEventListener("click", () => { initEngine(); });
-
-/* ================= CLEAN STOP / INPUTS ================= */
-async function stopAll({ suspend = true } = {}) {
-  if (bufferSrc) { try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {} bufferSrc = null; }
-  if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
-  if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
-  currentMode = "idle"; 
-  const panelMicBtn = enginePanel.querySelector("#panel-micBtn");
-  if (panelMicBtn) { panelMicBtn.style.background = ""; panelMicBtn.style.borderColor = ""; }
-  feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
-  if (suspend && engine && engine.ctx) try { await engine.ctx.suspend(); } catch {}
-}
-
-async function playDemo(path) {
-  if (!engineInitialized) await initEngine();
-  await stopAll({ suspend: false }); setStatus("⏳ Loading demo…");
-  const buf = await fetch(path).then(r => r.arrayBuffer()); const audio = await engine.ctx.decodeAudioData(buf);
-  if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
-  currentMode = "demo"; if (monitorGain) monitorGain.gain.value = 1;
-  bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
-  bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
-}
-
-enginePanel.querySelector("#panel-demoBtn").addEventListener("click", () => {
-    playDemo("media/kasubo hoerprobe.mp3");
-});
-
-enginePanel.querySelector("#panel-fileBtn").addEventListener("click", async () => { 
-    if(!engineInitialized) await initEngine(); 
-    fileInput?.click(); 
-});
-
-fileInput?.addEventListener("change", async (e) => {
-  try { 
-    if(!engineInitialized) await initEngine(); 
-    const file = e.target.files?.[0]; if (!file) return; 
-    await stopAll({ suspend: false }); setStatus("⏳ Decoding file…");
-    const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf); 
-    if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
-    currentMode = "file"; if (monitorGain) monitorGain.gain.value = 1;
-    bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain); 
-    bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ File finished"); };
-    bufferSrc.start(0); setStatus(`🎵 Playing: ${file.name}`);
-  } catch (err) { setStatus("❌ File error"); console.error(err); } finally { if (fileInput) fileInput.value = ""; }
-});
-
 /* ================= AUDIO ANALYSIS (OPTIMIZED AUTOCORRELATION) ================= */
 function autoCorrelate(buf, sampleRate) {
   const SIZE = buf.length;
-  const MIN_SAMPLES = 0; // Correspond to 2000Hz (approx)
+  const MIN_SAMPLES = 0; 
   const MAX_SAMPLES = Math.floor(SIZE / 2);
   let best_offset = -1;
   let best_correlation = 0;
@@ -720,13 +579,12 @@ function autoCorrelate(buf, sampleRate) {
   let foundGoodCorrelation = false;
   let correlations = new Array(MAX_SAMPLES);
 
-  // RMS Check (Is it loud enough?)
   for (let i = 0; i < SIZE; i++) {
     const val = buf[i];
     rms += val * val;
   }
   rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.015) return -1; // Ignore silence/noise
+  if (rms < 0.015) return -1; 
 
   let lastCorrelation = 1;
   // DOWNSAMPLING: Skip every 2nd sample to double performance
@@ -737,7 +595,7 @@ function autoCorrelate(buf, sampleRate) {
       correlation += Math.abs((buf[i]) - (buf[i + offset]));
     }
     correlation = 1 - (correlation / MAX_SAMPLES);
-    correlations[offset] = correlation; // Store it
+    correlations[offset] = correlation; 
     
     if ((correlation > 0.9) && (correlation > lastCorrelation)) {
       foundGoodCorrelation = true;
@@ -746,7 +604,6 @@ function autoCorrelate(buf, sampleRate) {
         best_offset = offset;
       }
     } else if (foundGoodCorrelation) {
-      // Gaussian interpolation for precision
       const shift = (correlations[best_offset + 1] - correlations[best_offset - 1]) / correlations[best_offset];
       return sampleRate / (best_offset + (8 * shift));
     }
@@ -1072,5 +929,8 @@ function stopRecording() {
     recBtn.textContent = "⏺ RECORD"; 
     recBtn.classList.remove('recording-pulse');
 }
+
+overlay.style.cursor = "pointer";
+overlay.addEventListener("click", () => { initEngine(); });
 
 recBtn.addEventListener("click", async () => { if (!recording) await startRecording(); else stopRecording(); });
