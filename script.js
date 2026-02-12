@@ -492,6 +492,7 @@ function initSparks() {
     sparkPool.push({ mesh: mesh, active: false, life: 0, maxLife: 0, velocity: new THREE.Vector3(), spin: new THREE.Vector3() });
   }
 }
+// FIX: Added Fluid Curl Noise to spark movement!
 function fireSparks(intensity, sourceMesh) {
   if (!sparkPool.length || isNaN(intensity)) return; 
   const count = Math.floor(intensity * 15); 
@@ -816,7 +817,22 @@ function loop() {
 
       for (let i = 0; i < sparkPool.length; i++) {
         const s = sparkPool[i]; if (!s.active) continue; s.life += dt; if (s.life >= s.maxLife) { s.active = false; s.mesh.visible = false; continue; }
-        s.mesh.position.addScaledVector(s.velocity, dt); s.velocity.multiplyScalar(0.95); s.mesh.rotation.set(s.mesh.rotation.x + s.spin.x, s.mesh.rotation.y + s.spin.y, s.mesh.rotation.z + s.spin.z);
+        
+        // FLUID PHYSICS: Curl Noise for swirling particle movement
+        const noiseFreq = 0.8;
+        const timeOffset = time * 1.5;
+        const dx = Math.sin(s.mesh.position.y * noiseFreq + timeOffset);
+        const dy = Math.sin(s.mesh.position.z * noiseFreq + timeOffset);
+        const dz = Math.sin(s.mesh.position.x * noiseFreq + timeOffset);
+        
+        s.velocity.x += dx * 0.15;
+        s.velocity.y += dy * 0.15;
+        s.velocity.z += dz * 0.15;
+
+        s.mesh.position.addScaledVector(s.velocity, dt); 
+        s.velocity.multiplyScalar(0.96); // Drag to keep them controlled
+        
+        s.mesh.rotation.set(s.mesh.rotation.x + s.spin.x, s.mesh.rotation.y + s.spin.y, s.mesh.rotation.z + s.spin.z);
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
       }
 
