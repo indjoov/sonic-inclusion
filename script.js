@@ -80,6 +80,10 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
+// NEW: Haptics State
+let hapticsEnabled = false;
+let lastVibration = 0;
+
 let currentCameraMode = 0;
 const camTargetPos = new THREE.Vector3();
 const camTargetLook = new THREE.Vector3();
@@ -122,6 +126,7 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
+// FIX: Added HAPTICS Checkbox
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -169,6 +174,7 @@ enginePanel.innerHTML = `
         </select>
     </label>
 
+    <label class="checkbox-row" style="max-width:100%;"><input id="hapticsToggle" type="checkbox">HAPTICS (Mobile)</label>
     <label class="checkbox-row" style="max-width:100%;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
     
     <div class="mic-section" style="width: 100%; box-sizing: border-box;">
@@ -212,6 +218,14 @@ const paletteEl = enginePanel.querySelector("#palette-panel");
 const trailsEl = enginePanel.querySelector("#trailsAmount"); 
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
+// FIX: Haptics Event Listener
+enginePanel.querySelector("#hapticsToggle").addEventListener("change", (e) => {
+    hapticsEnabled = !!e.target.checked;
+    if (hapticsEnabled && navigator.vibrate) {
+        navigator.vibrate(20); // Short buzz to confirm it's working
+    }
+});
+
 const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
 const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol"); 
 const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
@@ -492,7 +506,6 @@ function initSparks() {
     sparkPool.push({ mesh: mesh, active: false, life: 0, maxLife: 0, velocity: new THREE.Vector3(), spin: new THREE.Vector3() });
   }
 }
-// FIX: Added Fluid Curl Noise to spark movement!
 function fireSparks(intensity, sourceMesh) {
   if (!sparkPool.length || isNaN(intensity)) return; 
   const count = Math.floor(intensity * 15); 
@@ -705,6 +718,12 @@ function loop() {
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
           if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
+          
+          // FIX: Haptic Feedback Trigger with Cooldown
+          if (hapticsEnabled && navigator.vibrate && (time - lastVibration > 0.12)) {
+              navigator.vibrate(Math.min(40, 20 + snareSm * 30));
+              lastVibration = time;
+          }
         }
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
@@ -818,7 +837,6 @@ function loop() {
       for (let i = 0; i < sparkPool.length; i++) {
         const s = sparkPool[i]; if (!s.active) continue; s.life += dt; if (s.life >= s.maxLife) { s.active = false; s.mesh.visible = false; continue; }
         
-        // FLUID PHYSICS: Curl Noise for swirling particle movement
         const noiseFreq = 0.8;
         const timeOffset = time * 1.5;
         const dx = Math.sin(s.mesh.position.y * noiseFreq + timeOffset);
@@ -830,7 +848,7 @@ function loop() {
         s.velocity.z += dz * 0.15;
 
         s.mesh.position.addScaledVector(s.velocity, dt); 
-        s.velocity.multiplyScalar(0.96); // Drag to keep them controlled
+        s.velocity.multiplyScalar(0.96); 
         
         s.mesh.rotation.set(s.mesh.rotation.x + s.spin.x, s.mesh.rotation.y + s.spin.y, s.mesh.rotation.z + s.spin.z);
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
