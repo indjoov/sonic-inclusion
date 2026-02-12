@@ -59,10 +59,15 @@ document.body.appendChild(overlay);
 /* ================= ENGINE (AUDIO) ================= */
 
 const engine = new AudioEngine();
-let raf = null; let analyser = null; let dataFreq = null;
+let raf = null; let analyser = null; let dataFreq = null; let dataTime = null;
 let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
 let audioRecordDest = null;
+
+// Synesthesia State
+let detectedNote = null;
+let currentHueTarget = 0;
+let currentHue = 0;
 
 /* ================= THREE STATE ================= */
 
@@ -80,7 +85,7 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
-// NEW: Haptics State
+// Haptics State
 let hapticsEnabled = false;
 let lastVibration = 0;
 
@@ -126,7 +131,7 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-// FIX: Added HAPTICS Checkbox
+// FIX: Added Synesthesia Mode to dropdown
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -168,7 +173,8 @@ enginePanel.innerHTML = `
     
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">COLOR MODE
         <select id="palette-panel" style="width:100%; margin-top:6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2);">
-            <option value="hue" selected>Hue by pitch</option>
+            <option value="synesthesia" selected>Synesthesia (Pitch)</option>
+            <option value="hue">Hue by pitch</option>
             <option value="energy">Hue by energy</option>
             <option value="grayscale">High-contrast grayscale</option>
         </select>
@@ -218,11 +224,10 @@ const paletteEl = enginePanel.querySelector("#palette-panel");
 const trailsEl = enginePanel.querySelector("#trailsAmount"); 
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
-// FIX: Haptics Event Listener
 enginePanel.querySelector("#hapticsToggle").addEventListener("change", (e) => {
     hapticsEnabled = !!e.target.checked;
     if (hapticsEnabled && navigator.vibrate) {
-        navigator.vibrate(20); // Short buzz to confirm it's working
+        navigator.vibrate(20); 
     }
 });
 
@@ -603,6 +608,8 @@ async function initEngine() {
 
     analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     dataFreq = new Uint8Array(analyser.frequencyBinCount);
+    // NEW: Time domain buffer for pitch detection
+    dataTime = new Float32Array(analyser.fftSize);
 
     inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
     inputGain.connect(analyser); inputGain.connect(monitorGain); monitorGain.connect(engine.master);
@@ -678,7 +685,35 @@ enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) =
   } catch (err) { setStatus("❌ Mic error"); console.error(err); await stopAll({ suspend: true }); }
 });
 
-/* ================= AUDIO ANALYSIS ================= */
+/* ================= AUDIO ANALYSIS (PITCH DETECTION) ================= */
+function autoCorrelate(buf, sampleRate) {
+  let SIZE = buf.length; let MAX_SAMPLES = Math.floor(SIZE/2);
+  let best_offset = -1; let best_correlation = 0; let rms = 0; let foundGoodCorrelation = false;
+  let correlations = new Array(MAX_SAMPLES);
+
+  for (let i=0; i<SIZE; i++) { let val = buf[i]; rms += val*val; }
+  rms = Math.sqrt(rms/SIZE);
+  if (rms < 0.01) return -1; // Signal too quiet
+
+  let lastCorrelation = 1;
+  for (let offset = 0; offset < MAX_SAMPLES; offset++) {
+    let correlation = 0;
+    for (let i=0; i<MAX_SAMPLES; i++) { correlation += Math.abs((buf[i])-(buf[i+offset])); }
+    correlation = 1 - (correlation/MAX_SAMPLES);
+    correlations[offset] = correlation; 
+    if ((correlation>0.9) && (correlation > lastCorrelation)) {
+      foundGoodCorrelation = true;
+      if (correlation > best_correlation) { best_correlation = correlation; best_offset = offset; }
+    } else if (foundGoodCorrelation) {
+      let shift = (correlations[best_offset+1] - correlations[best_offset-1])/correlations[best_offset];  
+      return sampleRate/(best_offset+(8*shift));
+    }
+    lastCorrelation = correlation;
+  }
+  if (best_correlation > 0.01) return sampleRate/best_offset;
+  return -1;
+}
+
 function hzToBin(hz) { if (!engine?.ctx || !analyser) return 0; const nyquist = engine.ctx.sampleRate / 2; const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1)); return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx)); }
 
 function bandEnergy(freqData, hzLo, hzHi) { 
@@ -703,6 +738,8 @@ function loop() {
 
       if (analyser && dataFreq) {
         analyser.getByteFrequencyData(dataFreq);
+        // Synesthesia: Get time domain data for pitch detection
+        analyser.getFloatTimeDomainData(dataTime);
         
         let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.1;
         if (isNaN(rawSens)) rawSens = 0.1;
@@ -715,11 +752,30 @@ function loop() {
         bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
         
+        // PITCH DETECTION LOGIC
+        const pitch = autoCorrelate(dataTime, engine.ctx.sampleRate);
+        if (pitch !== -1 && pitch > 50 && pitch < 2000) {
+            // Note mapping: A4 = 440Hz.
+            // Formula: noteNum = 12 * log2(pitch / 440) + 69
+            const noteNum = 12 * (Math.log(pitch / 440) / Math.log(2)) + 69;
+            // Map 0-12 (C to B) to 0-1 Hue
+            const noteIndex = Math.round(noteNum) % 12;
+            currentHueTarget = noteIndex / 12.0; 
+        }
+        
+        // Smooth hue transition
+        const hueDiff = currentHueTarget - currentHue;
+        if (Math.abs(hueDiff) > 0.5) {
+            currentHue += (hueDiff > 0 ? 1 : -1) * 0.02; // Wrap around fix
+        } else {
+            currentHue += hueDiff * 0.05;
+        }
+        currentHue = (currentHue + 1) % 1; // Normalize
+
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
           if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
           
-          // FIX: Haptic Feedback Trigger with Cooldown
           if (hapticsEnabled && navigator.vibrate && (time - lastVibration > 0.12)) {
               navigator.vibrate(Math.min(40, 20 + snareSm * 30));
               lastVibration = time;
@@ -728,10 +784,29 @@ function loop() {
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
+      const mode = paletteEl?.value || "synesthesia";
+      let finalHue = 0;
+      let finalSat = 0.75;
+      let finalLum = 0.55;
+
+      if (mode === "grayscale") {
+          finalHue = 0; finalSat = 0; finalLum = 0.8;
+      } else if (mode === "energy") {
+          finalHue = (0.6 + bassSm * 0.4) % 1; finalSat = 0.9;
+      } else if (mode === "synesthesia") {
+          finalHue = currentHue; 
+          finalSat = 0.85; 
+          finalLum = 0.6;
+      } else {
+          // Manual Hue
+          const sliderHue = hueEl ? parseFloat(hueEl.value) : 280;
+          finalHue = ((sliderHue % 360) / 360) + (Math.sin(time * 0.2) * 0.1);
+      }
+
       if (nebulaMaterial) {
           nebulaMaterial.uniforms.time.value = time * 0.2; nebulaMaterial.uniforms.bass.value = bassSm;
-          const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
-          nebulaMaterial.uniforms.color1.value.setHSL(hue, 0.6, 0.08); nebulaMaterial.uniforms.color2.value.setHSL((hue + 0.1)%1, 0.8, 0.2); 
+          nebulaMaterial.uniforms.color1.value.setHSL(finalHue, 0.6, 0.08); 
+          nebulaMaterial.uniforms.color2.value.setHSL((finalHue + 0.1)%1, 0.8, 0.2); 
       }
 
       if (!reducedMotion) {
@@ -756,8 +831,7 @@ function loop() {
 
       if (coreLight) {
         coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
-        const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
-        if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
+        if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL(finalHue, 0.9, 0.5); }
       }
       
       if (afterimagePass) {
@@ -792,18 +866,19 @@ function loop() {
         const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
         morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, Math.max(0.1, targetScale), 0.3));
 
-        const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360); const mode = paletteEl?.value || "hue";
-        if (mode === "grayscale") { morphMesh.material.color.setHex(0xe6e6e6); } else if (mode === "energy") { morphMesh.material.color.setHSL((hue + bassSm * 0.2 + midSm * 0.1) % 1, 0.85, 0.5 + snareSm * 0.4); } else { morphMesh.material.color.setHSL((hue + Math.sin(time * 0.2) * 0.1) % 1, 0.75, 0.55); }
+        // APPLY SYNESTHESIA COLOR
+        morphMesh.material.color.setHSL(finalHue, finalSat, finalLum);
         morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
       }
 
       if (sigilGroup && sigilBase && sigilGlow) {
-        const mode = paletteEl?.value || "hue"; 
         const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
         sigilBase.material.opacity = opacity; 
         
-        let glowColor = new THREE.Color(0x00d4ff); 
-        if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
+        let glowColor = new THREE.Color().setHSL(finalHue, 1.0, 0.6);
+        if (mode === "grayscale") glowColor.setHex(0xffffff);
+        else glowColor.lerp(new THREE.Color(0xffffff), Math.min(1, snapFlash * 0.8)); // Flash white on hits
+        
         sigilGlow.material.color.copy(glowColor); 
         
         const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
