@@ -92,6 +92,7 @@ const camTargetLook = new THREE.Vector3();
 
 // UI Elements (Initialized later)
 let tunerNote, tunerOctave, tunerBar, tunerContainer;
+let enginePanel, hud, recBtn; // Define globals
 
 function applyMicMonitorGain() {
   if (!monitorGain) return;
@@ -110,8 +111,8 @@ async function initEngine() {
   try {
     // 1. Initialize UI Elements NOW (Safe zone)
     createTunerUI();
+    createHUDButtons(); // Creates buttons AND attaches listeners
     createEnginePanel();
-    createHUDButtons();
 
     // 2. Initialize Three.js
     initThree();
@@ -179,8 +180,6 @@ function createTunerUI() {
     tunerContainer = document.getElementById("si-tuner");
 }
 
-let enginePanel, hud, recBtn;
-
 function createHUDButtons() {
     const existingHud = document.getElementById("si-hud");
     if(existingHud) existingHud.remove();
@@ -191,6 +190,7 @@ function createHUDButtons() {
     recBtn = document.createElement("button");
     recBtn.id = "si-recBtn"; recBtn.className = "hud-btn"; recBtn.type = "button"; recBtn.innerHTML = "⏺ RECORD";
     
+    // SAFE EVENT LISTENER ATTACHMENT
     recBtn.addEventListener("click", async () => { if (!recording) await startRecording(); else stopRecording(); });
 
     const hudRightControls = document.createElement("div");
@@ -541,7 +541,8 @@ function loop() {
           if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
           
           if (hapticsEnabled && navigator.vibrate && (time - lastVibration > 0.12)) {
-              navigator.vibrate(Math.min(40, 20 + snareSm * 30)); lastVibration = time;
+              navigator.vibrate(Math.min(40, 20 + snareSm * 30));
+              lastVibration = time;
           }
         }
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
@@ -697,49 +698,7 @@ function loop() {
   }
 }
 
-/* ================= UTILS ================= */
-// Clean stop helper
-async function stopAll({ suspend = true } = {}) {
-  if (bufferSrc) { try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {} bufferSrc = null; }
-  if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
-  if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
-  currentMode = "idle"; 
-  const panelMicBtn = document.getElementById("panel-micBtn");
-  if (panelMicBtn) { panelMicBtn.style.background = ""; panelMicBtn.style.borderColor = ""; }
-  feedbackMuted = false; 
-  if (monitorGain) monitorGain.gain.value = 0;
-  if (suspend && engine && engine.ctx) try { await engine.ctx.suspend(); } catch {}
-}
-
-/* ================= OTHER HELPERS ================= */
-function initNebulaBackground() {
-    const geo = new THREE.PlaneGeometry(500, 500);
-    nebulaMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-            time: { value: 0 }, bass: { value: 0 }, color1: { value: new THREE.Color(0x0a001a) }, color2: { value: new THREE.Color(0x002233) }  
-        },
-        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-        fragmentShader: `
-            uniform float time; uniform float bass; uniform vec3 color1; uniform vec3 color2; varying vec2 vUv;
-            float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
-            float noise(vec2 st) {
-                vec2 i = floor(st); vec2 f = fract(st); float a = random(i); float b = random(i + vec2(1.0, 0.0)); float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
-                vec2 u = f * f * (3.0 - 2.0 * f); return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-            }
-            float fbm(vec2 st) { float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(st); st *= 2.0; a *= 0.5; } return v; }
-            void main() {
-                vec2 st = vUv * 3.0; vec2 q = vec2(0.); q.x = fbm( st + 0.00 * time); q.y = fbm( st + vec2(1.0));
-                vec2 r = vec2(0.); r.x = fbm( st + 1.0*q + vec2(1.7,9.2)+ 0.15*time ); r.y = fbm( st + 1.0*q + vec2(8.3,2.8)+ 0.126*time);
-                float f = fbm(st+r); vec3 finalColor = mix(color1, color2, clamp(f*f*4.0,0.0,1.0));
-                gl_FragColor = vec4((f*f*f+.6*f*f+.5*f)*finalColor, 1.0);
-            }
-        `,
-        depthWrite: false
-    });
-    const mesh = new THREE.Mesh(geo, nebulaMaterial); mesh.position.z = -100; scene.add(mesh);
-}
-
-// Media Recording logic
+/* ================= RECORDING ================= */
 let mediaRecorder = null, recordedChunks = [], recording = false;
 function pickMime() { const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]; for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ""; }
 function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -789,5 +748,4 @@ function stopRecording() {
 
 fileInput.addEventListener("change", async (e) => {
   if (!engine) await initEngine();
-  // logic handled in createEnginePanel listener now
 });
