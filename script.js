@@ -79,6 +79,7 @@ let nebulaMaterial = null;
 
 let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 let sigilGroup = null; let sigilBase = null; let sigilGlow = null;
+let sigilBaseTex = null; let sigilGlowTex = null;
 let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
@@ -115,8 +116,8 @@ async function initEngine() {
   try {
     // 1. Create ALL UI first (Safe Order)
     createTunerUI();
-    createEnginePanel(); 
     createHUDButtons(); 
+    createEnginePanel(); 
 
     // 2. Initialize Three.js
     initThree();
@@ -371,11 +372,14 @@ function initThree() {
 
   coreLight = new THREE.PointLight(0x00d4ff, 0, 50); coreLight.position.set(0, 0, 0); scene.add(coreLight);
   world = new THREE.Group(); scene.add(world);
-  // Re-added makeStars call
   starPoints = makeStars(1900, 120); scene.add(starPoints);
 
+  // RESTORED: Geometry Functions Calls
   makeResponsiveMorphingCage();
-  initRings(); initGhosts(); initSparks(); loadSigilLayers("media/indjoov-sigil.svg", false);
+  initRings(); 
+  initGhosts(); 
+  initSparks(); 
+  loadSigilLayers("media/indjoov-sigil.svg", false);
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
   composer = new EffectComposer(renderer, rt); 
@@ -422,8 +426,9 @@ function resetUI() {
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) resetUI(); setTimeout(fitRendererToStage, 100); });
 
-/* ================= IMPROVED STARS (RESTORED) ================= */
-let starGeo = null;
+/* ================= RESTORED GEOMETRY FUNCTIONS ================= */
+
+// STARS
 function makeStars(count, spread) {
   starGeo = new THREE.BufferGeometry(); const positions = new Float32Array(count * 3); const velocities = []; 
   for (let i = 0; i < count; i++) {
@@ -437,10 +442,7 @@ function makeStars(count, spread) {
 function updateStars(delta) {
   if (!starPoints || !starGeo) return;
   const positions = starGeo.attributes.position.array; const vels = starGeo.userData.velocities; const spread = starGeo.userData.spread;
-  
-  let warpSpeed = 1 + (bassSm * 8); 
-  if (isNaN(warpSpeed)) warpSpeed = 1;
-
+  let warpSpeed = 1 + (bassSm * 8); if (isNaN(warpSpeed)) warpSpeed = 1;
   for (let i = 0; i < vels.length; i++) {
     const ix = i * 3; positions[ix + 2] += vels[i] * warpSpeed * delta * 20;
     if (positions[ix + 2] > 20) {
@@ -448,6 +450,67 @@ function updateStars(delta) {
     }
   }
   starGeo.attributes.position.needsUpdate = true;
+}
+
+// CAGE
+function makeResponsiveMorphingCage() {
+  if (morphMesh) { world.remove(morphMesh); morphMesh.geometry.dispose(); }
+  const baseGeo = new THREE.IcosahedronGeometry(5.0, 10); const posAttribute = baseGeo.attributes.position;
+  const cubePositions = []; const wavePositions = []; const spikePositions = []; const vec = new THREE.Vector3();
+  for (let i = 0; i < posAttribute.count; i++) {
+    vec.fromBufferAttribute(posAttribute, i);
+    const norm = vec.clone().normalize(); const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
+    const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5); cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
+    const waveScale = 1.0 + 0.45 * (Math.sin(vec.x * 3.0) + Math.cos(vec.y * 3.0) + Math.sin(vec.z * 3.0));
+    const waveVec = vec.clone().multiplyScalar(waveScale); wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
+    const noise = Math.sin(vec.x * 12.0) * Math.cos(vec.y * 12.0) * Math.sin(vec.z * 12.0);
+    const spikeScale = 1.0 + Math.max(0, noise) * 5.0; 
+    const spikeVec = vec.clone().multiplyScalar(spikeScale); spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
+  }
+  baseGeo.morphAttributes.position = [ new THREE.Float32BufferAttribute(cubePositions, 3), new THREE.Float32BufferAttribute(wavePositions, 3), new THREE.Float32BufferAttribute(spikePositions, 3) ];
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
+}
+
+// RINGS
+function initRings() {
+  ringPool.forEach(r => { world?.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose(); });
+  ringPool = []; ringCursor = 0;
+  for (let i = 0; i < 8; i++) {
+    const g = new THREE.RingGeometry(2.6, 2.9, 120); const m = new THREE.MeshBasicMaterial({ color: 0x8feaff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
+    const mesh = new THREE.Mesh(g, m); mesh.position.set(0, 0, 0.25); mesh.rotation.set(-0.18, 0.22, 0);
+    world?.add(mesh); ringPool.push({ mesh, t: 999, life: 0.55, baseScale: 1.0 });
+  }
+}
+function triggerRingPulse(intensity = 1) {
+  if (!ringPool.length || isNaN(intensity)) return; 
+  const r = ringPool[ringCursor % ringPool.length]; ringCursor++; r.t = 0; r.life = 0.48; r.baseScale = 0.92 + 0.22 * intensity;
+  r.mesh.material.color.setHex((Math.random() < 0.5) ? 0x00d4ff : 0x7c4dff); r.mesh.material.opacity = 0.85 * P.ringStrength;
+}
+
+// GHOSTS
+function initGhosts() {
+  ghostPool.forEach(g => { world?.remove(g.group); g.group.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); }); });
+  ghostPool = []; ghostCursor = 0;
+  for (let i = 0; i < 18; i++) {
+    const group = new THREE.Group(); group.visible = false; group.position.set(0, 0, 0.2); group.rotation.set(-0.18, 0.22, 0);
+    const plane = new THREE.PlaneGeometry(6.9, 6.9);
+    const inkMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
+    const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+    const glow = new THREE.Mesh(plane, glowMat); glow.scale.setScalar(1.08); const ink = new THREE.Mesh(plane, inkMat);
+    group.add(glow, ink); world?.add(group); ghostPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
+  }
+}
+function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
+  if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex || isNaN(intensity)) return; 
+  const useCount = Math.max(1, Math.min(6, count));
+  for (let k = 0; k < useCount; k++) {
+    const g = ghostPool[ghostCursor % ghostPool.length]; ghostCursor++;
+    g.t = 0; g.life = 0.28 + Math.random() * 0.25; g.vx = (Math.random() - 0.5) * (0.22 + intensity * 0.25); g.vy = (Math.random() - 0.5) * (0.18 + intensity * 0.22); g.spin = (Math.random() - 0.5) * (0.12 + intensity * 0.18);
+    g.baseScale = 1.02 + k * 0.04; g.group.visible = true; g.group.position.set(0, 0, 0.21 + 0.01 * k); g.group.rotation.set(-0.18, 0.22, 0);
+    g.ink.material.map = sigilBaseTex; g.glow.material.map = sigilGlowTex; g.glow.material.color.copy(new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, 0.45 + snapFlash * 0.65)));
+    g.ink.material.opacity = 0.22 + 0.20 * intensity; g.glow.material.opacity = 0.40 + 0.55 * snapFlash; g.glow.scale.setScalar(1.12); g.group.scale.setScalar(g.baseScale);
+  }
 }
 
 /* ================= AUDIO ANALYSIS (OPTIMIZED AUTOCORRELATION) ================= */
@@ -829,5 +892,4 @@ function stopRecording() {
 
 fileInput.addEventListener("change", async (e) => {
   if (!engine) await initEngine();
-  // logic handled in createEnginePanel listener now
 });
