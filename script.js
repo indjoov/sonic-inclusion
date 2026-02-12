@@ -77,9 +77,10 @@ let morphMesh = null; let coreLight = null; let rgbShiftPass = null; let glitchP
 let afterimagePass = null; 
 let nebulaMaterial = null;
 
+// PARTICLES & GEOMETRY
+let starGeo = null; // <--- FIX: Added missing variable
 let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 let sigilGroup = null; let sigilBase = null; let sigilGlow = null;
-let sigilBaseTex = null; let sigilGlowTex = null;
 let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
@@ -116,8 +117,8 @@ async function initEngine() {
   try {
     // 1. Create ALL UI first (Safe Order)
     createTunerUI();
-    createHUDButtons(); 
     createEnginePanel(); 
+    createHUDButtons(); 
 
     // 2. Initialize Three.js
     initThree();
@@ -374,12 +375,8 @@ function initThree() {
   world = new THREE.Group(); scene.add(world);
   starPoints = makeStars(1900, 120); scene.add(starPoints);
 
-  // RESTORED: Geometry Functions Calls
   makeResponsiveMorphingCage();
-  initRings(); 
-  initGhosts(); 
-  initSparks(); 
-  loadSigilLayers("media/indjoov-sigil.svg", false);
+  initRings(); initGhosts(); initSparks(); loadSigilLayers("media/indjoov-sigil.svg", false);
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
   composer = new EffectComposer(renderer, rt); 
@@ -426,7 +423,7 @@ function resetUI() {
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) resetUI(); setTimeout(fitRendererToStage, 100); });
 
-/* ================= RESTORED GEOMETRY FUNCTIONS ================= */
+/* ================= GEOMETRY FUNCTIONS ================= */
 
 // STARS
 function makeStars(count, spread) {
