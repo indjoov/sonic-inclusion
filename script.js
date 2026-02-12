@@ -106,14 +106,15 @@ function createHUD() {
 
     const hudEl = document.createElement("div");
     hudEl.id = "si-semantic-hud";
-    // Sleek, tech-focused styling
+    // FIX: Moved bottom to 130px to clear the buttons
     hudEl.style.cssText = `
-        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        position: fixed; bottom: 130px; left: 50%; transform: translateX(-50%);
         width: min(90vw, 400px); display: flex; justify-content: space-between;
         background: rgba(0, 10, 20, 0.85); border: 1px solid rgba(0, 212, 255, 0.3);
         border-radius: 4px; padding: 10px 16px; z-index: 1000;
         font-family: 'Courier New', monospace; font-size: 11px; color: #00d4ff;
         pointer-events: none; backdrop-filter: blur(4px); box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        transition: bottom 0.4s ease;
     `;
     
     hudEl.innerHTML = `
@@ -289,7 +290,11 @@ function toggleFullscreen() {
     document.querySelector('.site-header')?.style.setProperty('display', 'none'); 
     document.querySelector('.site-footer')?.style.setProperty('display', 'none');
     hud.style.display = 'none'; 
-    document.getElementById("si-semantic-hud").style.bottom = "12px"; 
+    
+    // FIX: Move HUD down when buttons disappear
+    const hudEl = document.getElementById("si-semantic-hud");
+    if(hudEl) hudEl.style.bottom = "30px";
+    
     setEngineOpen(false);
     
     stageEl.classList.add('fullscreen-active');
@@ -301,7 +306,10 @@ function resetUI() {
   document.querySelector('.site-header')?.style.setProperty('display', 'block'); 
   document.querySelector('.site-footer')?.style.setProperty('display', 'block');
   hud.style.display = 'flex'; 
-  document.getElementById("si-semantic-hud").style.bottom = "24px"; 
+  
+  // FIX: Restore HUD position
+  const hudEl = document.getElementById("si-semantic-hud");
+  if(hudEl) hudEl.style.bottom = "130px";
   
   stageEl.classList.remove('fullscreen-active');
   document.body.style.overflow = "auto"; 
@@ -318,7 +326,6 @@ sigilInput.addEventListener("change", (e) => {
 });
 
 /* ================= CHAPTER SYSTEM ================= */
-// FIX: Restored the sharp, clean, low-bloom settings
 const CHAPTERS = {
   INVOCATION: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.25, glowBass: 0.20, glowSnap: 0.40, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.40, bloomRadius: 0.35, bloomThreshold: 0.25 },
   POSSESSION: { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.35, glowBass: 0.35, glowSnap: 0.60, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.20 },
@@ -401,8 +408,6 @@ function initNebulaBackground() {
                 vec2 st = vUv * 3.0; vec2 q = vec2(0.); q.x = fbm( st + 0.00 * time); q.y = fbm( st + vec2(1.0));
                 vec2 r = vec2(0.); r.x = fbm( st + 1.0*q + vec2(1.7,9.2)+ 0.15*time ); r.y = fbm( st + 1.0*q + vec2(8.3,2.8)+ 0.126*time);
                 float f = fbm(st+r); vec3 finalColor = mix(color1, color2, clamp(f*f*4.0,0.0,1.0));
-                
-                // FIX: Restored Dark Void Background
                 gl_FragColor = vec4((f*f*f+.6*f*f+.5*f)*finalColor, 1.0);
             }
         `,
@@ -648,6 +653,7 @@ async function initEngine() {
 
     analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     dataFreq = new Uint8Array(analyser.frequencyBinCount);
+    dataTime = new Float32Array(analyser.fftSize);
 
     inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
     inputGain.connect(analyser); inputGain.connect(monitorGain); monitorGain.connect(engine.master);
@@ -724,22 +730,11 @@ enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) =
 });
 
 /* ================= AUDIO ANALYSIS ================= */
-// REPLACED HEAVY PITCH DETECTION WITH LIGHTWEIGHT FREQUENCY CENTROID
 function getSpectralCentroid(freqData, sampleRate, fftSize) {
-    let numerator = 0;
-    let denominator = 0;
-    const binSize = sampleRate / fftSize;
-    
-    // Only analyze the relevant range (0 - 5kHz)
+    let numerator = 0; let denominator = 0; const binSize = sampleRate / fftSize;
     const maxBin = Math.floor(5000 / binSize);
-    
-    for (let i = 0; i < maxBin; i++) {
-        numerator += i * freqData[i];
-        denominator += freqData[i];
-    }
-    
-    if (denominator === 0) return 0;
-    return (numerator / denominator) * binSize;
+    for (let i = 0; i < maxBin; i++) { numerator += i * freqData[i]; denominator += freqData[i]; }
+    if (denominator === 0) return 0; return (numerator / denominator) * binSize;
 }
 
 function hzToBin(hz) { if (!engine?.ctx || !analyser) return 0; const nyquist = engine.ctx.sampleRate / 2; const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1)); return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx)); }
@@ -778,11 +773,8 @@ function loop() {
         bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
         
-        // Lightweight brightness detection
         const centroid = getSpectralCentroid(dataFreq, engine.ctx.sampleRate, analyser.fftSize);
-        if (centroid > 0) {
-            brightness = brightness * 0.9 + centroid * 0.1; // Smooth it out
-        }
+        if (centroid > 0) { brightness = brightness * 0.9 + centroid * 0.1; }
 
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
@@ -794,16 +786,13 @@ function loop() {
           }
         }
         
-        // UPDATE HUD TEXT (Optimized)
         if (hudSignal) {
-            let signalText = "SILENCE";
-            let signalColor = "#555";
+            let signalText = "SILENCE"; let signalColor = "#555";
             if (bassSm > 0.8) { signalText = "PEAKING"; signalColor = "#ff2d55"; }
             else if (bassSm > 0.2) { signalText = "OPTIMAL"; signalColor = "#00d4ff"; }
             else if (bassSm > 0.01) { signalText = "LOW"; signalColor = "#00d4ff"; }
             if (snapFlash > 0.5) { signalText = "IMPULSE"; signalColor = "#fff"; }
-            hudSignal.textContent = signalText;
-            hudSignal.style.color = signalColor;
+            hudSignal.textContent = signalText; hudSignal.style.color = signalColor;
         }
         
         if (hudTexture) {
@@ -816,19 +805,16 @@ function loop() {
         }
         
         if (hudPitch) {
-            // Mapping "Brightness" to descriptive words instead of musical notes (faster)
             let tone = "--";
             if (brightness > 2000) tone = "HIGH";
             else if (brightness > 500) tone = "MID";
             else if (brightness > 100) tone = "LOW";
-            hudPitch.textContent = tone;
-            hudPitch.style.color = "#00d4ff";
+            hudPitch.textContent = tone; hudPitch.style.color = "#00d4ff";
         }
 
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
-      // RESTORED: Beautiful Single Color Slow Drift
       const mode = paletteEl?.value || "hue";
       let finalHue = 0; let finalSat = 0.75; let finalLum = 0.55;
 
@@ -838,9 +824,8 @@ function loop() {
 
       if (nebulaMaterial) {
           nebulaMaterial.uniforms.time.value = time * 0.2; nebulaMaterial.uniforms.bass.value = bassSm;
-          // RESTORED: Dark Void Background
-          nebulaMaterial.uniforms.color1.value.setHSL(finalHue, 0.6, 0.02); // Almost black
-          nebulaMaterial.uniforms.color2.value.setHSL((finalHue + 0.1)%1, 0.5, 0.12); // Very dark blue
+          nebulaMaterial.uniforms.color1.value.setHSL(finalHue, 0.6, 0.02); 
+          nebulaMaterial.uniforms.color2.value.setHSL((finalHue + 0.1)%1, 0.5, 0.12); 
       }
 
       if (!reducedMotion) {
@@ -861,7 +846,6 @@ function loop() {
       }
 
       if (coreLight) {
-        // RESTORED: Gentle lighting intensity
         coreLight.intensity = Math.min((bassSm * 30) + (snapFlash * 50), 120); 
         if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL(finalHue, 0.9, 0.5); }
       }
@@ -960,7 +944,6 @@ function loop() {
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
       }
 
-      // RESTORED: Subtle bloom settings from previous version
       if (bloomPass) {
           const targetBloom = P.bloomStrength + (bassSm * 0.5); 
           bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 2.0); 
