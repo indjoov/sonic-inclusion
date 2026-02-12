@@ -17,6 +17,12 @@ const canvas = document.getElementById("viz");
 const stageEl = canvas.closest(".stage");
 const srText = document.getElementById("srText");
 
+// Inject futuristic font
+const fontLink = document.createElement("link");
+fontLink.href = "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap";
+fontLink.rel = "stylesheet";
+document.head.appendChild(fontLink);
+
 const fileInput = document.createElement("input");
 fileInput.id = "fileInput";
 fileInput.type = "file";
@@ -98,7 +104,7 @@ function applyMicMonitorGain() {
   monitorGain.gain.value = currentMode === "mic" && micMonitor && !feedbackMuted ? micMonitorVol : 0;
 }
 
-/* ================= HUD (SEMANTIC LAYER) ================= */
+/* ================= FUTURISTIC HUD ================= */
 
 function createHUD() {
     const existing = document.getElementById("si-semantic-hud");
@@ -106,29 +112,40 @@ function createHUD() {
 
     const hudEl = document.createElement("div");
     hudEl.id = "si-semantic-hud";
-    // FIX: Moved bottom to 130px to clear the buttons
+    
+    // FIX: Cyberpunk styling with clipped corners, tech font, and glow
     hudEl.style.cssText = `
         position: fixed; bottom: 130px; left: 50%; transform: translateX(-50%);
-        width: min(90vw, 400px); display: flex; justify-content: space-between;
-        background: rgba(0, 10, 20, 0.85); border: 1px solid rgba(0, 212, 255, 0.3);
-        border-radius: 4px; padding: 10px 16px; z-index: 1000;
-        font-family: 'Courier New', monospace; font-size: 11px; color: #00d4ff;
-        pointer-events: none; backdrop-filter: blur(4px); box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-        transition: bottom 0.4s ease;
+        width: min(90vw, 420px); display: flex; justify-content: space-between; align-items: center;
+        background: rgba(10, 15, 25, 0.75); 
+        border-bottom: 2px solid rgba(0, 212, 255, 0.6);
+        clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+        padding: 12px 20px; z-index: 1000;
+        font-family: 'Rajdhani', sans-serif; font-size: 14px; color: #00d4ff;
+        text-transform: uppercase; letter-spacing: 2px;
+        pointer-events: none; backdrop-filter: blur(8px); 
+        box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
+        transition: bottom 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
     `;
     
+    // Inner structure with accent lines
     hudEl.innerHTML = `
-        <div style="text-align:left;">
-            <div style="opacity:0.5; font-size:9px;">SIGNAL</div>
-            <div id="hud-signal" style="font-weight:bold; color:#fff;">WAITING</div>
+        <div style="text-align:left; position:relative;">
+            <div style="font-size:10px; opacity:0.6; margin-bottom:2px;">SIGNAL</div>
+            <div id="hud-signal" style="font-weight:700; color:#fff; text-shadow: 0 0 8px rgba(255,255,255,0.5);">WAITING</div>
+            <div style="position:absolute; left:-10px; top:50%; width:2px; height:12px; background:#00d4ff; transform:translateY(-50%);"></div>
         </div>
-        <div style="text-align:center; border-left:1px solid rgba(255,255,255,0.1); border-right:1px solid rgba(255,255,255,0.1); padding: 0 16px; flex: 1;">
-            <div style="opacity:0.5; font-size:9px;">TEXTURE</div>
-            <div id="hud-texture" style="font-weight:bold; letter-spacing:1px; color:#fff;">--</div>
+        
+        <div style="text-align:center; flex:1; margin:0 15px; position:relative;">
+            <div style="font-size:10px; opacity:0.6; margin-bottom:2px;">TEXTURE</div>
+            <div id="hud-texture" style="font-weight:700; color:#fff; letter-spacing:3px;">--</div>
+            <div style="position:absolute; bottom:-12px; left:50%; transform:translateX(-50%); width:40px; height:2px; background:rgba(0,212,255,0.3);"></div>
         </div>
-        <div style="text-align:right;">
-            <div style="opacity:0.5; font-size:9px;">TONE</div>
-            <div id="hud-pitch" style="font-weight:bold; color:#ff2d55;">--</div>
+        
+        <div style="text-align:right; position:relative;">
+            <div style="font-size:10px; opacity:0.6; margin-bottom:2px;">TONE</div>
+            <div id="hud-pitch" style="font-weight:700; color:#ff2d55; text-shadow: 0 0 10px rgba(255,45,85,0.4);">--</div>
+            <div style="position:absolute; right:-10px; top:50%; width:2px; height:12px; background:#ff2d55; transform:translateY(-50%);"></div>
         </div>
     `;
     document.body.appendChild(hudEl);
@@ -291,12 +308,10 @@ function toggleFullscreen() {
     document.querySelector('.site-footer')?.style.setProperty('display', 'none');
     hud.style.display = 'none'; 
     
-    // FIX: Move HUD down when buttons disappear
     const hudEl = document.getElementById("si-semantic-hud");
     if(hudEl) hudEl.style.bottom = "30px";
     
     setEngineOpen(false);
-    
     stageEl.classList.add('fullscreen-active');
     document.body.style.overflow = "hidden"; 
     isFullscreen = true; setStatus("📺 Entered projection mode");
@@ -307,7 +322,6 @@ function resetUI() {
   document.querySelector('.site-footer')?.style.setProperty('display', 'block');
   hud.style.display = 'flex'; 
   
-  // FIX: Restore HUD position
   const hudEl = document.getElementById("si-semantic-hud");
   if(hudEl) hudEl.style.bottom = "130px";
   
@@ -653,7 +667,6 @@ async function initEngine() {
 
     analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     dataFreq = new Uint8Array(analyser.frequencyBinCount);
-    dataTime = new Float32Array(analyser.fftSize);
 
     inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
     inputGain.connect(analyser); inputGain.connect(monitorGain); monitorGain.connect(engine.master);
