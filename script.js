@@ -65,9 +65,10 @@ let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSou
 let audioRecordDest = null;
 
 // Synesthesia State
-let detectedNote = null;
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 let currentHueTarget = 0;
 let currentHue = 0;
+let detectedNoteName = "--";
 
 /* ================= THREE STATE ================= */
 
@@ -100,6 +101,48 @@ function applyMicMonitorGain() {
   monitorGain.gain.value = currentMode === "mic" && micMonitor && !feedbackMuted ? micMonitorVol : 0;
 }
 
+/* ================= HUD (SEMANTIC LAYER) ================= */
+
+function createHUD() {
+    const existing = document.getElementById("si-semantic-hud");
+    if(existing) existing.remove();
+
+    const hudEl = document.createElement("div");
+    hudEl.id = "si-semantic-hud";
+    // Sleek, tech-focused styling
+    hudEl.style.cssText = `
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        width: min(90vw, 400px); display: flex; justify-content: space-between;
+        background: rgba(0, 10, 20, 0.85); border: 1px solid rgba(0, 212, 255, 0.3);
+        border-radius: 4px; padding: 10px 16px; z-index: 1000;
+        font-family: 'Courier New', monospace; font-size: 11px; color: #00d4ff;
+        pointer-events: none; backdrop-filter: blur(4px); box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    `;
+    
+    // Three columns: Signal, Texture, Pitch
+    hudEl.innerHTML = `
+        <div style="text-align:left;">
+            <div style="opacity:0.5; font-size:9px;">SIGNAL</div>
+            <div id="hud-signal" style="font-weight:bold; color:#fff;">WAITING</div>
+        </div>
+        <div style="text-align:center; border-left:1px solid rgba(255,255,255,0.1); border-right:1px solid rgba(255,255,255,0.1); padding: 0 16px; flex: 1;">
+            <div style="opacity:0.5; font-size:9px;">TEXTURE</div>
+            <div id="hud-texture" style="font-weight:bold; letter-spacing:1px; color:#fff;">--</div>
+        </div>
+        <div style="text-align:right;">
+            <div style="opacity:0.5; font-size:9px;">PITCH</div>
+            <div id="hud-pitch" style="font-weight:bold; color:#ff2d55;">--</div>
+        </div>
+    `;
+    document.body.appendChild(hudEl);
+}
+// Initialize HUD immediately
+createHUD();
+
+const hudSignal = document.getElementById("hud-signal");
+const hudTexture = document.getElementById("hud-texture");
+const hudPitch = document.getElementById("hud-pitch");
+
 /* ================= HUD & ENGINE PANEL ================= */
 
 function removeLegacyUI() { 
@@ -131,7 +174,6 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-// FIX: Added Synesthesia Mode to dropdown
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -253,6 +295,7 @@ function toggleFullscreen() {
     document.querySelector('.site-header')?.style.setProperty('display', 'none'); 
     document.querySelector('.site-footer')?.style.setProperty('display', 'none');
     hud.style.display = 'none'; 
+    document.getElementById("si-semantic-hud").style.bottom = "12px"; // Lower HUD in fullscreen
     setEngineOpen(false);
     
     stageEl.classList.add('fullscreen-active');
@@ -264,6 +307,7 @@ function resetUI() {
   document.querySelector('.site-header')?.style.setProperty('display', 'block'); 
   document.querySelector('.site-footer')?.style.setProperty('display', 'block');
   hud.style.display = 'flex'; 
+  document.getElementById("si-semantic-hud").style.bottom = "24px"; // Raise HUD
   
   stageEl.classList.remove('fullscreen-active');
   document.body.style.overflow = "auto"; 
@@ -608,7 +652,6 @@ async function initEngine() {
 
     analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     dataFreq = new Uint8Array(analyser.frequencyBinCount);
-    // NEW: Time domain buffer for pitch detection
     dataTime = new Float32Array(analyser.fftSize);
 
     inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
@@ -738,7 +781,6 @@ function loop() {
 
       if (analyser && dataFreq) {
         analyser.getByteFrequencyData(dataFreq);
-        // Synesthesia: Get time domain data for pitch detection
         analyser.getFloatTimeDomainData(dataTime);
         
         let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.1;
@@ -752,25 +794,20 @@ function loop() {
         bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
         
-        // PITCH DETECTION LOGIC
+        // PITCH & NOTE DETECTION
         const pitch = autoCorrelate(dataTime, engine.ctx.sampleRate);
         if (pitch !== -1 && pitch > 50 && pitch < 2000) {
-            // Note mapping: A4 = 440Hz.
-            // Formula: noteNum = 12 * log2(pitch / 440) + 69
             const noteNum = 12 * (Math.log(pitch / 440) / Math.log(2)) + 69;
-            // Map 0-12 (C to B) to 0-1 Hue
             const noteIndex = Math.round(noteNum) % 12;
             currentHueTarget = noteIndex / 12.0; 
+            detectedNoteName = NOTE_NAMES[noteIndex] || "--"; // Store note name
+        } else {
+            detectedNoteName = "--";
         }
         
-        // Smooth hue transition
         const hueDiff = currentHueTarget - currentHue;
-        if (Math.abs(hueDiff) > 0.5) {
-            currentHue += (hueDiff > 0 ? 1 : -1) * 0.02; // Wrap around fix
-        } else {
-            currentHue += hueDiff * 0.05;
-        }
-        currentHue = (currentHue + 1) % 1; // Normalize
+        if (Math.abs(hueDiff) > 0.5) { currentHue += (hueDiff > 0 ? 1 : -1) * 0.02; } else { currentHue += hueDiff * 0.05; }
+        currentHue = (currentHue + 1) % 1; 
 
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
@@ -781,27 +818,45 @@ function loop() {
               lastVibration = time;
           }
         }
+        
+        // UPDATE HUD TEXT
+        if (hudSignal) {
+            let signalText = "SILENCE";
+            let signalColor = "#555";
+            if (bassSm > 0.8) { signalText = "PEAKING"; signalColor = "#ff2d55"; }
+            else if (bassSm > 0.2) { signalText = "OPTIMAL"; signalColor = "#00d4ff"; }
+            else if (bassSm > 0.01) { signalText = "LOW"; signalColor = "#00d4ff"; }
+            
+            if (snapFlash > 0.5) { signalText = "IMPULSE"; signalColor = "#fff"; }
+            
+            hudSignal.textContent = signalText;
+            hudSignal.style.color = signalColor;
+        }
+        
+        if (hudTexture) {
+            let tex = "--";
+            if (bassSm > midSm && bassSm > snareSm && bassSm > 0.3) tex = "SUB-BASS";
+            else if (snareSm > bassSm && snareSm > 0.3) tex = "PERCUSSIVE";
+            else if (midSm > 0.4) tex = "HARMONIC";
+            else if (bassSm > 0.1) tex = "DRONE";
+            hudTexture.textContent = tex;
+        }
+        
+        if (hudPitch) {
+            hudPitch.textContent = detectedNoteName === "--" ? "--" : `DETECTED [${detectedNoteName}]`;
+            hudPitch.style.color = detectedNoteName === "--" ? "#555" : `hsl(${currentHue * 360}, 100%, 70%)`;
+        }
+
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
       const mode = paletteEl?.value || "synesthesia";
-      let finalHue = 0;
-      let finalSat = 0.75;
-      let finalLum = 0.55;
+      let finalHue = 0; let finalSat = 0.75; let finalLum = 0.55;
 
-      if (mode === "grayscale") {
-          finalHue = 0; finalSat = 0; finalLum = 0.8;
-      } else if (mode === "energy") {
-          finalHue = (0.6 + bassSm * 0.4) % 1; finalSat = 0.9;
-      } else if (mode === "synesthesia") {
-          finalHue = currentHue; 
-          finalSat = 0.85; 
-          finalLum = 0.6;
-      } else {
-          // Manual Hue
-          const sliderHue = hueEl ? parseFloat(hueEl.value) : 280;
-          finalHue = ((sliderHue % 360) / 360) + (Math.sin(time * 0.2) * 0.1);
-      }
+      if (mode === "grayscale") { finalHue = 0; finalSat = 0; finalLum = 0.8; } 
+      else if (mode === "energy") { finalHue = (0.6 + bassSm * 0.4) % 1; finalSat = 0.9; } 
+      else if (mode === "synesthesia") { finalHue = currentHue; finalSat = 0.85; finalLum = 0.6; } 
+      else { const sliderHue = hueEl ? parseFloat(hueEl.value) : 280; finalHue = ((sliderHue % 360) / 360) + (Math.sin(time * 0.2) * 0.1); }
 
       if (nebulaMaterial) {
           nebulaMaterial.uniforms.time.value = time * 0.2; nebulaMaterial.uniforms.bass.value = bassSm;
@@ -816,13 +871,10 @@ function loop() {
         else if (currentCameraMode === 3) { camTargetPos.set(Math.sin(time)*3, Math.cos(time)*3, 5); camTargetLook.set(0,0,0); }
         
         camera.position.lerp(camTargetPos, 0.05); 
-        
         const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
-        currentLook.lerp(camTargetLook, 0.1); 
-        camera.lookAt(currentLook);
+        currentLook.lerp(camTargetLook, 0.1); camera.lookAt(currentLook);
         
-        let targetFov = baseFov - (bassSm * 15);
-        if(isNaN(targetFov)) targetFov = baseFov;
+        let targetFov = baseFov - (bassSm * 15); if(isNaN(targetFov)) targetFov = baseFov;
         camera.fov = THREE.MathUtils.lerp(camera.fov, Math.max(10, Math.min(targetFov, 120)), 0.1);
         
         const shake = snapFlash * 0.4; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
@@ -866,7 +918,6 @@ function loop() {
         const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
         morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, Math.max(0.1, targetScale), 0.3));
 
-        // APPLY SYNESTHESIA COLOR
         morphMesh.material.color.setHSL(finalHue, finalSat, finalLum);
         morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
       }
@@ -877,7 +928,7 @@ function loop() {
         
         let glowColor = new THREE.Color().setHSL(finalHue, 1.0, 0.6);
         if (mode === "grayscale") glowColor.setHex(0xffffff);
-        else glowColor.lerp(new THREE.Color(0xffffff), Math.min(1, snapFlash * 0.8)); // Flash white on hits
+        else glowColor.lerp(new THREE.Color(0xffffff), Math.min(1, snapFlash * 0.8)); 
         
         sigilGlow.material.color.copy(glowColor); 
         
@@ -932,10 +983,8 @@ function loop() {
       if (bloomPass) {
           const explosiveBass = Math.pow(bassSm, 1.5) * 1.5; 
           const strobeFlash = snapFlash * 2.0; 
-          
           const targetBloom = P.bloomStrength + explosiveBass + strobeFlash;
           bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 5.0); 
-
           const targetRadius = P.bloomRadius + (bassSm * 0.4) + (snapFlash * 0.5);
           bloomPass.radius = isNaN(targetRadius) ? P.bloomRadius : Math.min(targetRadius, 1.5);
       }
