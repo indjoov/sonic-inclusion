@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { AudioEngine } from "./audio/AudioEngine.js";
 
-// Postprocessing imports
+// Postprocessing
 import { EffectComposer } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -60,13 +60,13 @@ document.body.appendChild(overlay);
 
 /* ================= GLOBAL STATE ================= */
 
-let engine = null; // Lazy load
+let engine = null; 
 let raf = null; let analyser = null; let dataFreq = null; let dataTime = null;
 let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
 let audioRecordDest = null;
 
-// Pitch Detection State
+// Analysis State
 const NOTE_STRINGS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 let frameCounter = 0; 
 
@@ -83,16 +83,21 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 let hapticsEnabled = false;
-let tunerEnabled = false; // Hidden by default
+let tunerEnabled = false; 
 let lastVibration = 0;
 
 let currentCameraMode = 0;
 const camTargetPos = new THREE.Vector3();
 const camTargetLook = new THREE.Vector3();
 
-// UI Elements (Initialized later)
-let tunerNote, tunerOctave, tunerBar, tunerContainer;
-let enginePanel, hud, recBtn; // Define globals
+// Globals for UI
+let enginePanel = null;
+let hud = null;
+let recBtn = null;
+let tunerContainer = null;
+let tunerNote = null;
+let tunerOctave = null;
+let tunerBar = null;
 
 function applyMicMonitorGain() {
   if (!monitorGain) return;
@@ -102,17 +107,16 @@ function applyMicMonitorGain() {
 /* ================= INITIALIZATION ================= */
 
 async function initEngine() {
-  // Prevent double init
-  if (engine) return;
+  if (engine) return; // Prevent double init
   
   overlay.style.display = "none"; 
-  setStatus("⏳ Initializing engine…");
+  setStatus("⏳ Initializing...");
 
   try {
-    // 1. Initialize UI Elements NOW (Safe zone)
+    // 1. Create ALL UI first (Safe Order)
     createTunerUI();
-    createHUDButtons(); // Creates buttons AND attaches listeners
-    createEnginePanel();
+    createEnginePanel(); 
+    createHUDButtons(); 
 
     // 2. Initialize Three.js
     initThree();
@@ -133,7 +137,7 @@ async function initEngine() {
     audioRecordDest = engine.ctx.createMediaStreamDestination();
     try { engine.master.connect(audioRecordDest); } catch (e) {}
 
-    setStatus("✅ Engine ready");
+    setStatus("✅ Ready");
   } catch (e) {
     console.error("Initialization failed:", e);
     alert("Error initializing: " + e.message);
@@ -141,11 +145,9 @@ async function initEngine() {
   }
 }
 
-// Bind click listener
 overlay.addEventListener("click", () => { initEngine(); });
 
-
-/* ================= UI CREATION (SAFE FUNCTIONS) ================= */
+/* ================= UI CREATION ================= */
 
 function createTunerUI() {
     const existing = document.getElementById("si-tuner");
@@ -173,7 +175,6 @@ function createTunerUI() {
     `;
     document.body.appendChild(tunerEl);
     
-    // Assign to globals
     tunerNote = document.getElementById("tuner-note");
     tunerOctave = document.getElementById("tuner-octave");
     tunerBar = document.getElementById("tuner-bar");
@@ -190,7 +191,7 @@ function createHUDButtons() {
     recBtn = document.createElement("button");
     recBtn.id = "si-recBtn"; recBtn.className = "hud-btn"; recBtn.type = "button"; recBtn.innerHTML = "⏺ RECORD";
     
-    // SAFE EVENT LISTENER ATTACHMENT
+    // SAFE EVENT LISTENER (Inside init)
     recBtn.addEventListener("click", async () => { if (!recording) await startRecording(); else stopRecording(); });
 
     const hudRightControls = document.createElement("div");
@@ -207,11 +208,15 @@ function createHUDButtons() {
     engineToggle.addEventListener("click", () => {
         engineOpen = !engineOpen;
         if(engineOpen) {
-            enginePanel.classList.add('open');
-            enginePanel.style.display = "block";
+            if(enginePanel) {
+                enginePanel.classList.add('open');
+                enginePanel.style.display = "block";
+            }
         } else {
-            enginePanel.classList.remove('open');
-            setTimeout(() => { if(!engineOpen) enginePanel.style.display = "none"; }, 400);
+            if(enginePanel) {
+                enginePanel.classList.remove('open');
+                setTimeout(() => { if(!engineOpen) enginePanel.style.display = "none"; }, 400);
+            }
         }
     });
 
@@ -284,47 +289,53 @@ function createEnginePanel() {
     `;
     document.body.appendChild(enginePanel);
     
-    // Bind Events
-    enginePanel.querySelector("#si-engineClose").addEventListener("click", () => {
+    // Bind Events (With Optional Chaining for Safety)
+    enginePanel.querySelector("#si-engineClose")?.addEventListener("click", () => {
         enginePanel.classList.remove('open');
         setTimeout(() => { enginePanel.style.display = "none"; }, 400);
     });
     
-    enginePanel.querySelector("#chapInv").addEventListener("click", () => applyChapter("INVOCATION"));
-    enginePanel.querySelector("#chapPos").addEventListener("click", () => applyChapter("POSSESSION"));
-    enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapter("ASCENSION"));
+    enginePanel.querySelector("#chapInv")?.addEventListener("click", () => applyChapter("INVOCATION"));
+    enginePanel.querySelector("#chapPos")?.addEventListener("click", () => applyChapter("POSSESSION"));
+    enginePanel.querySelector("#chapAsc")?.addEventListener("click", () => applyChapter("ASCENSION"));
     
-    enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
-    enginePanel.querySelector("#hapticsToggle").addEventListener("change", (e) => {
+    enginePanel.querySelector("#reducedMotion")?.addEventListener("change", (e) => reducedMotion = !!e.target.checked);
+    enginePanel.querySelector("#hapticsToggle")?.addEventListener("change", (e) => {
         hapticsEnabled = !!e.target.checked;
         if (hapticsEnabled && navigator.vibrate) navigator.vibrate(20); 
     });
-    enginePanel.querySelector("#tunerToggle").addEventListener("change", (e) => {
+    enginePanel.querySelector("#tunerToggle")?.addEventListener("change", (e) => {
         tunerEnabled = !!e.target.checked;
         if(tunerContainer) tunerContainer.style.opacity = tunerEnabled ? 1 : 0;
     });
     
-    const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
-    const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol"); 
+    const micSwitch = enginePanel.querySelector("#micMonitor"); 
+    const micVol = enginePanel.querySelector("#micMonitorVol"); 
     
-    micMonitorEl.checked = micMonitor; 
-    micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
-    
-    micMonitorEl.addEventListener("change", (e) => {
-        micMonitor = !!e.target.checked; 
-        feedbackMuted = false; 
-        applyMicMonitorGain(); 
-        setStatus(micMonitor ? "🎙️ Mic monitor ON" : "🎙️ Mic monitor OFF");
-    });
-    micMonitorVolEl.addEventListener("input", (e) => {
-        micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100));
-        applyMicMonitorGain();
-    });
+    if(micSwitch) {
+        micSwitch.checked = micMonitor; 
+        micSwitch.addEventListener("change", (e) => {
+            micMonitor = !!e.target.checked; 
+            feedbackMuted = false; 
+            applyMicMonitorGain(); 
+            setStatus(micMonitor ? "🎙️ Mic monitor ON" : "🎙️ Mic monitor OFF");
+        });
+    }
+    if(micVol) {
+        micVol.value = String(Math.round(micMonitorVol * 100));
+        micVol.addEventListener("input", (e) => {
+            micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100));
+            applyMicMonitorGain();
+        });
+    }
     
     // Wire up buttons
-    enginePanel.querySelector("#panel-demoBtn").addEventListener("click", () => playDemo("media/kasubo hoerprobe.mp3"));
-    enginePanel.querySelector("#panel-fileBtn").addEventListener("click", async () => { fileInput.click(); });
-    enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) => {
+    enginePanel.querySelector("#panel-demoBtn")?.addEventListener("click", () => playDemo("media/kasubo hoerprobe.mp3"));
+    enginePanel.querySelector("#panel-fileBtn")?.addEventListener("click", async () => { fileInput.click(); });
+    
+    // FIX: Renamed variable to avoid duplicate declaration
+    const panelMicBtn = enginePanel.querySelector("#panel-micBtn");
+    panelMicBtn?.addEventListener("click", async (e) => {
         if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
         try { 
             await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
@@ -336,14 +347,16 @@ function createEnginePanel() {
         } catch (err) { setStatus("❌ Mic error"); console.error(err); await stopAll({ suspend: true }); }
     });
     
-    enginePanel.querySelector("#customSigilBtn").addEventListener("click", () => sigilInput.click());
+    enginePanel.querySelector("#customSigilBtn")?.addEventListener("click", () => sigilInput.click());
     
-    // Wire Inputs
-    const partEl = enginePanel.querySelector("#partAmount"); 
-    const zoomEl = enginePanel.querySelector("#zoomInt"); 
-    const hueEl  = enginePanel.querySelector("#hueShift");
-    const paletteEl = enginePanel.querySelector("#palette-panel");
-    const trailsEl = enginePanel.querySelector("#trailsAmount");
+    // Touch events for drag
+    let touchStartY = null;
+    enginePanel.addEventListener("touchstart", (e) => { touchStartY = e.touches?.[0]?.clientY ?? null; }, { passive: true });
+    enginePanel.addEventListener("touchmove", (e) => {
+      if (touchStartY == null) return;
+      const dy = (e.touches?.[0]?.clientY ?? touchStartY) - touchStartY;
+      if (dy > 50) { setEngineOpen(false); touchStartY = null; }
+    }, { passive: true });
 }
 
 /* ================= THREE INIT ================= */
@@ -698,7 +711,48 @@ function loop() {
   }
 }
 
-/* ================= RECORDING ================= */
+/* ================= UTILS ================= */
+async function stopAll({ suspend = true } = {}) {
+  if (bufferSrc) { try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {} bufferSrc = null; }
+  if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
+  if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
+  currentMode = "idle"; 
+  const panelMicBtn = document.getElementById("panel-micBtn");
+  if (panelMicBtn) { panelMicBtn.style.background = ""; panelMicBtn.style.borderColor = ""; }
+  feedbackMuted = false; 
+  if (monitorGain) monitorGain.gain.value = 0;
+  if (suspend && engine && engine.ctx) try { await engine.ctx.suspend(); } catch {}
+}
+
+/* ================= HELPERS ================= */
+function initNebulaBackground() {
+    const geo = new THREE.PlaneGeometry(500, 500);
+    nebulaMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0 }, bass: { value: 0 }, color1: { value: new THREE.Color(0x0a001a) }, color2: { value: new THREE.Color(0x002233) }  
+        },
+        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: `
+            uniform float time; uniform float bass; uniform vec3 color1; uniform vec3 color2; varying vec2 vUv;
+            float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
+            float noise(vec2 st) {
+                vec2 i = floor(st); vec2 f = fract(st); float a = random(i); float b = random(i + vec2(1.0, 0.0)); float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
+                vec2 u = f * f * (3.0 - 2.0 * f); return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+            }
+            float fbm(vec2 st) { float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(st); st *= 2.0; a *= 0.5; } return v; }
+            void main() {
+                vec2 st = vUv * 3.0; vec2 q = vec2(0.); q.x = fbm( st + 0.00 * time); q.y = fbm( st + vec2(1.0));
+                vec2 r = vec2(0.); r.x = fbm( st + 1.0*q + vec2(1.7,9.2)+ 0.15*time ); r.y = fbm( st + 1.0*q + vec2(8.3,2.8)+ 0.126*time);
+                float f = fbm(st+r); vec3 finalColor = mix(color1, color2, clamp(f*f*4.0,0.0,1.0));
+                gl_FragColor = vec4((f*f*f+.6*f*f+.5*f)*finalColor, 1.0);
+            }
+        `,
+        depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geo, nebulaMaterial); mesh.position.z = -100; scene.add(mesh);
+}
+
+// Media Recording logic
 let mediaRecorder = null, recordedChunks = [], recording = false;
 function pickMime() { const mimes = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]; for (const m of mimes) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ""; }
 function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
