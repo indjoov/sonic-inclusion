@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { AudioEngine } from "./audio/AudioEngine.js";
 
-// Postprocessing
+// Postprocessing imports
 import { EffectComposer } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -191,7 +191,6 @@ function createHUDButtons() {
     recBtn = document.createElement("button");
     recBtn.id = "si-recBtn"; recBtn.className = "hud-btn"; recBtn.type = "button"; recBtn.innerHTML = "⏺ RECORD";
     
-    // SAFE EVENT LISTENER (Inside init)
     recBtn.addEventListener("click", async () => { if (!recording) await startRecording(); else stopRecording(); });
 
     const hudRightControls = document.createElement("div");
@@ -333,7 +332,6 @@ function createEnginePanel() {
     enginePanel.querySelector("#panel-demoBtn")?.addEventListener("click", () => playDemo("media/kasubo hoerprobe.mp3"));
     enginePanel.querySelector("#panel-fileBtn")?.addEventListener("click", async () => { fileInput.click(); });
     
-    // FIX: Renamed variable to avoid duplicate declaration
     const panelMicBtn = enginePanel.querySelector("#panel-micBtn");
     panelMicBtn?.addEventListener("click", async (e) => {
         if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
@@ -373,6 +371,7 @@ function initThree() {
 
   coreLight = new THREE.PointLight(0x00d4ff, 0, 50); coreLight.position.set(0, 0, 0); scene.add(coreLight);
   world = new THREE.Group(); scene.add(world);
+  // Re-added makeStars call
   starPoints = makeStars(1900, 120); scene.add(starPoints);
 
   makeResponsiveMorphingCage();
@@ -422,6 +421,34 @@ function resetUI() {
   isFullscreen = false; fitRendererToStage();
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) resetUI(); setTimeout(fitRendererToStage, 100); });
+
+/* ================= IMPROVED STARS (RESTORED) ================= */
+let starGeo = null;
+function makeStars(count, spread) {
+  starGeo = new THREE.BufferGeometry(); const positions = new Float32Array(count * 3); const velocities = []; 
+  for (let i = 0; i < count; i++) {
+    const ix = i * 3; positions[ix] = (Math.random() - 0.5) * spread * 1.5; positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
+    positions[ix + 2] = (Math.random() - 0.5) * spread * 2; velocities.push(0.05 + Math.random() * 0.25);
+  }
+  starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({ color: 0x8feaff, size: 0.08, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending });
+  starGeo.userData = { velocities: velocities, spread: spread }; return new THREE.Points(starGeo, mat);
+}
+function updateStars(delta) {
+  if (!starPoints || !starGeo) return;
+  const positions = starGeo.attributes.position.array; const vels = starGeo.userData.velocities; const spread = starGeo.userData.spread;
+  
+  let warpSpeed = 1 + (bassSm * 8); 
+  if (isNaN(warpSpeed)) warpSpeed = 1;
+
+  for (let i = 0; i < vels.length; i++) {
+    const ix = i * 3; positions[ix + 2] += vels[i] * warpSpeed * delta * 20;
+    if (positions[ix + 2] > 20) {
+      positions[ix + 2] = -150; positions[ix] = (Math.random() - 0.5) * spread * 1.5; positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
+    }
+  }
+  starGeo.attributes.position.needsUpdate = true;
+}
 
 /* ================= AUDIO ANALYSIS (OPTIMIZED AUTOCORRELATION) ================= */
 function autoCorrelate(buf, sampleRate) {
@@ -802,4 +829,5 @@ function stopRecording() {
 
 fileInput.addEventListener("change", async (e) => {
   if (!engine) await initEngine();
+  // logic handled in createEnginePanel listener now
 });
