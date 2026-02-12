@@ -89,8 +89,9 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
-// Haptics State
+// Haptics & HUD State
 let hapticsEnabled = false;
+let hudEnabled = true; // Default ON
 let lastVibration = 0;
 
 let currentCameraMode = 0;
@@ -113,7 +114,6 @@ function createHUD() {
     const hudEl = document.createElement("div");
     hudEl.id = "si-semantic-hud";
     
-    // FIX: Cyberpunk styling with clipped corners, tech font, and glow
     hudEl.style.cssText = `
         position: fixed; bottom: 130px; left: 50%; transform: translateX(-50%);
         width: min(90vw, 420px); display: flex; justify-content: space-between; align-items: center;
@@ -125,10 +125,10 @@ function createHUD() {
         text-transform: uppercase; letter-spacing: 2px;
         pointer-events: none; backdrop-filter: blur(8px); 
         box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
-        transition: bottom 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        transition: bottom 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease;
+        opacity: ${hudEnabled ? 1 : 0};
     `;
     
-    // Inner structure with accent lines
     hudEl.innerHTML = `
         <div style="text-align:left; position:relative;">
             <div style="font-size:10px; opacity:0.6; margin-bottom:2px;">SIGNAL</div>
@@ -187,6 +187,7 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
+// FIX: Added 'Show HUD' checkbox
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -234,8 +235,11 @@ enginePanel.innerHTML = `
         </select>
     </label>
 
-    <label class="checkbox-row" style="max-width:100%;"><input id="hapticsToggle" type="checkbox">HAPTICS (Mobile)</label>
-    <label class="checkbox-row" style="max-width:100%;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
+    <div style="display:flex; gap:10px; width:100%;">
+        <label class="checkbox-row" style="flex:1;"><input id="showHud" type="checkbox" checked>Show HUD</label>
+        <label class="checkbox-row" style="flex:1;"><input id="hapticsToggle" type="checkbox">HAPTICS</label>
+    </div>
+    <label class="checkbox-row" style="max-width:100%; margin-top:8px;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
     
     <div class="mic-section" style="width: 100%; box-sizing: border-box;">
       <label class="checkbox-row"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
@@ -280,9 +284,14 @@ const trailsEl = enginePanel.querySelector("#trailsAmount");
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
 enginePanel.querySelector("#hapticsToggle").addEventListener("change", (e) => {
     hapticsEnabled = !!e.target.checked;
-    if (hapticsEnabled && navigator.vibrate) {
-        navigator.vibrate(20); 
-    }
+    if (hapticsEnabled && navigator.vibrate) navigator.vibrate(20); 
+});
+
+// FIX: HUD Toggle Logic
+enginePanel.querySelector("#showHud").addEventListener("change", (e) => {
+    hudEnabled = !!e.target.checked;
+    const hudEl = document.getElementById("si-semantic-hud");
+    if(hudEl) hudEl.style.opacity = hudEnabled ? 1 : 0;
 });
 
 const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
@@ -957,9 +966,12 @@ function loop() {
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
       }
 
+      // FIX: Heavily Tamed Audio-Reactive Bloom
+      // Removed "explosiveBass" and "strobeFlash" multipliers to stop the whiteout.
       if (bloomPass) {
-          const targetBloom = P.bloomStrength + (bassSm * 0.5); 
-          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 2.0); 
+          const targetBloom = P.bloomStrength + (bassSm * 0.5); // Much gentler reaction
+          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 2.0); // Cap at 2.0 max
+
           const targetRadius = P.bloomRadius + (bassSm * 0.2);
           bloomPass.radius = isNaN(targetRadius) ? P.bloomRadius : Math.min(targetRadius, 1.0);
       }
