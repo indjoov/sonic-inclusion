@@ -17,7 +17,7 @@ const canvas = document.getElementById("viz");
 const stageEl = canvas.closest(".stage");
 const srText = document.getElementById("srText");
 
-// Inject futuristic font
+// Inject tech font
 const fontLink = document.createElement("link");
 fontLink.href = "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap";
 fontLink.rel = "stylesheet";
@@ -65,13 +65,14 @@ document.body.appendChild(overlay);
 /* ================= ENGINE (AUDIO) ================= */
 
 const engine = new AudioEngine();
-let raf = null; let analyser = null; let dataFreq = null;
+let raf = null; let analyser = null; let dataFreq = null; let dataTime = null;
 let inputGain = null; let monitorGain = null;
 let currentMode = "idle"; let bufferSrc = null; let micStream = null; let micSourceNode = null;
 let audioRecordDest = null;
 
-// Lightweight Analysis State
-let brightness = 0; 
+// Pitch Detection State
+const NOTE_STRINGS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+let frameCounter = 0; // For performance optimization
 
 /* ================= THREE STATE ================= */
 
@@ -89,9 +90,9 @@ let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
-// Haptics & HUD State
+// Haptics & Tools State
 let hapticsEnabled = false;
-let hudEnabled = true; // Default ON
+let tunerEnabled = false; // Hidden by default
 let lastVibration = 0;
 
 let currentCameraMode = 0;
@@ -105,56 +106,47 @@ function applyMicMonitorGain() {
   monitorGain.gain.value = currentMode === "mic" && micMonitor && !feedbackMuted ? micMonitorVol : 0;
 }
 
-/* ================= FUTURISTIC HUD ================= */
+/* ================= CHROMATIC TUNER HUD ================= */
 
-function createHUD() {
-    const existing = document.getElementById("si-semantic-hud");
+function createTuner() {
+    const existing = document.getElementById("si-tuner");
     if(existing) existing.remove();
 
-    const hudEl = document.createElement("div");
-    hudEl.id = "si-semantic-hud";
+    const tunerEl = document.createElement("div");
+    tunerEl.id = "si-tuner";
     
-    hudEl.style.cssText = `
-        position: fixed; bottom: 130px; left: 50%; transform: translateX(-50%);
-        width: min(90vw, 420px); display: flex; justify-content: space-between; align-items: center;
-        background: rgba(10, 15, 25, 0.75); 
-        border-bottom: 2px solid rgba(0, 212, 255, 0.6);
-        clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
-        padding: 12px 20px; z-index: 1000;
-        font-family: 'Rajdhani', sans-serif; font-size: 14px; color: #00d4ff;
-        text-transform: uppercase; letter-spacing: 2px;
-        pointer-events: none; backdrop-filter: blur(8px); 
-        box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
-        transition: bottom 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease;
-        opacity: ${hudEnabled ? 1 : 0};
+    // Minimalist, high-tech tuner centered on screen
+    tunerEl.style.cssText = `
+        position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%);
+        width: 200px; text-align: center;
+        z-index: 1000; pointer-events: none;
+        font-family: 'Rajdhani', sans-serif; 
+        opacity: 0; transition: opacity 0.3s ease;
     `;
     
-    hudEl.innerHTML = `
-        <div style="text-align:left; position:relative;">
-            <div style="font-size:10px; opacity:0.6; margin-bottom:2px;">SIGNAL</div>
-            <div id="hud-signal" style="font-weight:700; color:#fff; text-shadow: 0 0 8px rgba(255,255,255,0.5);">WAITING</div>
-            <div style="position:absolute; left:-10px; top:50%; width:2px; height:12px; background:#00d4ff; transform:translateY(-50%);"></div>
+    tunerEl.innerHTML = `
+        <div style="font-size: 42px; font-weight: 700; color: #fff; text-shadow: 0 0 15px rgba(0,212,255,0.8); line-height: 1;">
+            <span id="tuner-note">--</span><span id="tuner-octave" style="font-size: 18px; opacity: 0.6; vertical-align: top;"></span>
         </div>
+        <div style="font-size: 12px; color: rgba(255,255,255,0.5); letter-spacing: 2px; margin-top: 4px;">PITCH DETECT</div>
         
-        <div style="text-align:center; flex:1; margin:0 15px; position:relative;">
-            <div style="font-size:10px; opacity:0.6; margin-bottom:2px;">TEXTURE</div>
-            <div id="hud-texture" style="font-weight:700; color:#fff; letter-spacing:3px;">--</div>
-            <div style="position:absolute; bottom:-12px; left:50%; transform:translateX(-50%); width:40px; height:2px; background:rgba(0,212,255,0.3);"></div>
-        </div>
-        
-        <div style="text-align:right; position:relative;">
-            <div style="font-size:10px; opacity:0.6; margin-bottom:2px;">TONE</div>
-            <div id="hud-pitch" style="font-weight:700; color:#ff2d55; text-shadow: 0 0 10px rgba(255,45,85,0.4);">--</div>
-            <div style="position:absolute; right:-10px; top:50%; width:2px; height:12px; background:#ff2d55; transform:translateY(-50%);"></div>
+        <div style="margin-top: 10px; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; position: relative; overflow: hidden;">
+            <div id="tuner-bar" style="
+                position: absolute; left: 50%; top: 0; bottom: 0; width: 4px; 
+                background: #00d4ff; box-shadow: 0 0 10px #00d4ff;
+                transform: translateX(-50%); transition: transform 0.1s linear;
+            "></div>
+            <div style="position: absolute; left: 50%; top:0; bottom:0; width: 1px; background: #fff; opacity: 0.3;"></div>
         </div>
     `;
-    document.body.appendChild(hudEl);
+    document.body.appendChild(tunerEl);
 }
-createHUD();
+createTuner();
 
-const hudSignal = document.getElementById("hud-signal");
-const hudTexture = document.getElementById("hud-texture");
-const hudPitch = document.getElementById("hud-pitch");
+const tunerNote = document.getElementById("tuner-note");
+const tunerOctave = document.getElementById("tuner-octave");
+const tunerBar = document.getElementById("tuner-bar");
+const tunerContainer = document.getElementById("si-tuner");
 
 /* ================= HUD & ENGINE PANEL ================= */
 
@@ -187,7 +179,7 @@ enginePanel.id = "si-enginePanel";
 
 enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-// FIX: Added 'Show HUD' checkbox
+// FIX: New "ANALYSIS TOOLS" Section with hidden Tuner toggle
 enginePanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
@@ -215,17 +207,6 @@ enginePanel.innerHTML = `
         <button id="chapAsc" type="button" class="chap-btn">ASCENSION</button>
       </div>
     </div>
-    <div class="sigil-preset-row" style="flex-wrap: wrap; width: 100%; box-sizing: border-box;">
-        <button id="customSigilBtn" type="button" class="sigil-btn">Upload Sigil</button>
-        <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
-    </div>
-    
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">COLOR MODE
         <select id="palette-panel" style="width:100%; margin-top:6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2);">
@@ -235,18 +216,18 @@ enginePanel.innerHTML = `
         </select>
     </label>
 
-    <div style="display:flex; gap:10px; width:100%;">
-        <label class="checkbox-row" style="flex:1;"><input id="showHud" type="checkbox" checked>Show HUD</label>
-        <label class="checkbox-row" style="flex:1;"><input id="hapticsToggle" type="checkbox">HAPTICS</label>
+    <div style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 12px; padding-top: 12px;">
+        <div style="font-size: 10px; opacity: 0.6; margin-bottom: 8px; letter-spacing: 1px;">ANALYSIS TOOLS</div>
+        <div style="display:flex; gap:10px; width:100%;">
+            <label class="checkbox-row" style="flex:1; color: #00d4ff; font-weight: bold;"><input id="tunerToggle" type="checkbox">Chromatic Tuner</label>
+            <label class="checkbox-row" style="flex:1;"><input id="hapticsToggle" type="checkbox">HAPTICS (Mobile)</label>
+        </div>
     </div>
+    
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; margin-top:12px;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="checkbox-row" style="max-width:100%; margin-top:8px;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
     
-    <div class="mic-section" style="width: 100%; box-sizing: border-box;">
-      <label class="checkbox-row"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
-      <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-      <div id="feedbackWarn">🔇 Feedback risk detected — mic monitor muted</div>
-    </div>
-    <div id="midiStatus" style="max-width:100%;">🎹 MIDI: Waiting for connection...</div>
+    <div id="midiStatus" style="max-width:100%; font-size:10px; opacity:0.5; margin-top:12px;">🎹 MIDI: Waiting...</div>
   </div>
 `;
 document.body.appendChild(enginePanel);
@@ -273,11 +254,6 @@ enginePanel.addEventListener("touchmove", (e) => {
   if (dy > 50) { setEngineOpen(false); touchStartY = null; }
 }, { passive: true });
 
-const partEl = enginePanel.querySelector("#partAmount"); 
-const zoomEl = enginePanel.querySelector("#zoomInt"); 
-const hueEl  = enginePanel.querySelector("#hueShift");
-const midiStatusEl = enginePanel.querySelector("#midiStatus");
-const panelSensEl = enginePanel.querySelector("#sens-panel");
 const paletteEl = enginePanel.querySelector("#palette-panel");
 const trailsEl = enginePanel.querySelector("#trailsAmount"); 
 
@@ -287,25 +263,26 @@ enginePanel.querySelector("#hapticsToggle").addEventListener("change", (e) => {
     if (hapticsEnabled && navigator.vibrate) navigator.vibrate(20); 
 });
 
-// FIX: HUD Toggle Logic
-enginePanel.querySelector("#showHud").addEventListener("change", (e) => {
-    hudEnabled = !!e.target.checked;
-    const hudEl = document.getElementById("si-semantic-hud");
-    if(hudEl) hudEl.style.opacity = hudEnabled ? 1 : 0;
+// FIX: Tuner Logic Toggle
+enginePanel.querySelector("#tunerToggle").addEventListener("change", (e) => {
+    tunerEnabled = !!e.target.checked;
+    if(tunerContainer) tunerContainer.style.opacity = tunerEnabled ? 1 : 0;
 });
 
-const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
-const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol"); 
-const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
-
-micMonitorEl.checked = micMonitor; micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
-micMonitorEl.addEventListener("change", (e) => {
-  micMonitor = !!e.target.checked; feedbackMuted = false; feedbackWarnEl.style.display = "none";
-  applyMicMonitorGain(); setStatus(micMonitor ? "🎙️ Mic monitor ON" : "🎙️ Mic monitor OFF");
-});
-micMonitorVolEl.addEventListener("input", (e) => {
-  micMonitorVol = Math.max(0, Math.min(1, parseInt(e.target.value, 10) / 100));
-  applyMicMonitorGain();
+const micMonitorEl = enginePanel.querySelector("#panel-micBtn"); 
+// Re-hook mic button logic simplified in new layout
+micMonitorEl.addEventListener("click", async (e) => {
+  if(!engineInitialized) await initEngine();
+  if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
+  try { 
+    await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); // Raw audio for tuner
+    if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
+    currentMode = "mic"; micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
+    e.target.style.background = "rgba(255, 45, 85, 0.4)";
+    e.target.style.borderColor = "#ff2d55";
+    setStatus("🎙️ Mic active");
+  } catch (err) { setStatus("❌ Mic error"); console.error(err); await stopAll({ suspend: true }); }
 });
 
 /* ================= FULLSCREEN & UI TOGGLE ================= */
@@ -316,11 +293,8 @@ function toggleFullscreen() {
     document.querySelector('.site-header')?.style.setProperty('display', 'none'); 
     document.querySelector('.site-footer')?.style.setProperty('display', 'none');
     hud.style.display = 'none'; 
-    
-    const hudEl = document.getElementById("si-semantic-hud");
-    if(hudEl) hudEl.style.bottom = "30px";
-    
     setEngineOpen(false);
+    
     stageEl.classList.add('fullscreen-active');
     document.body.style.overflow = "hidden"; 
     isFullscreen = true; setStatus("📺 Entered projection mode");
@@ -330,9 +304,6 @@ function resetUI() {
   document.querySelector('.site-header')?.style.setProperty('display', 'block'); 
   document.querySelector('.site-footer')?.style.setProperty('display', 'block');
   hud.style.display = 'flex'; 
-  
-  const hudEl = document.getElementById("si-semantic-hud");
-  if(hudEl) hudEl.style.bottom = "130px";
   
   stageEl.classList.remove('fullscreen-active');
   document.body.style.overflow = "auto"; 
@@ -367,17 +338,15 @@ enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapt
 
 /* ================= PRESET SYSTEM ================= */
 function savePreset(slot) {
-    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, chapter: chapter, trails: trailsEl?.value };
+    const data = { sens: "0.1", hue: "280", zoom: "18", stars: "10", palette: paletteEl?.value, chapter: chapter, trails: trailsEl?.value };
     localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Preset ${slot} Saved`);
 }
 function loadPreset(slot) {
     const saved = localStorage.getItem(`sonicPreset_${slot}`);
     if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
     const data = JSON.parse(saved);
-    if(panelSensEl) panelSensEl.value = data.sens || "0.1"; 
     if(trailsEl) trailsEl.value = data.trails || "0";
-    if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
-    if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
+    if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
     setStatus(`📂 Preset ${slot} Loaded`);
 }
 
@@ -676,6 +645,7 @@ async function initEngine() {
 
     analyser = engine.ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     dataFreq = new Uint8Array(analyser.frequencyBinCount);
+    dataTime = new Float32Array(analyser.fftSize);
 
     inputGain = engine.ctx.createGain(); monitorGain = engine.ctx.createGain(); monitorGain.gain.value = 0;
     inputGain.connect(analyser); inputGain.connect(monitorGain); monitorGain.connect(engine.master);
@@ -701,7 +671,7 @@ async function stopAll({ suspend = true } = {}) {
   if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
   currentMode = "idle"; 
   const panelMicBtn = enginePanel.querySelector("#panel-micBtn");
-  if (panelMicBtn) panelMicBtn.textContent = "🎙️ Mic"; 
+  if (panelMicBtn) { panelMicBtn.style.background = ""; panelMicBtn.style.borderColor = ""; }
   feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
   if (suspend && engine && engine.ctx) try { await engine.ctx.suspend(); } catch {}
 }
@@ -739,24 +709,66 @@ fileInput?.addEventListener("change", async (e) => {
   } catch (err) { setStatus("❌ File error"); console.error(err); } finally { if (fileInput) fileInput.value = ""; }
 });
 
-enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) => {
-  if(!engineInitialized) await initEngine();
-  if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
-  try { 
-    await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
-    if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
-    currentMode = "mic"; micSourceNode = engine.ctx.createMediaStreamSource(micStream); micSourceNode.connect(inputGain);
-    e.target.textContent = "⏹ Stop Mic"; applyMicMonitorGain(); setStatus("🎙️ Mic active");
-  } catch (err) { setStatus("❌ Mic error"); console.error(err); await stopAll({ suspend: true }); }
-});
+/* ================= AUDIO ANALYSIS (OPTIMIZED AUTOCORRELATION) ================= */
+function autoCorrelate(buf, sampleRate) {
+  const SIZE = buf.length;
+  const MIN_SAMPLES = 0; // Correspond to 2000Hz (approx)
+  const MAX_SAMPLES = Math.floor(SIZE / 2);
+  let best_offset = -1;
+  let best_correlation = 0;
+  let rms = 0;
+  let foundGoodCorrelation = false;
+  let correlations = new Array(MAX_SAMPLES);
 
-/* ================= AUDIO ANALYSIS ================= */
-function getSpectralCentroid(freqData, sampleRate, fftSize) {
-    let numerator = 0; let denominator = 0; const binSize = sampleRate / fftSize;
-    const maxBin = Math.floor(5000 / binSize);
-    for (let i = 0; i < maxBin; i++) { numerator += i * freqData[i]; denominator += freqData[i]; }
-    if (denominator === 0) return 0; return (numerator / denominator) * binSize;
+  // RMS Check (Is it loud enough?)
+  for (let i = 0; i < SIZE; i++) {
+    const val = buf[i];
+    rms += val * val;
+  }
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < 0.015) return -1; // Ignore silence/noise
+
+  let lastCorrelation = 1;
+  // DOWNSAMPLING: Skip every 2nd sample to double performance
+  for (let offset = MIN_SAMPLES; offset < MAX_SAMPLES; offset+=2) {
+    let correlation = 0;
+    
+    for (let i = 0; i < MAX_SAMPLES; i+=2) {
+      correlation += Math.abs((buf[i]) - (buf[i + offset]));
+    }
+    correlation = 1 - (correlation / MAX_SAMPLES);
+    correlations[offset] = correlation; // Store it
+    
+    if ((correlation > 0.9) && (correlation > lastCorrelation)) {
+      foundGoodCorrelation = true;
+      if (correlation > best_correlation) {
+        best_correlation = correlation;
+        best_offset = offset;
+      }
+    } else if (foundGoodCorrelation) {
+      // Gaussian interpolation for precision
+      const shift = (correlations[best_offset + 1] - correlations[best_offset - 1]) / correlations[best_offset];
+      return sampleRate / (best_offset + (8 * shift));
+    }
+    lastCorrelation = correlation;
+  }
+  if (best_correlation > 0.01) {
+    return sampleRate / best_offset;
+  }
+  return -1;
+}
+
+function noteFromPitch(frequency) {
+  const noteNum = 12 * (Math.log(frequency / 440) / Math.log(2));
+  return Math.round(noteNum) + 69;
+}
+
+function frequencyFromNoteNumber(note) {
+  return 440 * Math.pow(2, (note - 69) / 12);
+}
+
+function centsOffFromPitch(frequency, note) {
+  return Math.floor(1200 * Math.log(frequency / frequencyFromNoteNumber(note)) / Math.log(2));
 }
 
 function hzToBin(hz) { if (!engine?.ctx || !analyser) return 0; const nyquist = engine.ctx.sampleRate / 2; const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1)); return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx)); }
@@ -775,6 +787,7 @@ let bassSm = 0, midSm = 0, snareSm = 0; let snareAvg = 0, snarePrev = 0, lastSna
 /* ================= MAIN LOOP ================= */
 function loop() {
   raf = requestAnimationFrame(loop);
+  frameCounter++;
   
   try {
       if (!renderer || !scene || !camera || !composer) return;
@@ -783,6 +796,8 @@ function loop() {
 
       if (analyser && dataFreq) {
         analyser.getByteFrequencyData(dataFreq);
+        // Only fetch time domain if tuner is active (saves CPU)
+        if (tunerEnabled) analyser.getFloatTimeDomainData(dataTime);
         
         let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.1;
         if (isNaN(rawSens)) rawSens = 0.1;
@@ -795,8 +810,41 @@ function loop() {
         bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
         
-        const centroid = getSpectralCentroid(dataFreq, engine.ctx.sampleRate, analyser.fftSize);
-        if (centroid > 0) { brightness = brightness * 0.9 + centroid * 0.1; }
+        // TUNER LOGIC: Only run every 4th frame to prevent freezing
+        if (tunerEnabled && frameCounter % 4 === 0) {
+            const pitch = autoCorrelate(dataTime, engine.ctx.sampleRate);
+            if (pitch !== -1) {
+                const note = noteFromPitch(pitch);
+                const noteName = NOTE_STRINGS[note % 12];
+                const octave = Math.floor(note / 12) - 1;
+                const detune = centsOffFromPitch(pitch, note);
+                
+                tunerNote.textContent = noteName;
+                tunerOctave.textContent = octave;
+                
+                // Visual bar movement
+                if (detune === 0) {
+                    tunerBar.style.backgroundColor = "#00ff88";
+                    tunerBar.style.boxShadow = "0 0 15px #00ff88";
+                } else if (Math.abs(detune) < 10) {
+                    tunerBar.style.backgroundColor = "#00d4ff";
+                    tunerBar.style.boxShadow = "0 0 10px #00d4ff";
+                } else {
+                    tunerBar.style.backgroundColor = "#ff2d55";
+                    tunerBar.style.boxShadow = "0 0 10px #ff2d55";
+                }
+                // Map -50..50 cents to translation
+                const trans = Math.max(-50, Math.min(50, detune));
+                tunerBar.style.transform = `translateX(calc(-50% + ${trans * 2}px))`; // Scale visually
+                
+            } else {
+                tunerNote.textContent = "--";
+                tunerOctave.textContent = "";
+                tunerBar.style.transform = `translateX(-50%)`;
+                tunerBar.style.backgroundColor = "rgba(255,255,255,0.1)";
+                tunerBar.style.boxShadow = "none";
+            }
+        }
 
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
@@ -807,33 +855,6 @@ function loop() {
               lastVibration = time;
           }
         }
-        
-        if (hudSignal) {
-            let signalText = "SILENCE"; let signalColor = "#555";
-            if (bassSm > 0.8) { signalText = "PEAKING"; signalColor = "#ff2d55"; }
-            else if (bassSm > 0.2) { signalText = "OPTIMAL"; signalColor = "#00d4ff"; }
-            else if (bassSm > 0.01) { signalText = "LOW"; signalColor = "#00d4ff"; }
-            if (snapFlash > 0.5) { signalText = "IMPULSE"; signalColor = "#fff"; }
-            hudSignal.textContent = signalText; hudSignal.style.color = signalColor;
-        }
-        
-        if (hudTexture) {
-            let tex = "--";
-            if (bassSm > midSm && bassSm > snareSm && bassSm > 0.3) tex = "SUB-BASS";
-            else if (snareSm > bassSm && snareSm > 0.3) tex = "PERCUSSIVE";
-            else if (midSm > 0.4) tex = "HARMONIC";
-            else if (bassSm > 0.1) tex = "DRONE";
-            hudTexture.textContent = tex;
-        }
-        
-        if (hudPitch) {
-            let tone = "--";
-            if (brightness > 2000) tone = "HIGH";
-            else if (brightness > 500) tone = "MID";
-            else if (brightness > 100) tone = "LOW";
-            hudPitch.textContent = tone; hudPitch.style.color = "#00d4ff";
-        }
-
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
@@ -966,12 +987,9 @@ function loop() {
         const percent = s.life / s.maxLife; s.mesh.material.opacity = 1.0 - Math.pow(percent, 2); s.mesh.scale.setScalar(1.0 - percent);
       }
 
-      // FIX: Heavily Tamed Audio-Reactive Bloom
-      // Removed "explosiveBass" and "strobeFlash" multipliers to stop the whiteout.
       if (bloomPass) {
-          const targetBloom = P.bloomStrength + (bassSm * 0.5); // Much gentler reaction
-          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 2.0); // Cap at 2.0 max
-
+          const targetBloom = P.bloomStrength + (bassSm * 0.5); 
+          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 2.0); 
           const targetRadius = P.bloomRadius + (bassSm * 0.2);
           bloomPass.radius = isNaN(targetRadius) ? P.bloomRadius : Math.min(targetRadius, 1.0);
       }
