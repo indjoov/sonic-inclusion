@@ -143,7 +143,7 @@ enginePanel.innerHTML = `
   <div class="panel-grid" style="width: 100%; box-sizing: border-box; overflow-x: hidden;">
     
     <div style="display:flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
-        <button id="panel-demoBtn" type="button" style="background: rgba(0,212,255,0.2); border: 1px solid rgba(0,212,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">✨ Play Kasubo Demo</button>
+        <button id="panel-demoBtn" type="button" style="background: rgba(0,212,255,0.2); border: 1px solid rgba(0,212,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">▶ Play Sample Audio</button>
         <div style="display:flex; gap: 8px;">
             <button id="panel-micBtn" type="button" style="flex:1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">🎙️ Mic</button>
             <button id="panel-fileBtn" type="button" style="flex:1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">📁 File</button>
@@ -159,7 +159,7 @@ enginePanel.innerHTML = `
       </div>
     </div>
     <div class="sigil-preset-row" style="flex-wrap: wrap; width: 100%; box-sizing: border-box;">
-        <button id="customSigilBtn" type="button" class="sigil-btn">Upload Sigil</button>
+        <button id="customSigilBtn" type="button" class="sigil-btn">Upload Custom Image</button>
         <div class="preset-info" style="padding: 6px;"><b>SLOTS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
     
@@ -266,7 +266,7 @@ document.addEventListener('fullscreenchange', () => { if (!document.fullscreenEl
 enginePanel.querySelector("#customSigilBtn").addEventListener("click", () => sigilInput.click());
 sigilInput.addEventListener("change", (e) => {
   const file = e.target.files?.[0]; if (!file) return;
-  const url = URL.createObjectURL(file); loadSigilLayers(url, true); setStatus("✅ Custom sigil loaded");
+  const url = URL.createObjectURL(file); loadSigilLayers(url, true); setStatus("✅ Custom image loaded");
 });
 
 /* ================= PRESET SYSTEM (RENAMED FROM CHAPTERS) ================= */
@@ -575,11 +575,11 @@ function loadSigilLayers(url, isCustom = false) {
         sigilGroup.add(sigilGlow, sigilBase); 
         
         scene.add(sigilGroup); 
-        setStatus("✅ Sigil loaded");
+        setStatus("✅ Custom image loaded");
         if(isCustom) URL.revokeObjectURL(url);
       };
       if (isCustom) { img.src = URL.createObjectURL(data); } else { img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`; }
-    }).catch(() => setStatus("⚠️ Sigil fetch failed"));
+    }).catch(() => setStatus("⚠️ Image fetch failed"));
 }
 
 /* ================= MIDI INTEGRATION ================= */
