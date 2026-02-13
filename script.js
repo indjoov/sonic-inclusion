@@ -17,6 +17,12 @@ const canvas = document.getElementById("viz");
 const stageEl = canvas.closest(".stage");
 const srText = document.getElementById("srText");
 
+// Inject tech font safely
+const fontLink = document.createElement("link");
+fontLink.href = "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap";
+fontLink.rel = "stylesheet";
+document.head.appendChild(fontLink);
+
 const fileInput = document.createElement("input");
 fileInput.id = "fileInput";
 fileInput.type = "file";
@@ -69,9 +75,9 @@ let audioRecordDest = null;
 let renderer = null; let scene = null; let camera = null; let composer = null;
 let bloomPass = null; let fxaaPass = null; let world = null; let starPoints = null;  
 let morphMesh = null; let coreLight = null; let rgbShiftPass = null; let glitchPass = null;      
-let afterimagePass = null;
+let afterimagePass = null; 
 
-let sparkPool = []; let sparkCursor = 0; let baseFov = 55;          
+let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 
 let sigilGroup = null; let sigilBase = null; let sigilGlow = null;
 let sigilBaseTex = null; let sigilGlowTex = null;
@@ -79,6 +85,9 @@ let sigilBaseTex = null; let sigilGlowTex = null;
 let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
+
+// Variable for star geometry to prevent crash
+let starGeo = null;
 
 let currentCameraMode = 0;
 const camTargetPos = new THREE.Vector3();
@@ -93,9 +102,9 @@ function applyMicMonitorGain() {
 
 /* ================= HUD & ENGINE PANEL ================= */
 
-function removeLegacyUI() {
-    document.getElementById("si-hud")?.remove();
-    document.getElementById("si-enginePanel")?.remove();
+function removeLegacyUI() { 
+    document.getElementById("si-hud")?.remove(); 
+    document.getElementById("si-enginePanel")?.remove(); 
 }
 removeLegacyUI();
 
@@ -130,9 +139,9 @@ enginePanel.innerHTML = `
     </div>
     <button id="si-engineClose" type="button" class="close-btn">✕</button>
   </div>
- 
+  
   <div class="panel-grid" style="width: 100%; box-sizing: border-box; overflow-x: hidden;">
-   
+    
     <div style="display:flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
         <button id="panel-demoBtn" type="button" style="background: rgba(0,212,255,0.2); border: 1px solid rgba(0,212,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">✨ Play Kasubo Demo</button>
         <div style="display:flex; gap: 8px;">
@@ -142,25 +151,25 @@ enginePanel.innerHTML = `
     </div>
 
     <div class="chapter-box" style="width: 100%; box-sizing: border-box;">
-      <div class="chapter-title">CHAPTER</div>
+      <div class="chapter-title" style="margin-bottom:6px; font-size:11px; opacity:0.7;">VISUAL PRESETS</div>
       <div class="chapter-btns">
-        <button id="chapInv" type="button" class="chap-btn">INVOCATION</button>
-        <button id="chapPos" type="button" class="chap-btn">POSSESSION</button>
-        <button id="chapAsc" type="button" class="chap-btn">ASCENSION</button>
+        <button id="presetHighContrast" type="button" class="chap-btn">HIGH CONTRAST</button>
+        <button id="presetRhythm" type="button" class="chap-btn">RHYTHM MODE</button>
+        <button id="presetBass" type="button" class="chap-btn">BASS FOCUS</button>
       </div>
     </div>
     <div class="sigil-preset-row" style="flex-wrap: wrap; width: 100%; box-sizing: border-box;">
         <button id="customSigilBtn" type="button" class="sigil-btn">Upload Sigil</button>
-        <div class="preset-info" style="padding: 6px;"><b>PRESETS:</b> Save: Shift+1..4 | Load: 1..4</div>
+        <div class="preset-info" style="padding: 6px;"><b>SLOTS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
-   
+    
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-   
+    
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-   
+    
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">COLOR MODE
         <select id="palette-panel" style="width:100%; margin-top:6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2);">
             <option value="hue" selected>Hue by pitch</option>
@@ -170,7 +179,7 @@ enginePanel.innerHTML = `
     </label>
 
     <label class="checkbox-row" style="max-width:100%;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
-   
+    
     <div class="mic-section" style="width: 100%; box-sizing: border-box;">
       <label class="checkbox-row"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
       <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
@@ -182,8 +191,8 @@ enginePanel.innerHTML = `
 document.body.appendChild(enginePanel);
 
 let engineOpen = false;
-function setEngineOpen(open) {
-  engineOpen = open;
+function setEngineOpen(open) { 
+  engineOpen = open; 
   if(open) {
       enginePanel.classList.add('open');
       enginePanel.style.display = "block";
@@ -203,17 +212,17 @@ enginePanel.addEventListener("touchmove", (e) => {
   if (dy > 50) { setEngineOpen(false); touchStartY = null; }
 }, { passive: true });
 
-const partEl = enginePanel.querySelector("#partAmount");
-const zoomEl = enginePanel.querySelector("#zoomInt");
+const partEl = enginePanel.querySelector("#partAmount"); 
+const zoomEl = enginePanel.querySelector("#zoomInt"); 
 const hueEl  = enginePanel.querySelector("#hueShift");
 const midiStatusEl = enginePanel.querySelector("#midiStatus");
 const panelSensEl = enginePanel.querySelector("#sens-panel");
 const paletteEl = enginePanel.querySelector("#palette-panel");
-const trailsEl = enginePanel.querySelector("#trailsAmount");
+const trailsEl = enginePanel.querySelector("#trailsAmount"); 
 
 enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
-const micMonitorEl = enginePanel.querySelector("#micMonitor");
-const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol");
+const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
+const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol"); 
 const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
 
 micMonitorEl.checked = micMonitor; micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
@@ -231,23 +240,23 @@ let isFullscreen = false;
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(err => { console.warn(`Error: ${err.message}`); });
-    document.querySelector('.site-header')?.style.setProperty('display', 'none');
+    document.querySelector('.site-header')?.style.setProperty('display', 'none'); 
     document.querySelector('.site-footer')?.style.setProperty('display', 'none');
-    hud.style.display = 'none';
+    hud.style.display = 'none'; 
     setEngineOpen(false);
-   
+    
     stageEl.classList.add('fullscreen-active');
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = "hidden"; 
     isFullscreen = true; setStatus("📺 Entered projection mode");
   } else { document.exitFullscreen(); resetUI(); }
 }
 function resetUI() {
-  document.querySelector('.site-header')?.style.setProperty('display', 'block');
+  document.querySelector('.site-header')?.style.setProperty('display', 'block'); 
   document.querySelector('.site-footer')?.style.setProperty('display', 'block');
-  hud.style.display = 'flex';
- 
+  hud.style.display = 'flex'; 
+  
   stageEl.classList.remove('fullscreen-active');
-  document.body.style.overflow = "auto";
+  document.body.style.overflow = "auto"; 
   isFullscreen = false; fitRendererToStage();
 }
 fsBtn.addEventListener("click", toggleFullscreen);
@@ -260,51 +269,68 @@ sigilInput.addEventListener("change", (e) => {
   const url = URL.createObjectURL(file); loadSigilLayers(url, true); setStatus("✅ Custom sigil loaded");
 });
 
-/* ================= CHAPTER SYSTEM ================= */
-const CHAPTERS = {
-  INVOCATION: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
-  POSSESSION: { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
-  ASCENSION:  { trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
+/* ================= PRESET SYSTEM (RENAMED FROM CHAPTERS) ================= */
+const VISUAL_PRESETS = {
+  HIGH_CONTRAST: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
+  RHYTHM_MODE:   { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
+  BASS_FOCUS:    { trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
 };
-let chapter = "POSSESSION"; let P = CHAPTERS[chapter];
-function applyChapter(name) {
-  if (!CHAPTERS[name]) return; chapter = name; P = CHAPTERS[chapter];
-  if (bloomPass) { bloomPass.strength = P.bloomStrength; bloomPass.radius = P.bloomRadius; bloomPass.threshold = P.bloomThreshold; }
-  if (trailsEl) trailsEl.value = P.trails;
-  setStatus(`🔮 Chapter: ${chapter}`);
+// Default active preset
+let activePreset = "RHYTHM_MODE"; 
+let P = VISUAL_PRESETS[activePreset];
+
+function applyPreset(name) {
+  if (!VISUAL_PRESETS[name]) return; 
+  activePreset = name; 
+  P = VISUAL_PRESETS[activePreset];
+  
+  if (bloomPass) { 
+      bloomPass.strength = P.bloomStrength; 
+      bloomPass.radius = P.bloomRadius; 
+      bloomPass.threshold = P.bloomThreshold; 
+  }
+  if (trailsEl) trailsEl.value = P.trails; 
+  
+  // Clean readable status
+  const readable = name.replace("_", " ");
+  setStatus(`🎨 Preset: ${readable}`);
 }
-enginePanel.querySelector("#chapInv").addEventListener("click", () => applyChapter("INVOCATION"));
-enginePanel.querySelector("#chapPos").addEventListener("click", () => applyChapter("POSSESSION"));
-enginePanel.querySelector("#chapAsc").addEventListener("click", () => applyChapter("ASCENSION"));
+
+enginePanel.querySelector("#presetHighContrast").addEventListener("click", () => applyPreset("HIGH_CONTRAST"));
+enginePanel.querySelector("#presetRhythm").addEventListener("click", () => applyPreset("RHYTHM_MODE"));
+enginePanel.querySelector("#presetBass").addEventListener("click", () => applyPreset("BASS_FOCUS"));
 
 /* ================= PRESET SYSTEM ================= */
-function savePreset(slot) {
-    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, chapter: chapter, trails: trailsEl?.value };
-    localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Preset ${slot} Saved`);
+function saveSettings(slot) {
+    const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, preset: activePreset, trails: trailsEl?.value };
+    localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Slot ${slot} Saved`);
 }
-function loadPreset(slot) {
+function loadSettings(slot) {
     const saved = localStorage.getItem(`sonicPreset_${slot}`);
-    if(!saved) { setStatus(`⚠️ No Preset in slot ${slot}`); return; }
+    if(!saved) { setStatus(`⚠️ No data in slot ${slot}`); return; }
     const data = JSON.parse(saved);
-    if(panelSensEl) panelSensEl.value = data.sens || "0.1";
+    if(panelSensEl) panelSensEl.value = data.sens || "0.1"; 
     if(trailsEl) trailsEl.value = data.trails || "0";
     if(hueEl) hueEl.value = data.hue; if(zoomEl) zoomEl.value = data.zoom;
-    if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; applyChapter(data.chapter);
-    setStatus(`📂 Preset ${slot} Loaded`);
+    if(partEl) partEl.value = data.stars; if(paletteEl) paletteEl.value = data.palette; 
+    
+    if(data.preset) applyPreset(data.preset);
+    
+    setStatus(`📂 Slot ${slot} Loaded`);
 }
 
 /* ================= KEYBOARD MAPPING ================= */
 window.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") { setEngineOpen(false); if(isFullscreen) toggleFullscreen(); }
   if (e.key.toLowerCase() === "p") toggleFullscreen();
- 
+  
   if (e.key.toLowerCase() === "c") {
       currentCameraMode = (currentCameraMode + 1) % 4;
       setStatus(`🎥 Camera Mode: ${currentCameraMode + 1}`);
   }
 
   if (["1", "2", "3", "4"].includes(e.key)) {
-      if (e.shiftKey) { savePreset(e.key); } else { loadPreset(e.key); }
+      if (e.shiftKey) { saveSettings(e.key); } else { loadSettings(e.key); }
   }
 
   if (e.key === " ") { e.preventDefault(); if (currentMode !== "idle") { await stopAll({ suspend: true }); setStatus("⏹ Stopped"); } }
@@ -343,7 +369,7 @@ function initNebulaBackground() {
                 vec2 st = vUv * 3.0; vec2 q = vec2(0.); q.x = fbm( st + 0.00 * time); q.y = fbm( st + vec2(1.0));
                 vec2 r = vec2(0.); r.x = fbm( st + 1.0*q + vec2(1.7,9.2)+ 0.15*time ); r.y = fbm( st + 1.0*q + vec2(8.3,2.8)+ 0.126*time);
                 float f = fbm(st+r); vec3 finalColor = mix(color1, color2, clamp(f*f*4.0,0.0,1.0));
-                finalColor += (bass * 0.4) * color2 * f;
+                finalColor += (bass * 0.4) * color2 * f; 
                 gl_FragColor = vec4((f*f*f+.6*f*f+.5*f)*finalColor, 1.0);
             }
         `,
@@ -359,23 +385,25 @@ function initThree() {
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
   renderer.setClearColor(0x000000, 1); renderer.outputColorSpace = THREE.SRGBColorSpace;
-  scene = new THREE.Scene(); scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+  scene = new THREE.Scene(); scene.add(new THREE.AmbientLight(0xffffff, 0.4)); 
 
   camera = new THREE.PerspectiveCamera(baseFov, 1, 0.1, 260); camera.position.set(0, 0, 18);
- 
-  initNebulaBackground();
+  
+  initNebulaBackground(); 
 
   coreLight = new THREE.PointLight(0x00d4ff, 0, 50); coreLight.position.set(0, 0, 0); scene.add(coreLight);
   world = new THREE.Group(); scene.add(world);
+  
+  // FIX: Ensure starGeo is initialized in makeStars
   starPoints = makeStars(1900, 120); scene.add(starPoints);
 
   makeResponsiveMorphingCage();
   initRings(); initGhosts(); initSparks(); loadSigilLayers("media/indjoov-sigil.svg", false);
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
-  composer = new EffectComposer(renderer, rt);
+  composer = new EffectComposer(renderer, rt); 
   composer.addPass(new RenderPass(scene, camera));
- 
+  
   afterimagePass = new AfterimagePass();
   composer.addPass(afterimagePass);
 
@@ -387,13 +415,12 @@ function initThree() {
   glitchPass = new GlitchPass(); glitchPass.goWild = false; glitchPass.enabled = false; composer.addPass(glitchPass);
   fxaaPass = new ShaderPass(FXAAShader); composer.addPass(fxaaPass);
 
-  fitRendererToStage(); applyChapter(chapter); initMIDI();
+  fitRendererToStage(); applyPreset(activePreset); initMIDI();
 }
 
 /* ================= IMPROVED STARS ================= */
-let starGeo = null;
 function makeStars(count, spread) {
-  starGeo = new THREE.BufferGeometry(); const positions = new Float32Array(count * 3); const velocities = [];
+  starGeo = new THREE.BufferGeometry(); const positions = new Float32Array(count * 3); const velocities = []; 
   for (let i = 0; i < count; i++) {
     const ix = i * 3; positions[ix] = (Math.random() - 0.5) * spread * 1.5; positions[ix + 1] = (Math.random() - 0.5) * spread * 1.5;
     positions[ix + 2] = (Math.random() - 0.5) * spread * 2; velocities.push(0.05 + Math.random() * 0.25);
@@ -405,8 +432,8 @@ function makeStars(count, spread) {
 function updateStars(delta) {
   if (!starPoints || !starGeo) return;
   const positions = starGeo.attributes.position.array; const vels = starGeo.userData.velocities; const spread = starGeo.userData.spread;
- 
-  let warpSpeed = 1 + (bassSm * 8);
+  
+  let warpSpeed = 1 + (bassSm * 8); 
   if (isNaN(warpSpeed)) warpSpeed = 1;
 
   for (let i = 0; i < vels.length; i++) {
@@ -428,17 +455,17 @@ function makeResponsiveMorphingCage() {
     vec.fromBufferAttribute(posAttribute, i);
     const norm = vec.clone().normalize(); const maxVal = Math.max(Math.abs(norm.x), Math.abs(norm.y), Math.abs(norm.z));
     const cubeVec = norm.divideScalar(maxVal).multiplyScalar(4.5); cubePositions.push(cubeVec.x, cubeVec.y, cubeVec.z);
-   
+    
     const waveScale = 1.0 + 0.45 * (Math.sin(vec.x * 3.0) + Math.cos(vec.y * 3.0) + Math.sin(vec.z * 3.0));
     const waveVec = vec.clone().multiplyScalar(waveScale); wavePositions.push(waveVec.x, waveVec.y, waveVec.z);
-   
+    
     const noise = Math.sin(vec.x * 12.0) * Math.cos(vec.y * 12.0) * Math.sin(vec.z * 12.0);
-    const spikeScale = 1.0 + Math.max(0, noise) * 5.0;
+    const spikeScale = 1.0 + Math.max(0, noise) * 5.0; 
     const spikeVec = vec.clone().multiplyScalar(spikeScale); spikePositions.push(spikeVec.x, spikeVec.y, spikeVec.z);
   }
 
   baseGeo.morphAttributes.position = [ new THREE.Float32BufferAttribute(cubePositions, 3), new THREE.Float32BufferAttribute(wavePositions, 3), new THREE.Float32BufferAttribute(spikePositions, 3) ];
- 
+  
   const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
 }
@@ -454,7 +481,7 @@ function initRings() {
   }
 }
 function triggerRingPulse(intensity = 1) {
-  if (!ringPool.length || isNaN(intensity)) return;
+  if (!ringPool.length || isNaN(intensity)) return; 
   const r = ringPool[ringCursor % ringPool.length]; ringCursor++; r.t = 0; r.life = 0.48; r.baseScale = 0.92 + 0.22 * intensity;
   r.mesh.material.color.setHex((Math.random() < 0.5) ? 0x00d4ff : 0x7c4dff); r.mesh.material.opacity = 0.85 * P.ringStrength;
 }
@@ -472,7 +499,7 @@ function initGhosts() {
   }
 }
 function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
-  if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex || isNaN(intensity)) return;
+  if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex || isNaN(intensity)) return; 
   const useCount = Math.max(1, Math.min(6, count));
   for (let k = 0; k < useCount; k++) {
     const g = ghostPool[ghostCursor % ghostPool.length]; ghostCursor++;
@@ -486,32 +513,32 @@ function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
 /* ================= EMISSIVE SPARKS ================= */
 function initSparks() {
   const sparkGeo = new THREE.TetrahedronGeometry(0.15, 0); const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
- 
+  
   for (let i = 0; i < 150; i++) {
     const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone()); mesh.visible = false; scene.add(mesh);
     sparkPool.push({ mesh: mesh, active: false, life: 0, maxLife: 0, velocity: new THREE.Vector3(), spin: new THREE.Vector3() });
   }
 }
 function fireSparks(intensity, sourceMesh) {
-  if (!sparkPool.length || isNaN(intensity)) return;
-  const count = Math.floor(intensity * 15);
- 
+  if (!sparkPool.length || isNaN(intensity)) return; 
+  const count = Math.floor(intensity * 15); 
+  
   for (let i = 0; i < count; i++) {
     const s = sparkPool[sparkCursor % sparkPool.length]; sparkCursor++;
-    s.active = true; s.life = 0; s.maxLife = 0.4 + Math.random() * 0.4;
-   
+    s.active = true; s.life = 0; s.maxLife = 0.4 + Math.random() * 0.4; 
+    
     if (sourceMesh) {
         const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
         const spikeInf = sourceMesh.morphTargetInfluences[2] || 0;
-        const currentRadius = 5.0 * sourceMesh.scale.x * (1.0 + (spikeInf * 0.85));
-       
+        const currentRadius = 5.0 * sourceMesh.scale.x * (1.0 + (spikeInf * 0.85)); 
+        
         s.mesh.position.copy(sourceMesh.position).add(dir.clone().multiplyScalar(currentRadius));
-        const speed = 25 + (intensity * 40);
+        const speed = 25 + (intensity * 40); 
         s.velocity.copy(dir).multiplyScalar(speed);
-        s.velocity.z += 5;
+        s.velocity.z += 5; 
     } else {
-        s.mesh.position.set((Math.random()-0.5), (Math.random()-0.5), 0);
-        const speed = 5 + Math.min(intensity * 15, 50);
+        s.mesh.position.set((Math.random()-0.5), (Math.random()-0.5), 0); 
+        const speed = 5 + Math.min(intensity * 15, 50); 
         s.velocity.set((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed + 5);
     }
 
@@ -523,7 +550,7 @@ function fireSparks(intensity, sourceMesh) {
 
 /* ================= SIGIL FIX ================= */
 function loadSigilLayers(url, isCustom = false) {
-  if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; }
+  if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; } 
   fetch(url).then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); }).then(data => {
       const img = new Image(); img.crossOrigin = "anonymous";
       img.onload = () => {
@@ -538,16 +565,16 @@ function loadSigilLayers(url, isCustom = false) {
         gctx.filter = "blur(10px)"; gctx.globalAlpha = 1; gctx.drawImage(base, 0, 0); gctx.filter = "blur(22px)"; gctx.globalAlpha = 0.85; gctx.drawImage(base, 0, 0); gctx.filter = "none";
         sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
-       
+        
         const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
         const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-       
+        
         sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
-       
-        sigilGroup = new THREE.Group();
-        sigilGroup.add(sigilGlow, sigilBase);
-       
-        scene.add(sigilGroup);
+        
+        sigilGroup = new THREE.Group(); 
+        sigilGroup.add(sigilGlow, sigilBase); 
+        
+        scene.add(sigilGroup); 
         setStatus("✅ Sigil loaded");
         if(isCustom) URL.revokeObjectURL(url);
       };
@@ -575,7 +602,7 @@ let engineInitialized = false;
 
 async function initEngine() {
   if (engineInitialized) return;
-  overlay.style.display = "none";
+  overlay.style.display = "none"; 
   setStatus("⏳ Initializing engine…");
 
   try {
@@ -612,9 +639,9 @@ async function stopAll({ suspend = true } = {}) {
   if (bufferSrc) { try { bufferSrc.stop(0); bufferSrc.disconnect(); } catch {} bufferSrc = null; }
   if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
   if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
-  currentMode = "idle";
+  currentMode = "idle"; 
   const panelMicBtn = enginePanel.querySelector("#panel-micBtn");
-  if (panelMicBtn) panelMicBtn.textContent = "🎙️ Mic";
+  if (panelMicBtn) panelMicBtn.textContent = "🎙️ Mic"; 
   feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
   if (suspend && engine && engine.ctx) try { await engine.ctx.suspend(); } catch {}
 }
@@ -633,20 +660,20 @@ enginePanel.querySelector("#panel-demoBtn").addEventListener("click", () => {
     playDemo("media/kasubo hoerprobe.mp3");
 });
 
-enginePanel.querySelector("#panel-fileBtn").addEventListener("click", async () => {
-    if(!engineInitialized) await initEngine();
-    fileInput?.click();
+enginePanel.querySelector("#panel-fileBtn").addEventListener("click", async () => { 
+    if(!engineInitialized) await initEngine(); 
+    fileInput?.click(); 
 });
 
 fileInput?.addEventListener("change", async (e) => {
-  try {
-    if(!engineInitialized) await initEngine();
-    const file = e.target.files?.[0]; if (!file) return;
+  try { 
+    if(!engineInitialized) await initEngine(); 
+    const file = e.target.files?.[0]; if (!file) return; 
     await stopAll({ suspend: false }); setStatus("⏳ Decoding file…");
-    const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf);
+    const arrayBuf = await file.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(arrayBuf); 
     if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
     currentMode = "file"; if (monitorGain) monitorGain.gain.value = 1;
-    bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
+    bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain); 
     bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ File finished"); };
     bufferSrc.start(0); setStatus(`🎵 Playing: ${file.name}`);
   } catch (err) { setStatus("❌ File error"); console.error(err); } finally { if (fileInput) fileInput.value = ""; }
@@ -655,7 +682,7 @@ fileInput?.addEventListener("change", async (e) => {
 enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) => {
   if(!engineInitialized) await initEngine();
   if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
-  try {
+  try { 
     await stopAll({ suspend: false }); setStatus("⏳ Requesting mic…");
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
     if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
@@ -667,12 +694,12 @@ enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) =
 /* ================= AUDIO ANALYSIS ================= */
 function hzToBin(hz) { if (!engine?.ctx || !analyser) return 0; const nyquist = engine.ctx.sampleRate / 2; const idx = Math.round((hz / nyquist) * (analyser.frequencyBinCount - 1)); return Math.max(0, Math.min(analyser.frequencyBinCount - 1, idx)); }
 
-function bandEnergy(freqData, hzLo, hzHi) {
-    const a = hzToBin(hzLo), b = hzToBin(hzHi);
-    let sum = 0;
-    const n = Math.max(1, b - a + 1);
-    for (let i = a; i <= b; i++) sum += freqData[i] || 0;
-    const result = (sum / n) / 255;
+function bandEnergy(freqData, hzLo, hzHi) { 
+    const a = hzToBin(hzLo), b = hzToBin(hzHi); 
+    let sum = 0; 
+    const n = Math.max(1, b - a + 1); 
+    for (let i = a; i <= b; i++) sum += freqData[i] || 0; 
+    const result = (sum / n) / 255; 
     return isNaN(result) ? 0 : result;
 }
 
@@ -681,7 +708,7 @@ let bassSm = 0, midSm = 0, snareSm = 0; let snareAvg = 0, snarePrev = 0, lastSna
 /* ================= MAIN LOOP ================= */
 function loop() {
   raf = requestAnimationFrame(loop);
- 
+  
   try {
       if (!renderer || !scene || !camera || !composer) return;
 
@@ -689,18 +716,18 @@ function loop() {
 
       if (analyser && dataFreq) {
         analyser.getByteFrequencyData(dataFreq);
-       
+        
         let rawSens = panelSensEl ? parseFloat(panelSensEl.value) : 0.1;
         if (isNaN(rawSens)) rawSens = 0.1;
-        const sensitivity = Math.max(0.1, Math.min(rawSens, 5.0));
+        const sensitivity = Math.max(0.1, Math.min(rawSens, 5.0)); 
 
-        const bass = bandEnergy(dataFreq, 30, 140) * sensitivity;
-        const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity;
+        const bass = bandEnergy(dataFreq, 30, 140) * sensitivity; 
+        const mid  = bandEnergy(dataFreq, 200, 1200) * sensitivity; 
         const snare = bandEnergy(dataFreq, 1800, 5200) * sensitivity;
-       
+        
         bassSm = bassSm * 0.88 + bass * 0.12; midSm  = midSm  * 0.90 + mid  * 0.10; snareSm = snareSm * 0.78 + snare * 0.22;
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
-       
+        
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
           lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
           if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
@@ -711,35 +738,35 @@ function loop() {
       if (nebulaMaterial) {
           nebulaMaterial.uniforms.time.value = time * 0.2; nebulaMaterial.uniforms.bass.value = bassSm;
           const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
-          nebulaMaterial.uniforms.color1.value.setHSL(hue, 0.6, 0.08); nebulaMaterial.uniforms.color2.value.setHSL((hue + 0.1)%1, 0.8, 0.2);
+          nebulaMaterial.uniforms.color1.value.setHSL(hue, 0.6, 0.08); nebulaMaterial.uniforms.color2.value.setHSL((hue + 0.1)%1, 0.8, 0.2); 
       }
 
       if (!reducedMotion) {
-        if (currentCameraMode === 0) { camTargetPos.set(0, 0, 18 - bassSm * 2); camTargetLook.set(0,0,0); }
-        else if (currentCameraMode === 1) { camTargetPos.set(0, 0, 0); camTargetLook.set(Math.sin(time)*5, Math.cos(time*0.8)*5, -10); }
-        else if (currentCameraMode === 2) { camTargetPos.set(Math.sin(time*0.5)*15, 15, Math.cos(time*0.5)*15); camTargetLook.set(0,0,0); }
+        if (currentCameraMode === 0) { camTargetPos.set(0, 0, 18 - bassSm * 2); camTargetLook.set(0,0,0); } 
+        else if (currentCameraMode === 1) { camTargetPos.set(0, 0, 0); camTargetLook.set(Math.sin(time)*5, Math.cos(time*0.8)*5, -10); } 
+        else if (currentCameraMode === 2) { camTargetPos.set(Math.sin(time*0.5)*15, 15, Math.cos(time*0.5)*15); camTargetLook.set(0,0,0); } 
         else if (currentCameraMode === 3) { camTargetPos.set(Math.sin(time)*3, Math.cos(time)*3, 5); camTargetLook.set(0,0,0); }
-       
-        camera.position.lerp(camTargetPos, 0.05);
-       
+        
+        camera.position.lerp(camTargetPos, 0.05); 
+        
         const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
-        currentLook.lerp(camTargetLook, 0.1);
+        currentLook.lerp(camTargetLook, 0.1); 
         camera.lookAt(currentLook);
-       
+        
         let targetFov = baseFov - (bassSm * 15);
         if(isNaN(targetFov)) targetFov = baseFov;
         camera.fov = THREE.MathUtils.lerp(camera.fov, Math.max(10, Math.min(targetFov, 120)), 0.1);
-       
+        
         const shake = snapFlash * 0.4; camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
         camera.updateProjectionMatrix();
       }
 
       if (coreLight) {
-        coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200);
+        coreLight.intensity = Math.min((bassSm * 40) + (snapFlash * 80), 200); 
         const hueShift = hueEl ? parseFloat(hueEl.value) : 280; const hue = ((hueShift % 360) / 360);
         if (snapFlash > 0.5) { coreLight.color.setHex(0xffffff); } else { coreLight.color.setHSL((hue + midSm * 0.2) % 1, 0.9, 0.5); }
       }
-     
+      
       if (afterimagePass) {
           let dampValue = trailsEl ? parseFloat(trailsEl.value) : 0;
           if (isNaN(dampValue)) dampValue = 0;
@@ -750,24 +777,24 @@ function loop() {
       if (glitchPass) glitchPass.enabled = (bassSm + midSm + snareSm > 2.2 && Math.random() > 0.8);
 
       if (starPoints) {
-        updateStars(dt); const slider = partEl ? parseFloat(partEl.value) : 10;
+        updateStars(dt); const slider = partEl ? parseFloat(partEl.value) : 10; 
         starPoints.material.opacity = Math.max(0, Math.min(0.8, P.starsOpacity + 0.03 * Math.sin(time * 0.7) + Math.max(0, Math.min(0.20, 0.0065 * slider)) + bassSm * 0.2));
       }
 
       if (world && !reducedMotion) {
-        world.rotation.y = time * 0.45; world.rotation.x = Math.sin(time * 0.8) * 0.10;
+        world.rotation.y = time * 0.45; world.rotation.x = Math.sin(time * 0.8) * 0.10; 
         world.position.set(Math.sin(time * 1.2) * 0.55, Math.cos(time * 0.9) * 0.35, 0);
       }
 
       if (morphMesh) {
-        const bassPunch = Math.pow(bassSm, 1.5) * 2.5;
-        morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.4);
-        morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.2);
-        const spikePunch = (snareSm * 3.5) + (snapFlash * 3.0);
-        morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.6);
+        const bassPunch = Math.pow(bassSm, 1.5) * 2.5; 
+        morphMesh.morphTargetInfluences[0] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[0], bassPunch, 0.4); 
+        morphMesh.morphTargetInfluences[1] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[1], midSm * 2.5, 0.2); 
+        const spikePunch = (snareSm * 3.5) + (snapFlash * 3.0); 
+        morphMesh.morphTargetInfluences[2] = THREE.MathUtils.lerp(morphMesh.morphTargetInfluences[2], spikePunch, 0.6); 
 
         const drift = reducedMotion ? 0 : 0.001; morphMesh.rotation.y += drift + midSm * 0.015; morphMesh.rotation.x += drift; morphMesh.rotation.z += Math.sin(time * 0.5) * 0.005;
-       
+        
         let zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; if (isNaN(zoomInt)) zoomInt = 0.18;
         const targetScale = 1 + (Math.pow(bassSm, 1.5) * 0.5 * zoomInt) + (snapFlash * 0.08);
         morphMesh.scale.setScalar(THREE.MathUtils.lerp(morphMesh.scale.x, Math.max(0.1, targetScale), 0.3));
@@ -778,24 +805,24 @@ function loop() {
       }
 
       if (sigilGroup && sigilBase && sigilGlow) {
-        const mode = paletteEl?.value || "hue";
+        const mode = paletteEl?.value || "hue"; 
         const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
-        sigilBase.material.opacity = opacity;
-       
-        let glowColor = new THREE.Color(0x00d4ff);
+        sigilBase.material.opacity = opacity; 
+        
+        let glowColor = new THREE.Color(0x00d4ff); 
         if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
-        sigilGlow.material.color.copy(glowColor);
-       
+        sigilGlow.material.color.copy(glowColor); 
+        
         const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
-        sigilGlow.material.opacity = glowOp;
-       
+        sigilGlow.material.opacity = glowOp; 
+        
         sigilGroup.quaternion.copy(camera.quaternion);
-        const jitter = reducedMotion ? 0 : (snapFlash * P.jitter);
+        const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); 
         sigilGroup.rotateZ(Math.sin(time * 1.0) * 0.05 + (Math.random() - 0.5) * jitter);
-       
+        
         let zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; if (isNaN(zoomInt)) zoomInt = 0.18;
-        sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04);
-       
+        sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); 
+        
         if (world && !reducedMotion) {
             sigilGroup.position.x = world.position.x;
             sigilGroup.position.y = world.position.y + Math.sin(time * 1.5) * 0.08;
@@ -821,18 +848,18 @@ function loop() {
       }
 
       if (bloomPass) {
-          const explosiveBass = Math.pow(bassSm, 1.5) * 1.5;
-          const strobeFlash = snapFlash * 2.0;
-         
+          const explosiveBass = Math.pow(bassSm, 1.5) * 1.5; 
+          const strobeFlash = snapFlash * 2.0; 
+          
           const targetBloom = P.bloomStrength + explosiveBass + strobeFlash;
-          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 5.0);
+          bloomPass.strength = isNaN(targetBloom) ? P.bloomStrength : Math.min(targetBloom, 5.0); 
 
           const targetRadius = P.bloomRadius + (bassSm * 0.4) + (snapFlash * 0.5);
           bloomPass.radius = isNaN(targetRadius) ? P.bloomRadius : Math.min(targetRadius, 1.5);
       }
-     
+      
       composer.render();
-     
+      
   } catch (renderError) {
       console.error("Frame render error, recovering...", renderError);
   }
@@ -846,27 +873,27 @@ function downloadBlob(blob, filename) { const url = URL.createObjectURL(blob); c
 async function startRecording() {
   try {
       if (!engineInitialized) await initEngine();
-     
+      
       if (!canvas.captureStream) {
           setStatus("❌ Recording not supported on this browser.");
           return;
       }
-     
+      
       recBtn.classList.add('recording-pulse');
-     
+      
       if (engine && engine.ctx && engine.ctx.state === 'suspended') {
           await engine.ctx.resume();
       }
-     
+      
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const fps = 30;
-      const canvasStream = canvas.captureStream(fps);
+      const fps = 30; 
+      const canvasStream = canvas.captureStream(fps); 
       const videoTrack = canvasStream.getVideoTracks()[0];
       let combinedStream;
-     
+      
       try {
-          const out = audioRecordDest?.stream;
+          const out = audioRecordDest?.stream; 
           if (out && out.getAudioTracks().length > 0) {
               const audioTrack = out.getAudioTracks()[0];
               combinedStream = new MediaStream([videoTrack, audioTrack]);
@@ -879,21 +906,21 @@ async function startRecording() {
           console.warn("Could not bind audio securely, recording video only.", audioErr);
           combinedStream = new MediaStream([videoTrack]);
       }
-     
-      recordedChunks = [];
-      const mimeType = pickMime();
+      
+      recordedChunks = []; 
+      const mimeType = pickMime(); 
       mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
       mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
-      mediaRecorder.onstop = () => {
-          downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`);
-          setStatus("✅ Recording saved");
+      mediaRecorder.onstop = () => { 
+          downloadBlob(new Blob(recordedChunks, { type: mimeType || "video/webm" }), `sonic-inclusion-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`); 
+          setStatus("✅ Recording saved"); 
       };
-     
-      mediaRecorder.start(250);
-      recording = true;
-      recBtn.textContent = "⏹ STOP";
+      
+      mediaRecorder.start(250); 
+      recording = true; 
+      recBtn.textContent = "⏹ STOP"; 
       setStatus("⏺ Recording…");
-     
+      
   } catch (err) {
       console.error("Recording failed to start:", err);
       stopRecording();
@@ -901,12 +928,12 @@ async function startRecording() {
   }
 }
 
-function stopRecording() {
+function stopRecording() { 
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        try { mediaRecorder.stop(); } catch {}
+        try { mediaRecorder.stop(); } catch {} 
     }
-    recording = false;
-    recBtn.textContent = "⏺ RECORD";
+    recording = false; 
+    recBtn.textContent = "⏺ RECORD"; 
     recBtn.classList.remove('recording-pulse');
 }
 
