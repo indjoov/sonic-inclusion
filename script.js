@@ -28,13 +28,15 @@ fileInput.id = "fileInput";
 fileInput.type = "file";
 fileInput.accept = "audio/*";
 fileInput.hidden = true;
+fileInput.setAttribute("aria-label", "Upload audio file");
 document.body.appendChild(fileInput);
 
-const sigilInput = document.createElement("input");
-sigilInput.type = "file";
-sigilInput.accept = "image/png, image/jpeg, image/svg+xml";
-sigilInput.hidden = true;
-document.body.appendChild(sigilInput);
+const overlayInput = document.createElement("input");
+overlayInput.type = "file";
+overlayInput.accept = "image/png, image/jpeg, image/svg+xml";
+overlayInput.hidden = true;
+overlayInput.setAttribute("aria-label", "Upload custom overlay image");
+document.body.appendChild(overlayInput);
 
 if (srText) {
   srText.setAttribute("aria-live", "polite");
@@ -44,25 +46,44 @@ function setStatus(msg) {
   if (srText) srText.textContent = msg;
 }
 
-/* ================= OVERLAY ================= */
+/* ================= HAPTIC FEEDBACK (Vibration API) ================= */
 
-const overlay = document.createElement("div");
-overlay.id = "intro-overlay";
-overlay.style.cssText = `
+let hapticEnabled = false;
+const supportsVibration = "vibrate" in navigator;
+
+function triggerHaptic(pattern) {
+  if (!hapticEnabled || !supportsVibration) return;
+  try { navigator.vibrate(pattern); } catch {}
+}
+
+// Haptic patterns for different audio events
+const HAPTIC = {
+  bassHit:    [40],          // short pulse on bass
+  snareHit:   [15, 10, 15], // double tap on snare
+  strongBeat: [80],          // heavy pulse on combined energy
+};
+
+/* ================= INTRO OVERLAY ================= */
+
+const introOverlay = document.createElement("div");
+introOverlay.id = "intro-overlay";
+introOverlay.setAttribute("role", "dialog");
+introOverlay.setAttribute("aria-label", "Sonic Inclusion — click to initialize audio engine");
+introOverlay.style.cssText = `
   position:fixed; inset:0; z-index:3000;
   display:flex; align-items:center; justify-content:center;
   padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
   background: rgba(0,0,0,0.92); cursor:pointer;
 `;
-overlay.innerHTML = `
+introOverlay.innerHTML = `
   <div style="width: min(92vw, 560px); text-align:center; color:white; font-family:system-ui, -apple-system, sans-serif; background: rgba(5,5,5,0.94); padding: clamp(22px, 6vw, 56px); border-radius: 22px; border: 1px solid rgba(0,212,255,0.55); box-shadow: 0 0 70px rgba(0,212,255,.22);">
     <h1 style="margin:0 0 12px; letter-spacing: clamp(6px, 2.6vw, 14px); font-size: clamp(22px, 6.5vw, 44px); line-height: 1.05;">SONIC<br/>INCLUSION</h1>
     <p style="margin:0; opacity:.65; letter-spacing: clamp(2px, 1.2vw, 6px); font-size: clamp(11px, 3.2vw, 14px);">CLICK TO INITIALIZE</p>
   </div>
 `;
-document.body.appendChild(overlay);
+document.body.appendChild(introOverlay);
 
-/* ================= ENGINE (AUDIO) ================= */
+/* ================= AUDIO ENGINE STATE ================= */
 
 const engine = new AudioEngine();
 let raf = null; let analyser = null; let dataFreq = null;
@@ -79,10 +100,10 @@ let afterimagePass = null;
 
 let sparkPool = []; let sparkCursor = 0; let baseFov = 55;           
 
-let sigilGroup = null; let sigilBase = null; let sigilGlow = null;
-let sigilBaseTex = null; let sigilGlowTex = null;
+let overlayGroup = null; let overlayBase = null; let overlayGlow = null;
+let overlayBaseTex = null; let overlayGlowTex = null;
 
-let ringPool = []; let ringCursor = 0; let ghostPool = []; let ghostCursor = 0;
+let ringPool = []; let ringCursor = 0; let echoPool = []; let echoCursor = 0;
 
 let reducedMotion = false; let micMonitor = false; let micMonitorVol = 0.35; let feedbackMuted = false;
 
@@ -100,7 +121,7 @@ function applyMicMonitorGain() {
   monitorGain.gain.value = currentMode === "mic" && micMonitor && !feedbackMuted ? micMonitorVol : 0;
 }
 
-/* ================= HUD & ENGINE PANEL ================= */
+/* ================= HUD & SETTINGS PANEL ================= */
 
 function removeLegacyUI() { 
     document.getElementById("si-hud")?.remove(); 
@@ -110,120 +131,147 @@ removeLegacyUI();
 
 const hud = document.createElement("div");
 hud.id = "si-hud";
+hud.setAttribute("role", "toolbar");
+hud.setAttribute("aria-label", "Main controls");
 
 const recBtn = document.createElement("button");
 recBtn.id = "si-recBtn"; recBtn.className = "hud-btn"; recBtn.type = "button"; recBtn.innerHTML = "⏺ RECORD";
+recBtn.setAttribute("aria-label", "Record visualization as video");
 
 const hudRightControls = document.createElement("div");
 hudRightControls.style.cssText = "display: flex; gap: 10px; pointer-events: auto;";
 
 const fsBtn = document.createElement("button");
 fsBtn.id = "si-fsBtn"; fsBtn.className = "hud-btn"; fsBtn.type = "button"; fsBtn.textContent = "📺 PROJECTION";
+fsBtn.setAttribute("aria-label", "Toggle fullscreen projection mode");
 
-const engineToggle = document.createElement("button");
-engineToggle.id = "si-engineToggle"; engineToggle.className = "hud-btn"; engineToggle.type = "button"; engineToggle.textContent = "⚙️ ENGINE";
+const settingsToggle = document.createElement("button");
+settingsToggle.id = "si-engineToggle"; settingsToggle.className = "hud-btn"; settingsToggle.type = "button"; settingsToggle.textContent = "⚙️ SETTINGS";
+settingsToggle.setAttribute("aria-label", "Open settings panel");
+settingsToggle.setAttribute("aria-expanded", "false");
 
-hudRightControls.appendChild(fsBtn); hudRightControls.appendChild(engineToggle);
+hudRightControls.appendChild(fsBtn); hudRightControls.appendChild(settingsToggle);
 hud.appendChild(recBtn); hud.appendChild(hudRightControls); document.body.appendChild(hud);
 
-const enginePanel = document.createElement("div");
-enginePanel.id = "si-enginePanel";
+const settingsPanel = document.createElement("div");
+settingsPanel.id = "si-enginePanel";
+settingsPanel.setAttribute("role", "dialog");
+settingsPanel.setAttribute("aria-label", "Visualization settings");
 
-enginePanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
+settingsPanel.style.cssText = `position: fixed; left: 16px; right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 2001; max-width: calc(100vw - 32px); width: 100%; margin: 0 auto; background: rgba(10,10,10,0.92); border: 1px solid rgba(0,212,255,0.65); border-radius: 18px; padding: 14px; color: #fff; font-family: system-ui, -apple-system, sans-serif; backdrop-filter: blur(12px); box-shadow: 0 18px 60px rgba(0,0,0,0.55); display: none; box-sizing: border-box; overflow-y: auto; max-height: 70vh;`;
 
-enginePanel.innerHTML = `
+settingsPanel.innerHTML = `
   <div class="panel-header" style="width: 100%; box-sizing: border-box;">
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="panel-icon-wrap">⚙️</div>
-      <div><div class="panel-title">ENGINE</div><div class="panel-subtitle">Swipe down to close</div></div>
+      <div><div class="panel-title">SETTINGS</div><div class="panel-subtitle">Swipe down to close</div></div>
     </div>
-    <button id="si-engineClose" type="button" class="close-btn">✕</button>
+    <button id="si-engineClose" type="button" class="close-btn" aria-label="Close settings panel">✕</button>
   </div>
   
   <div class="panel-grid" style="width: 100%; box-sizing: border-box; overflow-x: hidden;">
     
     <div style="display:flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
-        <button id="panel-demoBtn" type="button" style="background: rgba(0,212,255,0.2); border: 1px solid rgba(0,212,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">▶ Play Sample Audio</button>
+        <button id="panel-demoBtn" type="button" aria-label="Play demo audio track" style="background: rgba(0,212,255,0.2); border: 1px solid rgba(0,212,255,0.6); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">▶ Play Demo Track</button>
         <div style="display:flex; gap: 8px;">
-            <button id="panel-micBtn" type="button" style="flex:1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">🎙️ Mic</button>
-            <button id="panel-fileBtn" type="button" style="flex:1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">📁 File</button>
+            <button id="panel-micBtn" type="button" aria-label="Use microphone as audio input" style="flex:1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">🎙️ Mic</button>
+            <button id="panel-fileBtn" type="button" aria-label="Upload audio file" style="flex:1; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; color: #fff; cursor: pointer; font-weight: bold;">📁 File</button>
         </div>
     </div>
 
-    <div class="chapter-box" style="width: 100%; box-sizing: border-box;">
-      <div class="chapter-title" style="margin-bottom:6px; font-size:11px; opacity:0.7;">VISUAL PRESETS</div>
-      <div class="chapter-btns">
-        <button id="presetHighContrast" type="button" class="chap-btn">HIGH CONTRAST</button>
-        <button id="presetRhythm" type="button" class="chap-btn">RHYTHM MODE</button>
-        <button id="presetBass" type="button" class="chap-btn">BASS FOCUS</button>
+    <div class="preset-box" style="width: 100%; box-sizing: border-box;">
+      <div class="preset-title" style="margin-bottom:6px; font-size:11px; opacity:0.7;">VISUAL PRESETS</div>
+      <div class="preset-btns">
+        <button id="presetHighContrast" type="button" class="chap-btn" aria-label="Apply high contrast visual preset">HIGH CONTRAST</button>
+        <button id="presetRhythm" type="button" class="chap-btn" aria-label="Apply rhythm mode visual preset">RHYTHM MODE</button>
+        <button id="presetBass" type="button" class="chap-btn" aria-label="Apply bass focus visual preset">BASS FOCUS</button>
       </div>
     </div>
-    <div class="sigil-preset-row" style="flex-wrap: wrap; width: 100%; box-sizing: border-box;">
-        <button id="customSigilBtn" type="button" class="sigil-btn">Upload Custom Image</button>
+    <div class="overlay-row" style="flex-wrap: wrap; width: 100%; box-sizing: border-box;">
+        <button id="customOverlayBtn" type="button" class="overlay-btn" aria-label="Upload custom overlay image">Upload Image</button>
         <div class="preset-info" style="padding: 6px;"><b>SLOTS:</b> Save: Shift+1..4 | Load: 1..4</div>
     </div>
     
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; color:#00d4ff; font-weight:bold;">LIGHT TRAILS<input id="trailsAmount" type="range" min="0" max="0.99" step="0.01" value="0" aria-label="Light trails intensity" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
-    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">SENSITIVITY<input id="sens-panel" type="range" min="0.1" max="3" step="0.1" value="0.1" aria-label="Audio sensitivity" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">STARS (amount)<input id="partAmount" type="range" min="0" max="30" value="10" aria-label="Star particle amount" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">BASS ZOOM (object)<input id="zoomInt" type="range" min="0" max="100" value="18" aria-label="Bass zoom intensity on central object" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+    <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">HUE<input id="hueShift" type="range" min="0" max="360" value="280" aria-label="Color hue shift" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
     
     <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box;">COLOR MODE
-        <select id="palette-panel" style="width:100%; margin-top:6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2);">
+        <select id="palette-panel" aria-label="Color mode selection" style="width:100%; margin-top:6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2);">
             <option value="hue" selected>Hue by pitch</option>
             <option value="energy">Hue by energy</option>
             <option value="grayscale">High-contrast grayscale</option>
         </select>
     </label>
 
-    <label class="checkbox-row" style="max-width:100%;"><input id="reducedMotion" type="checkbox">Reduced Motion</label>
+    <label class="checkbox-row" style="max-width:100%;"><input id="reducedMotion" type="checkbox" aria-label="Enable reduced motion mode">Reduced Motion</label>
+    <label class="checkbox-row" style="max-width:100%;"><input id="hapticFeedback" type="checkbox" aria-label="Enable haptic vibration feedback for bass and rhythm">Haptic Feedback</label>
     
     <div class="mic-section" style="width: 100%; box-sizing: border-box;">
-      <label class="checkbox-row"><input id="micMonitor" type="checkbox"><span>Mic Monitor</span></label>
-      <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
+      <label class="checkbox-row"><input id="micMonitor" type="checkbox" aria-label="Enable microphone audio monitoring"><span>Mic Monitor</span></label>
+      <label class="panel-label" style="display:block; max-width:100%; box-sizing:border-box; margin-top:10px;">Monitor Volume<input id="micMonitorVol" type="range" min="0" max="100" value="35" aria-label="Microphone monitor volume" style="width:100%; box-sizing:border-box; margin-top:6px;"></label>
       <div id="feedbackWarn">🔇 Feedback risk detected — mic monitor muted</div>
     </div>
-    <div id="midiStatus" style="max-width:100%;">🎹 MIDI: Waiting for connection...</div>
+    <div id="midiStatus" style="max-width:100%;" aria-live="polite">🎹 MIDI: Waiting for connection...</div>
   </div>
 `;
-document.body.appendChild(enginePanel);
+document.body.appendChild(settingsPanel);
 
-let engineOpen = false;
-function setEngineOpen(open) { 
-  engineOpen = open; 
+let settingsOpen = false;
+function setSettingsOpen(open) { 
+  settingsOpen = open; 
   if(open) {
-      enginePanel.classList.add('open');
-      enginePanel.style.display = "block";
+      settingsPanel.classList.add('open');
+      settingsPanel.style.display = "block";
+      settingsToggle.setAttribute("aria-expanded", "true");
   } else {
-      enginePanel.classList.remove('open');
-      setTimeout(() => { if(!engineOpen) enginePanel.style.display = "none"; }, 400);
+      settingsPanel.classList.remove('open');
+      settingsToggle.setAttribute("aria-expanded", "false");
+      setTimeout(() => { if(!settingsOpen) settingsPanel.style.display = "none"; }, 400);
   }
 }
-engineToggle.addEventListener("click", () => setEngineOpen(!engineOpen));
-enginePanel.querySelector("#si-engineClose").addEventListener("click", () => setEngineOpen(false));
+settingsToggle.addEventListener("click", () => setSettingsOpen(!settingsOpen));
+settingsPanel.querySelector("#si-engineClose").addEventListener("click", () => setSettingsOpen(false));
 
 let touchStartY = null;
-enginePanel.addEventListener("touchstart", (e) => { touchStartY = e.touches?.[0]?.clientY ?? null; }, { passive: true });
-enginePanel.addEventListener("touchmove", (e) => {
+settingsPanel.addEventListener("touchstart", (e) => { touchStartY = e.touches?.[0]?.clientY ?? null; }, { passive: true });
+settingsPanel.addEventListener("touchmove", (e) => {
   if (touchStartY == null) return;
   const dy = (e.touches?.[0]?.clientY ?? touchStartY) - touchStartY;
-  if (dy > 50) { setEngineOpen(false); touchStartY = null; }
+  if (dy > 50) { setSettingsOpen(false); touchStartY = null; }
 }, { passive: true });
 
-const partEl = enginePanel.querySelector("#partAmount"); 
-const zoomEl = enginePanel.querySelector("#zoomInt"); 
-const hueEl  = enginePanel.querySelector("#hueShift");
-const midiStatusEl = enginePanel.querySelector("#midiStatus");
-const panelSensEl = enginePanel.querySelector("#sens-panel");
-const paletteEl = enginePanel.querySelector("#palette-panel");
-const trailsEl = enginePanel.querySelector("#trailsAmount"); 
+const partEl = settingsPanel.querySelector("#partAmount"); 
+const zoomEl = settingsPanel.querySelector("#zoomInt"); 
+const hueEl  = settingsPanel.querySelector("#hueShift");
+const midiStatusEl = settingsPanel.querySelector("#midiStatus");
+const panelSensEl = settingsPanel.querySelector("#sens-panel");
+const paletteEl = settingsPanel.querySelector("#palette-panel");
+const trailsEl = settingsPanel.querySelector("#trailsAmount"); 
 
-enginePanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
-const micMonitorEl = enginePanel.querySelector("#micMonitor"); 
-const micMonitorVolEl = enginePanel.querySelector("#micMonitorVol"); 
-const feedbackWarnEl = enginePanel.querySelector("#feedbackWarn");
+settingsPanel.querySelector("#reducedMotion").addEventListener("change", (e) => reducedMotion = !!e.target.checked);
+
+// Haptic feedback toggle
+settingsPanel.querySelector("#hapticFeedback").addEventListener("change", (e) => {
+  hapticEnabled = !!e.target.checked;
+  if (hapticEnabled && supportsVibration) {
+    triggerHaptic([20]); // Confirmation pulse
+    setStatus("📳 Haptic feedback ON");
+  } else if (hapticEnabled && !supportsVibration) {
+    hapticEnabled = false;
+    e.target.checked = false;
+    setStatus("⚠️ Haptic feedback not supported on this device");
+  } else {
+    setStatus("📳 Haptic feedback OFF");
+  }
+});
+
+const micMonitorEl = settingsPanel.querySelector("#micMonitor"); 
+const micMonitorVolEl = settingsPanel.querySelector("#micMonitorVol"); 
+const feedbackWarnEl = settingsPanel.querySelector("#feedbackWarn");
 
 micMonitorEl.checked = micMonitor; micMonitorVolEl.value = String(Math.round(micMonitorVol * 100));
 micMonitorEl.addEventListener("change", (e) => {
@@ -243,7 +291,7 @@ function toggleFullscreen() {
     document.querySelector('.site-header')?.style.setProperty('display', 'none'); 
     document.querySelector('.site-footer')?.style.setProperty('display', 'none');
     hud.style.display = 'none'; 
-    setEngineOpen(false);
+    setSettingsOpen(false);
     
     stageEl.classList.add('fullscreen-active');
     document.body.style.overflow = "hidden"; 
@@ -262,18 +310,18 @@ function resetUI() {
 fsBtn.addEventListener("click", toggleFullscreen);
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) resetUI(); setTimeout(fitRendererToStage, 100); });
 
-/* ================= CUSTOM SIGIL UPLOAD ================= */
-enginePanel.querySelector("#customSigilBtn").addEventListener("click", () => sigilInput.click());
-sigilInput.addEventListener("change", (e) => {
+/* ================= CUSTOM OVERLAY UPLOAD ================= */
+settingsPanel.querySelector("#customOverlayBtn").addEventListener("click", () => overlayInput.click());
+overlayInput.addEventListener("change", (e) => {
   const file = e.target.files?.[0]; if (!file) return;
-  const url = URL.createObjectURL(file); loadSigilLayers(url, true); setStatus("✅ Custom image loaded");
+  const url = URL.createObjectURL(file); loadOverlayImage(url, true); setStatus("✅ Custom overlay loaded");
 });
 
-/* ================= PRESET SYSTEM (RENAMED FROM CHAPTERS) ================= */
+/* ================= VISUAL PRESETS ================= */
 const VISUAL_PRESETS = {
-  HIGH_CONTRAST: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, sigilInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, ghostCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
-  RHYTHM_MODE:   { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, sigilInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, ghostCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
-  BASS_FOCUS:    { trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, sigilInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, ghostCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
+  HIGH_CONTRAST: { trails: 0, starsOpacity: 0.16, cageOpacityBase: 0.35, overlayInk: 0.90, glowBase: 0.28, glowBass: 0.35, glowSnap: 0.55, jitter: 0.010, ringStrength: 0.75, echoCount: 2, bloomStrength: 0.65, bloomRadius: 0.45, bloomThreshold: 0.18 },
+  RHYTHM_MODE:   { trails: 0, starsOpacity: 0.20, cageOpacityBase: 0.45, overlayInk: 0.88, glowBase: 0.38, glowBass: 0.55, glowSnap: 0.95, jitter: 0.020, ringStrength: 1.00, echoCount: 3, bloomStrength: 0.95, bloomRadius: 0.55, bloomThreshold: 0.14 },
+  BASS_FOCUS:    { trails: 0.60, starsOpacity: 0.24, cageOpacityBase: 0.55, overlayInk: 0.84, glowBase: 0.50, glowBass: 0.85, glowSnap: 1.05, jitter: 0.016, ringStrength: 1.15, echoCount: 4, bloomStrength: 1.25, bloomRadius: 0.65, bloomThreshold: 0.10 },
 };
 // Default active preset
 let activePreset = "RHYTHM_MODE"; 
@@ -291,16 +339,15 @@ function applyPreset(name) {
   }
   if (trailsEl) trailsEl.value = P.trails; 
   
-  // Clean readable status
-  const readable = name.replace("_", " ");
+  const readable = name.replace(/_/g, " ");
   setStatus(`🎨 Preset: ${readable}`);
 }
 
-enginePanel.querySelector("#presetHighContrast").addEventListener("click", () => applyPreset("HIGH_CONTRAST"));
-enginePanel.querySelector("#presetRhythm").addEventListener("click", () => applyPreset("RHYTHM_MODE"));
-enginePanel.querySelector("#presetBass").addEventListener("click", () => applyPreset("BASS_FOCUS"));
+settingsPanel.querySelector("#presetHighContrast").addEventListener("click", () => applyPreset("HIGH_CONTRAST"));
+settingsPanel.querySelector("#presetRhythm").addEventListener("click", () => applyPreset("RHYTHM_MODE"));
+settingsPanel.querySelector("#presetBass").addEventListener("click", () => applyPreset("BASS_FOCUS"));
 
-/* ================= PRESET SYSTEM ================= */
+/* ================= SLOT SAVE/LOAD ================= */
 function saveSettings(slot) {
     const data = { sens: panelSensEl?.value, hue: hueEl?.value, zoom: zoomEl?.value, stars: partEl?.value, palette: paletteEl?.value, preset: activePreset, trails: trailsEl?.value };
     localStorage.setItem(`sonicPreset_${slot}`, JSON.stringify(data)); setStatus(`💾 Slot ${slot} Saved`);
@@ -321,7 +368,7 @@ function loadSettings(slot) {
 
 /* ================= KEYBOARD MAPPING ================= */
 window.addEventListener("keydown", async (e) => {
-  if (e.key === "Escape") { setEngineOpen(false); if(isFullscreen) toggleFullscreen(); }
+  if (e.key === "Escape") { setSettingsOpen(false); if(isFullscreen) toggleFullscreen(); }
   if (e.key.toLowerCase() === "p") toggleFullscreen();
   
   if (e.key.toLowerCase() === "c") {
@@ -394,11 +441,10 @@ function initThree() {
   coreLight = new THREE.PointLight(0x00d4ff, 0, 50); coreLight.position.set(0, 0, 0); scene.add(coreLight);
   world = new THREE.Group(); scene.add(world);
   
-  // FIX: Ensure starGeo is initialized in makeStars
   starPoints = makeStars(1900, 120); scene.add(starPoints);
 
   makeResponsiveMorphingCage();
-  initRings(); initGhosts(); initSparks(); loadSigilLayers("media/indjoov-sigil.svg", false);
+  initRings(); initEchoes(); initSparks(); loadOverlayImage("media/default-overlay.svg", false);
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
   composer = new EffectComposer(renderer, rt); 
@@ -470,7 +516,7 @@ function makeResponsiveMorphingCage() {
   morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
 }
 
-/* ================= RITUAL RINGS & GHOSTS ================= */
+/* ================= PULSE RINGS & ECHOES ================= */
 function initRings() {
   ringPool.forEach(r => { world?.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose(); });
   ringPool = []; ringCursor = 0;
@@ -486,26 +532,26 @@ function triggerRingPulse(intensity = 1) {
   r.mesh.material.color.setHex((Math.random() < 0.5) ? 0x00d4ff : 0x7c4dff); r.mesh.material.opacity = 0.85 * P.ringStrength;
 }
 
-function initGhosts() {
-  ghostPool.forEach(g => { world?.remove(g.group); g.group.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); }); });
-  ghostPool = []; ghostCursor = 0;
+function initEchoes() {
+  echoPool.forEach(g => { world?.remove(g.group); g.group.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); }); });
+  echoPool = []; echoCursor = 0;
   for (let i = 0; i < 18; i++) {
     const group = new THREE.Group(); group.visible = false; group.position.set(0, 0, 0.2); group.rotation.set(-0.18, 0.22, 0);
     const plane = new THREE.PlaneGeometry(6.9, 6.9);
     const inkMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
     const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
     const glow = new THREE.Mesh(plane, glowMat); glow.scale.setScalar(1.08); const ink = new THREE.Mesh(plane, inkMat);
-    group.add(glow, ink); world?.add(group); ghostPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
+    group.add(glow, ink); world?.add(group); echoPool.push({ group, glow, ink, t: 999, life: 0.45, vx: 0, vy: 0, spin: 0, baseScale: 1 });
   }
 }
-function spawnGhostBurst(count = 3, intensity = 1, snapFlash = 1) {
-  if (!ghostPool.length || !sigilBaseTex || !sigilGlowTex || isNaN(intensity)) return; 
+function spawnEchoBurst(count = 3, intensity = 1, snapFlash = 1) {
+  if (!echoPool.length || !overlayBaseTex || !overlayGlowTex || isNaN(intensity)) return; 
   const useCount = Math.max(1, Math.min(6, count));
   for (let k = 0; k < useCount; k++) {
-    const g = ghostPool[ghostCursor % ghostPool.length]; ghostCursor++;
+    const g = echoPool[echoCursor % echoPool.length]; echoCursor++;
     g.t = 0; g.life = 0.28 + Math.random() * 0.25; g.vx = (Math.random() - 0.5) * (0.22 + intensity * 0.25); g.vy = (Math.random() - 0.5) * (0.18 + intensity * 0.22); g.spin = (Math.random() - 0.5) * (0.12 + intensity * 0.18);
     g.baseScale = 1.02 + k * 0.04; g.group.visible = true; g.group.position.set(0, 0, 0.21 + 0.01 * k); g.group.rotation.set(-0.18, 0.22, 0);
-    g.ink.material.map = sigilBaseTex; g.glow.material.map = sigilGlowTex; g.glow.material.color.copy(new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, 0.45 + snapFlash * 0.65)));
+    g.ink.material.map = overlayBaseTex; g.glow.material.map = overlayGlowTex; g.glow.material.color.copy(new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, 0.45 + snapFlash * 0.65)));
     g.ink.material.opacity = 0.22 + 0.20 * intensity; g.glow.material.opacity = 0.40 + 0.55 * snapFlash; g.glow.scale.setScalar(1.12); g.group.scale.setScalar(g.baseScale);
   }
 }
@@ -548,9 +594,9 @@ function fireSparks(intensity, sourceMesh) {
   }
 }
 
-/* ================= SIGIL FIX ================= */
-function loadSigilLayers(url, isCustom = false) {
-  if (sigilGroup) { scene.remove(sigilGroup); sigilGroup = null; } 
+/* ================= OVERLAY IMAGE LOADER ================= */
+function loadOverlayImage(url, isCustom = false) {
+  if (overlayGroup) { scene.remove(overlayGroup); overlayGroup = null; } 
   fetch(url).then(r => { if (!r.ok) throw new Error(); return isCustom ? r.blob() : r.text(); }).then(data => {
       const img = new Image(); img.crossOrigin = "anonymous";
       img.onload = () => {
@@ -563,23 +609,23 @@ function loadSigilLayers(url, isCustom = false) {
         ctx.putImageData(imgData, 0, 0);
         const glow = document.createElement("canvas"); glow.width = size; glow.height = size; const gctx = glow.getContext("2d");
         gctx.filter = "blur(10px)"; gctx.globalAlpha = 1; gctx.drawImage(base, 0, 0); gctx.filter = "blur(22px)"; gctx.globalAlpha = 0.85; gctx.drawImage(base, 0, 0); gctx.filter = "none";
-        sigilBaseTex = new THREE.CanvasTexture(base); sigilBaseTex.colorSpace = THREE.SRGBColorSpace; sigilGlowTex = new THREE.CanvasTexture(glow); sigilGlowTex.colorSpace = THREE.SRGBColorSpace;
+        overlayBaseTex = new THREE.CanvasTexture(base); overlayBaseTex.colorSpace = THREE.SRGBColorSpace; overlayGlowTex = new THREE.CanvasTexture(glow); overlayGlowTex.colorSpace = THREE.SRGBColorSpace;
         const plane = new THREE.PlaneGeometry(6.9, 6.9);
         
-        const inkMat = new THREE.MeshBasicMaterial({ map: sigilBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
-        const glowMat = new THREE.MeshBasicMaterial({ map: sigilGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+        const inkMat = new THREE.MeshBasicMaterial({ map: overlayBaseTex, transparent: true, opacity: 0.90, depthWrite: false, depthTest: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
+        const glowMat = new THREE.MeshBasicMaterial({ map: overlayGlowTex, transparent: true, opacity: 0.50, color: new THREE.Color(0x00d4ff), depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
         
-        sigilBase = new THREE.Mesh(plane, inkMat); sigilGlow = new THREE.Mesh(plane, glowMat); sigilGlow.scale.setScalar(1.08);
+        overlayBase = new THREE.Mesh(plane, inkMat); overlayGlow = new THREE.Mesh(plane, glowMat); overlayGlow.scale.setScalar(1.08);
         
-        sigilGroup = new THREE.Group(); 
-        sigilGroup.add(sigilGlow, sigilBase); 
+        overlayGroup = new THREE.Group(); 
+        overlayGroup.add(overlayGlow, overlayBase); 
         
-        scene.add(sigilGroup); 
-        setStatus("✅ Custom image loaded");
+        scene.add(overlayGroup); 
+        setStatus("✅ Overlay loaded");
         if(isCustom) URL.revokeObjectURL(url);
       };
       if (isCustom) { img.src = URL.createObjectURL(data); } else { img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`; }
-    }).catch(() => setStatus("⚠️ Image fetch failed"));
+    }).catch(() => setStatus("⚠️ Overlay fetch failed"));
 }
 
 /* ================= MIDI INTEGRATION ================= */
@@ -602,7 +648,7 @@ let engineInitialized = false;
 
 async function initEngine() {
   if (engineInitialized) return;
-  overlay.style.display = "none"; 
+  introOverlay.style.display = "none"; 
   setStatus("⏳ Initializing engine…");
 
   try {
@@ -631,8 +677,8 @@ async function initEngine() {
   }
 }
 
-overlay.style.cursor = "pointer";
-overlay.addEventListener("click", () => { initEngine(); });
+introOverlay.style.cursor = "pointer";
+introOverlay.addEventListener("click", () => { initEngine(); });
 
 /* ================= CLEAN STOP / INPUTS ================= */
 async function stopAll({ suspend = true } = {}) {
@@ -640,7 +686,7 @@ async function stopAll({ suspend = true } = {}) {
   if (micSourceNode) { try { micSourceNode.disconnect(); } catch {} micSourceNode = null; }
   if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch {} micStream = null; }
   currentMode = "idle"; 
-  const panelMicBtn = enginePanel.querySelector("#panel-micBtn");
+  const panelMicBtn = settingsPanel.querySelector("#panel-micBtn");
   if (panelMicBtn) panelMicBtn.textContent = "🎙️ Mic"; 
   feedbackMuted = false; feedbackWarnEl.style.display = "none"; if (monitorGain) monitorGain.gain.value = 0;
   if (suspend && engine && engine.ctx) try { await engine.ctx.suspend(); } catch {}
@@ -656,11 +702,11 @@ async function playDemo(path) {
   bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
 }
 
-enginePanel.querySelector("#panel-demoBtn").addEventListener("click", () => {
-    playDemo("media/kasubo hoerprobe.mp3");
+settingsPanel.querySelector("#panel-demoBtn").addEventListener("click", () => {
+    playDemo("media/demo-track.mp3");
 });
 
-enginePanel.querySelector("#panel-fileBtn").addEventListener("click", async () => { 
+settingsPanel.querySelector("#panel-fileBtn").addEventListener("click", async () => { 
     if(!engineInitialized) await initEngine(); 
     fileInput?.click(); 
 });
@@ -679,7 +725,7 @@ fileInput?.addEventListener("change", async (e) => {
   } catch (err) { setStatus("❌ File error"); console.error(err); } finally { if (fileInput) fileInput.value = ""; }
 });
 
-enginePanel.querySelector("#panel-micBtn").addEventListener("click", async (e) => {
+settingsPanel.querySelector("#panel-micBtn").addEventListener("click", async (e) => {
   if(!engineInitialized) await initEngine();
   if (currentMode === "mic") { await stopAll({ suspend: true }); setStatus("⏹ Mic stopped"); return; }
   try { 
@@ -705,6 +751,9 @@ function bandEnergy(freqData, hzLo, hzHi) {
 
 let bassSm = 0, midSm = 0, snareSm = 0; let snareAvg = 0, snarePrev = 0, lastSnareTrig = 0; let snapFlash = 0;
 
+// Haptic throttle — avoid over-vibrating
+let lastHapticBass = 0; let lastHapticSnare = 0;
+
 /* ================= MAIN LOOP ================= */
 function loop() {
   raf = requestAnimationFrame(loop);
@@ -729,9 +778,24 @@ function loop() {
         snareAvg = snareAvg * 0.965 + snareSm * 0.035; const rise = snareSm - snarePrev; snarePrev = snareSm;
         
         if ((snareSm > snareAvg * 1.45) && (rise > 0.055) && (time - lastSnareTrig) > 0.14) {
-          lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnGhostBurst(P.ghostCount, Math.min(1, snareSm * 1.3), 1.0);
+          lastSnareTrig = time; snapFlash = 1.0; triggerRingPulse(Math.min(1, snareSm * 1.6)); spawnEchoBurst(P.echoCount, Math.min(1, snareSm * 1.3), 1.0);
           if (snareSm > 0.4 || bassSm > 0.6) fireSparks(Math.max(snareSm, bassSm), morphMesh);
+          
+          // Haptic: snare hit
+          if (time - lastHapticSnare > 0.15) { triggerHaptic(HAPTIC.snareHit); lastHapticSnare = time; }
         }
+        
+        // Haptic: bass pulse (throttled to max ~4Hz)
+        if (bassSm > 0.45 && (time - lastHapticBass) > 0.25) {
+          triggerHaptic(HAPTIC.bassHit);
+          lastHapticBass = time;
+        }
+        // Haptic: strong combined beat
+        if ((bassSm + snareSm) > 1.2 && (time - lastHapticBass) > 0.3) {
+          triggerHaptic(HAPTIC.strongBeat);
+          lastHapticBass = time;
+        }
+        
       } else { bassSm *= 0.97; midSm *= 0.97; snareSm *= 0.97; }
       snapFlash *= 0.86; if (snapFlash < 0.001) snapFlash = 0;
 
@@ -804,30 +868,30 @@ function loop() {
         morphMesh.material.opacity = P.cageOpacityBase + bassSm * 0.3 + snapFlash * 0.2;
       }
 
-      if (sigilGroup && sigilBase && sigilGlow) {
+      if (overlayGroup && overlayBase && overlayGlow) {
         const mode = paletteEl?.value || "hue"; 
-        const opacity = Math.max(0.35, P.sigilInk + bassSm * 0.1);
-        sigilBase.material.opacity = opacity; 
+        const opacity = Math.max(0.35, P.overlayInk + bassSm * 0.1);
+        overlayBase.material.opacity = opacity; 
         
         let glowColor = new THREE.Color(0x00d4ff); 
         if (mode === "grayscale") { glowColor = new THREE.Color(0xffffff); } else { glowColor = new THREE.Color(0x00d4ff).lerp(new THREE.Color(0x7c4dff), Math.min(1, snapFlash * 1.1)); }
-        sigilGlow.material.color.copy(glowColor); 
+        overlayGlow.material.color.copy(glowColor); 
         
         const glowOp = Math.max(0.30, Math.min(0.98, P.glowBase + bassSm * P.glowBass + snapFlash * P.glowSnap));
-        sigilGlow.material.opacity = glowOp; 
+        overlayGlow.material.opacity = glowOp; 
         
-        sigilGroup.quaternion.copy(camera.quaternion);
+        overlayGroup.quaternion.copy(camera.quaternion);
         const jitter = reducedMotion ? 0 : (snapFlash * P.jitter); 
-        sigilGroup.rotateZ(Math.sin(time * 1.0) * 0.05 + (Math.random() - 0.5) * jitter);
+        overlayGroup.rotateZ(Math.sin(time * 1.0) * 0.05 + (Math.random() - 0.5) * jitter);
         
         let zoomInt = zoomEl ? (parseFloat(zoomEl.value) / 100) : 0.18; if (isNaN(zoomInt)) zoomInt = 0.18;
-        sigilGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); 
+        overlayGroup.scale.setScalar(1 + bassSm * (0.32 * zoomInt) + snapFlash * 0.04); 
         
         if (world && !reducedMotion) {
-            sigilGroup.position.x = world.position.x;
-            sigilGroup.position.y = world.position.y + Math.sin(time * 1.5) * 0.08;
+            overlayGroup.position.x = world.position.x;
+            overlayGroup.position.y = world.position.y + Math.sin(time * 1.5) * 0.08;
         } else {
-            sigilGroup.position.set(0, Math.sin(time * 1.5) * 0.08, 0);
+            overlayGroup.position.set(0, Math.sin(time * 1.5) * 0.08, 0);
         }
       }
 
@@ -835,7 +899,7 @@ function loop() {
         if (r.t >= 999) continue; r.t += dt; const p = Math.min(1, r.t / r.life); r.mesh.scale.setScalar(r.baseScale + (1 - Math.pow(1 - p, 3)) * 1.35);
         r.mesh.material.opacity = (1 - p) * 0.85 * (0.92 + 0.08 * Math.sin(time * 20)) * P.ringStrength; if (p >= 1) { r.t = 999; r.mesh.material.opacity = 0; }
       }
-      for (const g of ghostPool) {
+      for (const g of echoPool) {
         if (g.t >= 999) continue; g.t += dt; const p = Math.min(1, g.t / g.life);
         g.group.position.x += g.vx * 0.14; g.group.position.y += g.vy * 0.14; g.group.rotation.y += g.spin * 0.04; g.group.scale.setScalar(g.baseScale + (1 - Math.pow(1 - p, 2)) * 0.28);
         const fade = (1 - p); g.ink.material.opacity = Math.max(0, g.ink.material.opacity * 0.90) * fade; g.glow.material.opacity = Math.max(0, g.glow.material.opacity * 0.88) * fade; if (p >= 1) { g.t = 999; g.group.visible = false; }
