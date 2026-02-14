@@ -512,7 +512,7 @@ function makeResponsiveMorphingCage() {
 
   baseGeo.morphAttributes.position = [ new THREE.Float32BufferAttribute(cubePositions, 3), new THREE.Float32BufferAttribute(wavePositions, 3), new THREE.Float32BufferAttribute(spikePositions, 3) ];
   
-  const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, morphTargets: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   morphMesh = new THREE.Mesh(baseGeo, mat); world.add(morphMesh);
 }
 
@@ -698,12 +698,22 @@ async function playDemo(path) {
     await stopAll({ suspend: false }); setStatus("⏳ Loading demo…");
     const res = await fetch(path);
     if (!res.ok) { setStatus(`❌ Demo file not found (${res.status}): ${path}`); console.error(`Fetch failed: ${res.status} ${res.statusText} for ${path}`); return; }
-    const buf = await res.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(buf);
+    const buf = await res.arrayBuffer();
+    console.log(`Demo file loaded: ${buf.byteLength} bytes from ${path}`);
+    if (buf.byteLength < 1000) { setStatus(`❌ Demo file too small (${buf.byteLength} bytes) — may be corrupted`); return; }
+    const audio = await engine.ctx.decodeAudioData(buf);
     if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
     currentMode = "demo"; if (monitorGain) monitorGain.gain.value = 1;
     bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
     bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
-  } catch (err) { setStatus(`❌ Demo error: ${err.message}`); console.error("playDemo failed:", err); }
+  } catch (err) {
+    if (err.name === 'EncodingError' || err.message.includes('decode')) {
+      setStatus(`❌ Audio file corrupted or unsupported format. Try re-exporting as MP3/WAV.`);
+    } else {
+      setStatus(`❌ Demo error: ${err.message}`);
+    }
+    console.error("playDemo failed:", err);
+  }
 }
 
 settingsPanel.querySelector("#panel-demoBtn").addEventListener("click", () => {
