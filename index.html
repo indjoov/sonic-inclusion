@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Sonic Inclusion – Art Performance Mode</title>
+  <title>Sonic Inclusion – Accessible Sound Visualization</title>
+  <meta name="description" content="Open-source toolkit transforming audio into visual and haptic feedback for deaf and hard-of-hearing musicians." />
   <link rel="stylesheet" href="style.css" />
 
   <script type="importmap">
@@ -16,14 +17,16 @@
 </head>
 
 <body>
+  <a class="skip-link" href="#viz">Skip to visualization</a>
+
   <header class="site-header">
-    <h1>Audio → Color &amp; Shape</h1>
-    <p class="tagline">Sound into ritual sigil, particles &amp; accessible modes</p>
+    <h1>Sonic Inclusion</h1>
+    <p class="tagline">Audio → Visual &amp; Haptic Feedback · Accessibility Toolkit</p>
   </header>
 
   <main>
-    <section class="stage" aria-label="Visualization stage">
-      <canvas id="viz"></canvas>
+    <section class="stage" aria-label="Audio visualization stage">
+      <canvas id="viz" role="img" aria-label="Real-time audio visualization canvas"></canvas>
     </section>
 
     <section class="a11y" aria-label="Live description for screen readers">
@@ -32,7 +35,7 @@
   </main>
 
   <footer class="site-footer">
-    <small>© 2026 Indjoov Arts · Sonic Inclusion Prototype</small>
+    <small>© 2026 Sonic Inclusion · Open Source Accessibility Toolkit</small>
   </footer>
 
   <script type="module" src="script.js"></script>
