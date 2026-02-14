@@ -693,13 +693,17 @@ async function stopAll({ suspend = true } = {}) {
 }
 
 async function playDemo(path) {
-  if (!engineInitialized) await initEngine();
-  await stopAll({ suspend: false }); setStatus("⏳ Loading demo…");
-  const buf = await fetch(path).then(r => r.arrayBuffer()); const audio = await engine.ctx.decodeAudioData(buf);
-  if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
-  currentMode = "demo"; if (monitorGain) monitorGain.gain.value = 1;
-  bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
-  bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
+  try {
+    if (!engineInitialized) await initEngine();
+    await stopAll({ suspend: false }); setStatus("⏳ Loading demo…");
+    const res = await fetch(path);
+    if (!res.ok) { setStatus(`❌ Demo file not found (${res.status}): ${path}`); console.error(`Fetch failed: ${res.status} ${res.statusText} for ${path}`); return; }
+    const buf = await res.arrayBuffer(); const audio = await engine.ctx.decodeAudioData(buf);
+    if (engine.ctx && engine.ctx.state === 'suspended') { await engine.ctx.resume(); }
+    currentMode = "demo"; if (monitorGain) monitorGain.gain.value = 1;
+    bufferSrc = engine.ctx.createBufferSource(); bufferSrc.buffer = audio; bufferSrc.connect(inputGain);
+    bufferSrc.onended = async () => { await stopAll({ suspend: true }); setStatus("✅ Demo finished"); }; bufferSrc.start(0); setStatus("🎧 Demo playing");
+  } catch (err) { setStatus(`❌ Demo error: ${err.message}`); console.error("playDemo failed:", err); }
 }
 
 settingsPanel.querySelector("#panel-demoBtn").addEventListener("click", () => {
