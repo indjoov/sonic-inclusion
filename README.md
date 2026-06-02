@@ -1,3 +1,4 @@
+<img width="1130" height="542" alt="Sonic Inclusion" src="https://github.com/user-attachments/assets/105da748-c939-4abd-8b48-be47dc8beb68" />
 # Sonic Inclusion – Open Toolkit for Accessible Sound Design using AI
 
 ## 🔗 Live Demo
